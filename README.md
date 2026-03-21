@@ -2,7 +2,7 @@
 
 **[Live App](https://qdonnars.github.io/open_wind/)**
 
-Free wind forecast comparison app inspired by Windy.com. Compare wind predictions from multiple weather models side by side for any spot.
+Free wind forecast. Compare wind predictions from multiple weather models side by side for any spot.
 
 ## Features
 
