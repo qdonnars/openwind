@@ -3,6 +3,24 @@ import type { ModelForecast } from "../types";
 import { TimelineHeader } from "./TimelineHeader";
 import { WindCell } from "./WindCell";
 
+// Native time step (hours) for each model — Open-Meteo interpolates to 1h,
+// but these are the actual forecast resolution worth displaying
+const MODEL_STEP: Record<string, number> = {
+  AROME: 1,
+  ICON: 1,
+  GFS: 3,
+  ECMWF: 6,
+};
+
+function autoResolution(forecasts: ModelForecast[]): number {
+  let finest = 6;
+  for (const f of forecasts) {
+    const step = MODEL_STEP[f.modelName] ?? 3;
+    if (step < finest) finest = step;
+  }
+  return finest;
+}
+
 interface WindTableProps {
   forecasts: ModelForecast[];
   isLoading: boolean;
@@ -33,16 +51,21 @@ export function WindTable({
   onSelectHour,
 }: WindTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const masterTimeline = getMasterTimeline(forecasts);
+  const resolution = autoResolution(forecasts);
+  const fullTimeline = getMasterTimeline(forecasts);
+  const masterTimeline = fullTimeline.filter(
+    (t) => parseInt(t.slice(11, 13)) % resolution === 0
+  );
 
   useEffect(() => {
     if (!scrollRef.current || masterTimeline.length === 0) return;
     const now = new Date();
     const nowHour = now.toISOString().slice(0, 13);
     const idx = masterTimeline.findIndex((t) => t.startsWith(nowHour));
-    if (idx > 0) {
+    const nearestIdx = idx >= 0 ? idx : masterTimeline.findIndex((t) => t > nowHour.slice(0, 13));
+    if (nearestIdx > 0) {
       const cellWidth = 28;
-      scrollRef.current.scrollLeft = Math.max(0, idx * cellWidth - 60);
+      scrollRef.current.scrollLeft = Math.max(0, nearestIdx * cellWidth - 60);
     }
   }, [masterTimeline]);
 
@@ -63,6 +86,7 @@ export function WindTable({
   }
 
   return (
+    <div>
     <div ref={scrollRef} className="overflow-x-auto -mx-3">
       <table className="border-collapse">
         <thead>
@@ -111,5 +135,6 @@ export function WindTable({
         </tbody>
       </table>
     </div>
+  </div>
   );
 }

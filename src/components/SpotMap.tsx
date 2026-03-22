@@ -64,6 +64,8 @@ interface SpotMapProps {
   customSpots: Spot[];
   onSelectSpot: (spot: Spot) => void;
   onAddSpot: (spot: Spot) => void;
+  onRemoveSpot: (spot: Spot) => void;
+  onRenameSpot: (spot: Spot, name: string) => void;
   forecasts: ModelForecast[];
   selectedHour: string | null;
 }
@@ -77,6 +79,8 @@ export function SpotMap({
   customSpots,
   onSelectSpot,
   onAddSpot,
+  onRemoveSpot,
+  onRenameSpot,
   forecasts,
   selectedHour,
 }: SpotMapProps) {
@@ -88,14 +92,29 @@ export function SpotMap({
   onSelectRef.current = onSelectSpot;
   const onAddRef = useRef(onAddSpot);
   onAddRef.current = onAddSpot;
+  const onRemoveRef = useRef(onRemoveSpot);
+  onRemoveRef.current = onRemoveSpot;
+  const onRenameRef = useRef(onRenameSpot);
+  onRenameRef.current = onRenameSpot;
 
+  // pendingSpot: creating a new spot or renaming an existing one
   const [pendingSpot, setPendingSpot] = useState<{
     lat: number;
     lng: number;
     name: string;
+    editingSpot?: Spot;
   } | null>(null);
   const setPendingRef = useRef(setPendingSpot);
   setPendingRef.current = setPendingSpot;
+
+  // pendingEdit: long-pressed an existing marker → show rename/delete choice
+  const [pendingEdit, setPendingEdit] = useState<Spot | null>(null);
+  const setPendingEditRef = useRef(setPendingEdit);
+  setPendingEditRef.current = setPendingEdit;
+
+  // Shared press timer (used by both map long-press and marker long-press)
+  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelPressRef = useRef<() => void>(() => {});
 
   // Init map once
   useEffect(() => {
@@ -122,24 +141,26 @@ export function SpotMap({
 
     // Long press detection via Pointer Events (covers mouse + touch, one event stream)
     const el = containerRef.current!;
-    let pressTimer: ReturnType<typeof setTimeout> | null = null;
     let startX = 0;
     let startY = 0;
 
     const cancelPress = () => {
-      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+      if (pressTimerRef.current) { clearTimeout(pressTimerRef.current); pressTimerRef.current = null; }
     };
+    cancelPressRef.current = cancelPress;
 
     let activePointers = 0;
 
     const handlePointerDown = (e: PointerEvent) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
       activePointers++;
-      // Multi-touch (e.g. pinch zoom): cancel immediately
       if (activePointers > 1) { cancelPress(); return; }
+      // If pressing on a marker (SVG circle), let the marker handler take over
+      const tag = (e.target as Element).tagName.toLowerCase();
+      if (tag === "circle" || tag === "path") return;
       startX = e.clientX;
       startY = e.clientY;
-      pressTimer = setTimeout(async () => {
+      pressTimerRef.current = setTimeout(async () => {
         const rect = el.getBoundingClientRect();
         const point = L.point(startX - rect.left, startY - rect.top);
         const latlng = map.containerPointToLatLng(point);
@@ -170,6 +191,7 @@ export function SpotMap({
       const active =
         spot.latitude === current.latitude &&
         spot.longitude === current.longitude;
+      const isCustom = customSpots.some((s) => spotKey(s) === key);
       const marker = L.circleMarker([spot.latitude, spot.longitude], {
         radius: active ? 10 : 7,
         color: active ? "#ffffff" : "#9ca3af",
@@ -185,6 +207,14 @@ export function SpotMap({
         })
         .on("click", () => onSelectRef.current(spot))
         .addTo(map);
+      if (isCustom) {
+        marker.on("mousedown", () => {
+          cancelPressRef.current();
+          pressTimerRef.current = setTimeout(() => {
+            setPendingEditRef.current(spot);
+          }, 800);
+        });
+      }
       markersRef.current.set(key, marker);
     }
 
@@ -230,9 +260,10 @@ export function SpotMap({
         weight: active ? 2 : 1,
       };
 
+      const isCustom = customSpots.some((cs) => spotKey(cs) === key);
       let marker = markersRef.current.get(key);
       if (!marker) {
-        const s = spot; // capture for closure
+        const s = spot;
         marker = L.circleMarker([s.latitude, s.longitude], {
           ...style,
           bubblingMouseEvents: false,
@@ -244,6 +275,14 @@ export function SpotMap({
           })
           .on("click", () => onSelectRef.current(s))
           .addTo(map);
+        if (isCustom) {
+          marker.on("mousedown", () => {
+            cancelPressRef.current();
+            pressTimerRef.current = setTimeout(() => {
+              setPendingEditRef.current(s);
+            }, 800);
+          });
+        }
         markersRef.current.set(key, marker);
       } else {
         marker.setStyle(style);
@@ -301,19 +340,59 @@ export function SpotMap({
   return (
     <div className="w-full h-full relative">
       <div ref={containerRef} className="w-full h-full overflow-hidden" />
+      {/* Marker long-press: rename or delete */}
+      {pendingEdit && (
+        <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50">
+          <div className="bg-gray-800 rounded-xl p-5 mx-4 w-full max-w-xs shadow-2xl">
+            <p className="text-white text-sm font-semibold mb-1">{pendingEdit.name}</p>
+            <p className="text-gray-400 text-xs mb-4">
+              {pendingEdit.latitude.toFixed(4)}, {pendingEdit.longitude.toFixed(4)}
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                className="w-full py-2 rounded-lg bg-gray-700 text-white text-sm hover:bg-gray-600"
+                onClick={() => {
+                  const s = pendingEdit;
+                  setPendingEdit(null);
+                  setPendingSpot({ lat: s.latitude, lng: s.longitude, name: s.name, editingSpot: s });
+                }}
+              >
+                Renommer
+              </button>
+              <button
+                className="w-full py-2 rounded-lg bg-red-700 text-white text-sm hover:bg-red-600"
+                onClick={() => {
+                  onRemoveRef.current(pendingEdit);
+                  setPendingEdit(null);
+                }}
+              >
+                Supprimer
+              </button>
+              <button
+                className="w-full py-2 rounded-lg bg-transparent text-gray-400 text-sm"
+                onClick={() => setPendingEdit(null)}
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New spot / rename spot */}
       {pendingSpot && (
         <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50">
           <div className="bg-gray-800 rounded-xl p-5 mx-4 w-full max-w-xs shadow-2xl">
-            <p className="text-white text-sm font-semibold mb-1">Nouveau spot</p>
+            <p className="text-white text-sm font-semibold mb-1">
+              {pendingSpot.editingSpot ? "Renommer le spot" : "Nouveau spot"}
+            </p>
             <p className="text-gray-400 text-xs mb-3">
               {pendingSpot.lat.toFixed(4)}, {pendingSpot.lng.toFixed(4)}
             </p>
             <input
               className="w-full bg-gray-700 text-white text-sm rounded-lg px-3 py-2 mb-4 outline-none border border-gray-600 focus:border-blue-500"
               value={pendingSpot.name}
-              onChange={(e) =>
-                setPendingSpot({ ...pendingSpot, name: e.target.value })
-              }
+              onChange={(e) => setPendingSpot({ ...pendingSpot, name: e.target.value })}
               autoFocus
             />
             <div className="flex gap-2">
@@ -326,15 +405,19 @@ export function SpotMap({
               <button
                 className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-500"
                 onClick={() => {
-                  onAddRef.current({
-                    name: pendingSpot.name,
-                    latitude: pendingSpot.lat,
-                    longitude: pendingSpot.lng,
-                  });
+                  if (pendingSpot.editingSpot) {
+                    onRenameRef.current(pendingSpot.editingSpot, pendingSpot.name);
+                  } else {
+                    onAddRef.current({
+                      name: pendingSpot.name,
+                      latitude: pendingSpot.lat,
+                      longitude: pendingSpot.lng,
+                    });
+                  }
                   setPendingSpot(null);
                 }}
               >
-                Créer
+                {pendingSpot.editingSpot ? "Renommer" : "Créer"}
               </button>
             </div>
           </div>

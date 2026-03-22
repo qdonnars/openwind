@@ -29,6 +29,16 @@ export function useCustomSpots() {
     saveSpots(next);
   }
 
+  function renameSpot(spot: Spot, name: string) {
+    const next = customSpots.map((s) =>
+      s.latitude === spot.latitude && s.longitude === spot.longitude
+        ? { ...s, name }
+        : s
+    );
+    setCustomSpots(next);
+    saveSpots(next);
+  }
+
   function removeSpot(spot: Spot) {
     const next = customSpots.filter(
       (s) => s.latitude !== spot.latitude || s.longitude !== spot.longitude
@@ -43,5 +53,5 @@ export function useCustomSpots() {
     );
   }
 
-  return { customSpots, addSpot, removeSpot, isCustom };
+  return { customSpots, addSpot, removeSpot, renameSpot, isCustom };
 }

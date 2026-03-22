@@ -9,7 +9,7 @@ import { SpotMap } from "./components/SpotMap";
 const RADE_MARSEILLE: Spot = { name: "", latitude: 43.3, longitude: 5.35 };
 
 function App() {
-  const { customSpots, addSpot, removeSpot, isCustom } = useCustomSpots();
+  const { customSpots, addSpot, removeSpot, renameSpot, isCustom } = useCustomSpots();
   const [spot, setSpot] = useState<Spot | null>(() => customSpots[0] ?? null);
   const [forecasts, setForecasts] = useState<ModelForecast[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -52,6 +52,8 @@ function App() {
           customSpots={customSpots}
           onSelectSpot={setSpot}
           onAddSpot={(s) => { addSpot(s); setSpot(s); }}
+          onRemoveSpot={(s) => { removeSpot(s); if (spot?.latitude === s.latitude && spot?.longitude === s.longitude) setSpot(null); }}
+          onRenameSpot={(s, name) => { renameSpot(s, name); if (spot?.latitude === s.latitude && spot?.longitude === s.longitude) setSpot({ ...s, name }); }}
           forecasts={forecasts}
           selectedHour={selectedHour}
         />
