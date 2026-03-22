@@ -7,7 +7,7 @@ import { WindCell } from "./WindCell";
 // but these are the actual forecast resolution worth displaying
 const MODEL_STEP: Record<string, number> = {
   AROME: 1,
-  ICON: 1,
+  ICON: 3,
   GFS: 3,
   ECMWF: 6,
 };
