@@ -130,8 +130,13 @@ export function SpotMap({
       if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
     };
 
+    let activePointers = 0;
+
     const handlePointerDown = (e: PointerEvent) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      activePointers++;
+      // Multi-touch (e.g. pinch zoom): cancel immediately
+      if (activePointers > 1) { cancelPress(); return; }
       startX = e.clientX;
       startY = e.clientY;
       pressTimer = setTimeout(async () => {
@@ -143,6 +148,11 @@ export function SpotMap({
       }, 800);
     };
 
+    const handlePointerUp = () => {
+      activePointers = Math.max(0, activePointers - 1);
+      cancelPress();
+    };
+
     const handlePointerMove = (e: PointerEvent) => {
       if (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10) {
         cancelPress();
@@ -150,9 +160,9 @@ export function SpotMap({
     };
 
     el.addEventListener("pointerdown", handlePointerDown);
-    el.addEventListener("pointermove", handlePointerMove);
-    el.addEventListener("pointerup", cancelPress);
-    el.addEventListener("pointercancel", cancelPress);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
 
     // Create initial markers immediately + fix size after layout
     for (const spot of [...QUICK_SPOTS, ...customSpots]) {
@@ -183,9 +193,9 @@ export function SpotMap({
     return () => {
       cancelPress();
       el.removeEventListener("pointerdown", handlePointerDown);
-      el.removeEventListener("pointermove", handlePointerMove);
-      el.removeEventListener("pointerup", cancelPress);
-      el.removeEventListener("pointercancel", cancelPress);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
       map.remove();
       mapRef.current = null;
     };

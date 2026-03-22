@@ -6,13 +6,14 @@ import { Header } from "./components/Header";
 import { WindTable } from "./components/WindTable";
 import { SpotMap } from "./components/SpotMap";
 
+const RADE_MARSEILLE: Spot = { name: "", latitude: 43.3, longitude: 5.35 };
+
 function App() {
-  const FRIOUL: Spot = { name: "Îles du Frioul", latitude: 43.2795, longitude: 5.2995 };
-  const [spot, setSpot] = useState<Spot | null>(FRIOUL);
+  const { customSpots, addSpot, removeSpot, isCustom } = useCustomSpots();
+  const [spot, setSpot] = useState<Spot | null>(() => customSpots[0] ?? null);
   const [forecasts, setForecasts] = useState<ModelForecast[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedHour, setSelectedHour] = useState<string | null>(null);
-  const { customSpots, addSpot, removeSpot, isCustom } = useCustomSpots();
 
   useEffect(() => {
     if (!spot) return;
@@ -33,8 +34,7 @@ function App() {
   const canSave = spot != null && !isCustom(spot);
   const isSaved = spot != null && isCustom(spot);
 
-  // Default map center: Frioul / rade de Marseille
-  const mapCenter: Spot = spot ?? { name: "", latitude: 43.28, longitude: 5.3 };
+  const mapCenter: Spot = spot ?? RADE_MARSEILLE;
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-white overflow-hidden">
