@@ -11,6 +11,7 @@ export interface HourlyData {
   wind_speed_10m: (number | null)[];
   wind_direction_10m: (number | null)[];
   wind_gusts_10m: (number | null)[];
+  weather_code: (number | null)[];
 }
 
 export interface ModelForecast {

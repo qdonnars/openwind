@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { Spot, ModelForecast } from "../types";
@@ -37,10 +37,33 @@ function createArrowSvg(
   </svg>`;
 }
 
+async function reverseGeocode(lat: number, lon: number): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`,
+      { headers: { "Accept-Language": "fr" } }
+    );
+    const data = await res.json();
+    const addr = data.address || {};
+    return (
+      addr.city ||
+      addr.town ||
+      addr.village ||
+      addr.municipality ||
+      addr.county ||
+      data.display_name?.split(",")[0] ||
+      `${lat.toFixed(3)}, ${lon.toFixed(3)}`
+    );
+  } catch {
+    return `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+  }
+}
+
 interface SpotMapProps {
   current: Spot;
   customSpots: Spot[];
   onSelectSpot: (spot: Spot) => void;
+  onAddSpot: (spot: Spot) => void;
   forecasts: ModelForecast[];
   selectedHour: string | null;
 }
@@ -53,6 +76,7 @@ export function SpotMap({
   current,
   customSpots,
   onSelectSpot,
+  onAddSpot,
   forecasts,
   selectedHour,
 }: SpotMapProps) {
@@ -62,6 +86,16 @@ export function SpotMap({
   const arrowLayerRef = useRef<L.Marker | null>(null);
   const onSelectRef = useRef(onSelectSpot);
   onSelectRef.current = onSelectSpot;
+  const onAddRef = useRef(onAddSpot);
+  onAddRef.current = onAddSpot;
+
+  const [pendingSpot, setPendingSpot] = useState<{
+    lat: number;
+    lng: number;
+    name: string;
+  } | null>(null);
+  const setPendingRef = useRef(setPendingSpot);
+  setPendingRef.current = setPendingSpot;
 
   // Init map once
   useEffect(() => {
@@ -85,6 +119,45 @@ export function SpotMap({
     map.getPane("windArrows")!.style.zIndex = "450";
 
     mapRef.current = map;
+
+    // Long press detection (800ms)
+    let pressTimer: ReturnType<typeof setTimeout> | null = null;
+    let pressLatLng: L.LatLng | null = null;
+
+    const cancelPress = () => {
+      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    };
+
+    map.on("mousedown", (e: L.LeafletMouseEvent) => {
+      if (e.originalEvent.button !== 0) return;
+      pressLatLng = e.latlng;
+      pressTimer = setTimeout(async () => {
+        if (!pressLatLng) return;
+        const { lat, lng } = pressLatLng;
+        const name = await reverseGeocode(lat, lng);
+        setPendingRef.current({ lat, lng, name });
+      }, 800);
+    });
+    map.on("mouseup mousemove", cancelPress);
+
+    // Touch long press
+    const el = containerRef.current!;
+    const handleTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      const rect = el.getBoundingClientRect();
+      const point = L.point(touch.clientX - rect.left, touch.clientY - rect.top);
+      pressLatLng = map.containerPointToLatLng(point);
+      pressTimer = setTimeout(async () => {
+        if (!pressLatLng) return;
+        const { lat, lng } = pressLatLng;
+        const name = await reverseGeocode(lat, lng);
+        setPendingRef.current({ lat, lng, name });
+      }, 800);
+    };
+    const handleTouchCancel = () => cancelPress();
+    el.addEventListener("touchstart", handleTouchStart, { passive: true });
+    el.addEventListener("touchend", handleTouchCancel);
+    el.addEventListener("touchmove", handleTouchCancel, { passive: true });
 
     // Create initial markers immediately + fix size after layout
     for (const spot of [...QUICK_SPOTS, ...customSpots]) {
@@ -113,6 +186,10 @@ export function SpotMap({
     setTimeout(() => map.invalidateSize(), 200);
 
     return () => {
+      cancelPress();
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchend", handleTouchCancel);
+      el.removeEventListener("touchmove", handleTouchCancel);
       map.remove();
       mapRef.current = null;
     };
@@ -216,9 +293,47 @@ export function SpotMap({
   }, [selectedHour, forecasts, current]);
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full h-full overflow-hidden"
-    />
+    <div className="w-full h-full relative">
+      <div ref={containerRef} className="w-full h-full overflow-hidden" />
+      {pendingSpot && (
+        <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50">
+          <div className="bg-gray-800 rounded-xl p-5 mx-4 w-full max-w-xs shadow-2xl">
+            <p className="text-white text-sm font-semibold mb-1">Nouveau spot</p>
+            <p className="text-gray-400 text-xs mb-3">
+              {pendingSpot.lat.toFixed(4)}, {pendingSpot.lng.toFixed(4)}
+            </p>
+            <input
+              className="w-full bg-gray-700 text-white text-sm rounded-lg px-3 py-2 mb-4 outline-none border border-gray-600 focus:border-blue-500"
+              value={pendingSpot.name}
+              onChange={(e) =>
+                setPendingSpot({ ...pendingSpot, name: e.target.value })
+              }
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                className="flex-1 py-2 rounded-lg bg-gray-700 text-gray-300 text-sm hover:bg-gray-600"
+                onClick={() => setPendingSpot(null)}
+              >
+                Annuler
+              </button>
+              <button
+                className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-500"
+                onClick={() => {
+                  onAddRef.current({
+                    name: pendingSpot.name,
+                    latitude: pendingSpot.lat,
+                    longitude: pendingSpot.lng,
+                  });
+                  setPendingSpot(null);
+                }}
+              >
+                Créer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,28 +1,20 @@
 import { useState, useEffect } from "react";
 import type { Spot, ModelForecast } from "./types";
 import { fetchAllModels } from "./api/openmeteo";
-import { QUICK_SPOTS } from "./spots";
 import { useCustomSpots } from "./hooks/useCustomSpots";
 import { Header } from "./components/Header";
 import { WindTable } from "./components/WindTable";
 import { SpotMap } from "./components/SpotMap";
 
-const DEFAULT_SPOT: Spot = QUICK_SPOTS[0]; // Pointe Rouge
-
-function isBuiltIn(spot: Spot) {
-  return QUICK_SPOTS.some(
-    (s) => s.latitude === spot.latitude && s.longitude === spot.longitude
-  );
-}
-
 function App() {
-  const [spot, setSpot] = useState<Spot>(DEFAULT_SPOT);
+  const [spot, setSpot] = useState<Spot | null>(null);
   const [forecasts, setForecasts] = useState<ModelForecast[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [selectedHour, setSelectedHour] = useState<string | null>(null);
   const { customSpots, addSpot, removeSpot, isCustom } = useCustomSpots();
 
   useEffect(() => {
+    if (!spot) return;
     let cancelled = false;
     setIsLoading(true);
     setSelectedHour(null);
@@ -37,8 +29,11 @@ function App() {
     };
   }, [spot]);
 
-  const canSave = !isBuiltIn(spot) && !isCustom(spot);
-  const isSaved = isCustom(spot);
+  const canSave = spot != null && !isCustom(spot);
+  const isSaved = spot != null && isCustom(spot);
+
+  // Default map center: Marseille area
+  const mapCenter: Spot = spot ?? { name: "", latitude: 43.2, longitude: 5.7 };
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-white overflow-hidden">
@@ -46,27 +41,34 @@ function App() {
         onSelectSpot={setSpot}
         canSave={canSave}
         isSaved={isSaved}
-        onSave={() => addSpot(spot)}
-        onRemove={() => removeSpot(spot)}
+        onSave={() => spot && addSpot(spot)}
+        onRemove={() => spot && removeSpot(spot)}
       />
 
       <div className="flex-1 min-h-0">
         <SpotMap
-          current={spot}
+          current={mapCenter}
           customSpots={customSpots}
           onSelectSpot={setSpot}
+          onAddSpot={(s) => { addSpot(s); setSpot(s); }}
           forecasts={forecasts}
           selectedHour={selectedHour}
         />
       </div>
 
       <div className="shrink-0">
-        <WindTable
-          forecasts={forecasts}
-          isLoading={isLoading}
-          selectedHour={selectedHour}
-          onSelectHour={setSelectedHour}
-        />
+        {spot ? (
+          <WindTable
+            forecasts={forecasts}
+            isLoading={isLoading}
+            selectedHour={selectedHour}
+            onSelectHour={setSelectedHour}
+          />
+        ) : (
+          <div className="text-gray-500 text-center py-4 text-sm">
+            Appuie longuement sur la carte pour ajouter un spot
+          </div>
+        )}
         <footer className="text-center text-gray-600 text-[10px] py-1 border-t border-gray-800">
           <a
             href="https://open-meteo.com/"

@@ -12,7 +12,7 @@ const MODELS = [
 ];
 
 const PARAMS =
-  "hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=kn&timezone=Europe/Paris&forecast_days=7";
+  "hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code&wind_speed_unit=kn&timezone=Europe/Paris&forecast_days=7";
 
 const cache = new Map<string, { models: ModelForecast[]; fetchedAt: number }>();
 const CACHE_TTL = 30 * 60 * 1000;
