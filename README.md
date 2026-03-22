@@ -40,6 +40,18 @@ npm run dev
 
 Deployed automatically to GitHub Pages on push to `main` via GitHub Actions.
 
+## Privacy
+
+OpenWind is a **100% client-side application**. No server, no backend, no analytics.
+
+- **No data is stored on any server.** All your spots and preferences are saved in your browser's `localStorage` only.
+- **No account, no tracking, no cookies.** The app runs entirely in your browser.
+- **External API calls are made directly from your browser:**
+  - [Open-Meteo.com](https://open-meteo.com/) — weather forecasts (coordinates of your spots)
+  - [Nominatim / OpenStreetMap](https://nominatim.openstreetmap.org/) — reverse geocoding to name a spot when you long-press the map (coordinates of the point you selected, not your location)
+  - [CARTO](https://carto.com/) — map tiles
+- **We do not collect, store, or transmit any personal information.**
+
 ## Credits
 
 Weather data: [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0)
