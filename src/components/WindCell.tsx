@@ -40,7 +40,7 @@ export function WindCell({ speed, gusts, direction, selected, isNow, onSelect }:
       <div className="flex flex-col items-center leading-none gap-0.5">
         <div className="flex items-center gap-0.5">
           {direction != null && <WindArrow degrees={direction} />}
-          <span className="text-[13px] lg:text-[15px] font-bold">{Math.round(speed)}</span>
+          <span className="text-[17px] lg:text-[20px] font-bold">{Math.round(speed)}</span>
         </div>
         {gusts != null && (
           <span className="text-[11px] lg:text-[12px] opacity-85 font-semibold">{Math.round(gusts)}</span>
