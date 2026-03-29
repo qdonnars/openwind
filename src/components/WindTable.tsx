@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { ModelForecast } from "../types";
 import { TimelineHeader } from "./TimelineHeader";
 import { WindCell } from "./WindCell";
@@ -82,11 +82,14 @@ export function WindTable({
 }: WindTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolledEnd, setScrolledEnd] = useState(false);
-  const resolution = autoResolution(forecasts);
-  const fullTimeline = getMasterTimeline(forecasts);
-  const masterTimeline = fullTimeline.filter(
-    (t) => parseInt(t.slice(11, 13)) % resolution === 0
-  );
+
+  const masterTimeline = useMemo(() => {
+    const resolution = autoResolution(forecasts);
+    const fullTimeline = getMasterTimeline(forecasts);
+    return fullTimeline.filter(
+      (t) => parseInt(t.slice(11, 13)) % resolution === 0
+    );
+  }, [forecasts]);
 
   const nowHour = new Date().toISOString().slice(0, 13);
 

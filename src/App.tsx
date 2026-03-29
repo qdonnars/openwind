@@ -98,7 +98,7 @@ function App() {
         {/* Map — collapsible on mobile, sidebar on desktop */}
         <div className="relative shrink-0 lg:contents">
           <div className={`overflow-hidden border-b border-gray-700/50 lg:border-b-0 lg:border-r lg:border-r-gray-700/50 transition-[height] duration-300 ease-in-out ${
-            mapCollapsed ? "h-0 border-b-0" : "h-[35vh] md:h-[35vh]"
+            mapCollapsed ? "h-0 border-b-0" : "h-[30vh] md:h-[32vh]"
           } lg:h-full lg:w-[35%] lg:max-w-[480px] lg:min-w-[340px]`}>
             <SpotMap
               current={mapCenter}
