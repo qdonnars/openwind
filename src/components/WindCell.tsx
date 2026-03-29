@@ -18,7 +18,7 @@ export function WindCell({ speed, gusts, direction, selected, isNow, onSelect }:
     return (
       <td
         role="cell"
-        className={`wind-cell min-w-[44px] lg:min-w-[52px] h-10 lg:h-14 bg-gray-800/40 text-center text-gray-600 text-xs align-middle cursor-pointer ${nowBorder} ${selectedStyle}`}
+        className={`wind-cell min-w-[44px] lg:min-w-[52px] h-12 lg:h-16 bg-gray-800/40 text-center text-gray-600 text-xs align-middle cursor-pointer ${nowBorder} ${selectedStyle}`}
         onClick={onSelect}
       >
         —
@@ -32,7 +32,7 @@ export function WindCell({ speed, gusts, direction, selected, isNow, onSelect }:
   return (
     <td
       role="cell"
-      className={`wind-cell min-w-[44px] lg:min-w-[52px] h-10 lg:h-14 text-center align-middle p-0 cursor-pointer ${nowBorder} ${selectedStyle}`}
+      className={`wind-cell min-w-[44px] lg:min-w-[52px] h-12 lg:h-16 text-center align-middle p-0 cursor-pointer ${nowBorder} ${selectedStyle}`}
       style={{ backgroundColor: bg, color }}
       onClick={onSelect}
       aria-label={`${Math.round(speed)} knots${gusts != null ? `, gusts ${Math.round(gusts)}` : ""}${direction != null ? `, direction ${direction}°` : ""}`}
