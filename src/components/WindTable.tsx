@@ -125,15 +125,6 @@ export function WindTable({
     return () => el.removeEventListener("scroll", checkScrollEnd);
   }, [checkScrollEnd]);
 
-  const scrollToNow = useCallback(() => {
-    if (!scrollRef.current || masterTimeline.length === 0) return;
-    const idx = masterTimeline.findIndex((t) => t.startsWith(nowHour));
-    const nearestIdx = idx >= 0 ? idx : masterTimeline.findIndex((t) => t > nowHour.slice(0, 13));
-    if (nearestIdx >= 0) {
-      const cellWidth = 44;
-      scrollRef.current.scrollTo({ left: Math.max(0, nearestIdx * cellWidth - 60), behavior: "smooth" });
-    }
-  }, [masterTimeline, nowHour]);
 
   if (isLoading) {
     return <SkeletonTable />;
