@@ -29,10 +29,10 @@ function createArrowSvg(
     <line x1="150" y1="150" x2="${tipX}" y2="${tipY}" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>
     <polygon points="${tipX},${tipY} ${lx},${ly} ${rx},${ry}" fill="${color}"/>
     <text x="${lblX}" y="${lblY}" text-anchor="middle" dominant-baseline="middle"
-      font-size="7" font-weight="700" fill="#fff"
+      font-size="9" font-weight="700" fill="#fff"
       style="text-shadow:0 0 3px #000,0 0 6px #000">${Math.round(speed)}</text>
-    <text x="${lblX}" y="${lblY + 9}" text-anchor="middle" dominant-baseline="middle"
-      font-size="5.5" fill="${bg}"
+    <text x="${lblX}" y="${lblY + 11}" text-anchor="middle" dominant-baseline="middle"
+      font-size="7" fill="${bg}"
       style="text-shadow:0 0 3px #000">${label}</text>
   </svg>`;
 }
@@ -210,9 +210,9 @@ export function SpotMap({
       const marker = L.circleMarker([spot.latitude, spot.longitude], {
         radius: active ? 10 : 7,
         color: active ? "#ffffff" : "#9ca3af",
-        fillColor: active ? "#3b82f6" : "#6b7280",
+        fillColor: active ? "#2dd4bf" : "#6b7280",
         fillOpacity: active ? 0.9 : 0.6,
-        weight: active ? 2 : 1,
+        weight: active ? 2.5 : 1,
         bubblingMouseEvents: false,
       })
         .bindTooltip(spot.name, {
@@ -268,9 +268,9 @@ export function SpotMap({
       const style = {
         radius: active ? 10 : 7,
         color: active ? "#ffffff" : "#9ca3af",
-        fillColor: active ? "#3b82f6" : "#6b7280",
+        fillColor: active ? "#2dd4bf" : "#6b7280",
         fillOpacity: active ? 0.9 : 0.6,
-        weight: active ? 2 : 1,
+        weight: active ? 2.5 : 1,
       };
 
       const isCustom = customSpots.some((cs) => spotKey(cs) === key);
@@ -359,7 +359,7 @@ export function SpotMap({
             </p>
             <div className="flex flex-col gap-2">
               <button
-                className="w-full py-2 rounded-lg bg-gray-700 text-white text-sm hover:bg-gray-600"
+                className="w-full min-h-[44px] py-2.5 rounded-lg bg-gray-700 text-white text-sm hover:bg-gray-600 active:bg-gray-500 transition-colors"
                 onClick={() => {
                   const s = pendingEdit;
                   setPendingEdit(null);
@@ -369,7 +369,7 @@ export function SpotMap({
                 Renommer
               </button>
               <button
-                className="w-full py-2 rounded-lg bg-red-700 text-white text-sm hover:bg-red-600"
+                className="w-full min-h-[44px] py-2.5 rounded-lg bg-red-700/80 text-white text-sm hover:bg-red-600 active:bg-red-500 transition-colors"
                 onClick={() => {
                   onRemoveRef.current(pendingEdit);
                   setPendingEdit(null);
@@ -378,7 +378,7 @@ export function SpotMap({
                 Supprimer
               </button>
               <button
-                className="w-full py-2 rounded-lg bg-transparent text-gray-400 text-sm"
+                className="w-full min-h-[44px] py-2.5 rounded-lg bg-transparent text-gray-400 text-sm hover:text-gray-300 transition-colors"
                 onClick={() => setPendingEdit(null)}
               >
                 Annuler
