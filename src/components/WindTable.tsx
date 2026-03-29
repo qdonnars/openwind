@@ -19,6 +19,13 @@ const MODEL_LABELS: Record<string, string> = {
   ECMWF: "ECMWF",
 };
 
+const MODEL_DESCRIPTIONS: Record<string, string> = {
+  AROME: "AROME — Modèle haute résolution (1h) — Météo-France",
+  ICON: "ICON — Modèle global (3h) — DWD Allemagne",
+  GFS: "GFS — Modèle global (3h) — NOAA États-Unis",
+  ECMWF: "ECMWF — Modèle global (6h) — Centre européen",
+};
+
 function autoResolution(forecasts: ModelForecast[]): number {
   let finest = 6;
   for (const f of forecasts) {
@@ -185,7 +192,7 @@ export function WindTable({
                 return (
                   <tr key={forecast.modelName} className={forecasts.indexOf(forecast) % 2 === 1 ? "model-row-alt" : ""}>
                     <td className="sticky left-0 z-10 bg-gray-900 px-2 py-1.5 whitespace-nowrap border-r border-gray-700 min-w-[56px]" role="rowheader">
-                      <span className="text-[12px] lg:text-[13px] font-bold text-gray-200 tracking-wide">{MODEL_LABELS[forecast.modelName] ?? forecast.modelName}</span>
+                      <span className="text-[12px] lg:text-[13px] font-bold text-gray-200 tracking-wide" title={MODEL_DESCRIPTIONS[forecast.modelName] ?? forecast.modelName}>{MODEL_LABELS[forecast.modelName] ?? forecast.modelName}</span>
                     </td>
                     {masterTimeline.map((t, i) => {
                       const idx = timeIndex.get(t);
