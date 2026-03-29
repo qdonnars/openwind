@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code
+.claude/
+
+# Test artifacts
+test-results/
+eval_screenshots.ts
+strategy_improvement.sh

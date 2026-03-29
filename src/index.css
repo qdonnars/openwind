@@ -111,15 +111,19 @@ body {
 }
 
 /* Model row alternating bg for visual separation */
-.model-row-alt td {
+/* Exclude first-child (sticky model name column) to preserve position: sticky */
+.model-row-alt td:not(:first-child) {
   position: relative;
 }
-.model-row-alt td::before {
+.model-row-alt td:not(:first-child)::before {
   content: '';
   position: absolute;
   inset: 0;
   background: rgba(255, 255, 255, 0.06);
   pointer-events: none;
+}
+.model-row-alt td:first-child {
+  background: rgb(14 17 23); /* slightly lighter than gray-950 for alt rows */
 }
 
 /* Cell press feedback */

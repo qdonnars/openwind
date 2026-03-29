@@ -149,8 +149,8 @@ export function WindTable({
 
   return (
     <div className="animate-fade-in">
-      {/* Spot name bar + Now button */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-gray-900/80 border-b border-gray-800/60">
+      {/* Spot name bar */}
+      <div className="flex items-center px-3 py-1.5 bg-gray-900/80 border-b border-gray-800/60">
         {spotName ? (
           <div className="flex items-center gap-2 min-w-0">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-teal-400 shrink-0">
@@ -162,17 +162,6 @@ export function WindTable({
         ) : (
           <div />
         )}
-        <button
-          onClick={scrollToNow}
-          className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-teal-300 bg-teal-500/10 hover:bg-teal-500/20 active:scale-95 transition-all border border-teal-500/20"
-          aria-label="Scroll to current hour"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-teal-400">
-            <circle cx="12" cy="12" r="10" />
-            <polyline points="12 6 12 12 16 14" />
-          </svg>
-          Now
-        </button>
       </div>
       <div className={`scroll-container ${scrolledEnd ? "scrolled-end" : ""}`}>
         <div ref={scrollRef} className="overflow-x-auto wind-table-scroll">

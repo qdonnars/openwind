@@ -36,7 +36,9 @@ export function Header({
             <span className="text-teal-400">Wind</span>
           </h1>
         </div>
-        <SpotSearch onSelect={onSelectSpot} />
+        <div className="flex-1 flex justify-center">
+          <SpotSearch onSelect={onSelectSpot} />
+        </div>
         {isSaved && (
           <button
             onClick={onRemove}

@@ -6,7 +6,7 @@ import { Header } from "./components/Header";
 import { WindTable } from "./components/WindTable";
 import { SpotMap } from "./components/SpotMap";
 
-const RADE_MARSEILLE: Spot = { name: "", latitude: 43.3, longitude: 5.35 };
+const RADE_MARSEILLE: Spot = { name: "Rade de Marseille", latitude: 43.3, longitude: 5.35 };
 
 function EmptyState() {
   return (
@@ -31,46 +31,28 @@ function EmptyState() {
   );
 }
 
-function MapToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
-  return (
-    <button
-      onClick={onToggle}
-      className={`lg:hidden z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-300 text-xs font-medium border border-gray-700/60 hover:bg-gray-800 active:scale-95 transition-all ${
-        collapsed
-          ? "mx-2 mt-1.5 mb-0.5 bg-gray-800/80"
-          : "absolute bottom-2 right-2 bg-gray-900/90 backdrop-blur"
-      }`}
-      aria-label={collapsed ? "Expand map" : "Collapse map"}
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-        {collapsed ? (
-          <><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></>
-        ) : (
-          <><path d="M4 14h6v6M14 4h6v6M10 14l-7 7M20 4l-6 6" /></>
-        )}
-      </svg>
-      {collapsed ? "Map" : "Collapse"}
-    </button>
-  );
-}
 
 function App() {
   const { customSpots, addSpot, removeSpot, renameSpot, isCustom } = useCustomSpots();
-  const [spot, setSpot] = useState<Spot | null>(() => customSpots[0] ?? null);
+  const [spot, setSpot] = useState<Spot | null>(() => customSpots[0] ?? RADE_MARSEILLE);
   const [forecasts, setForecasts] = useState<ModelForecast[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedHour, setSelectedHour] = useState<string | null>(null);
-  const [mapCollapsed, setMapCollapsed] = useState(false);
+
 
   useEffect(() => {
     if (!spot) return;
     let cancelled = false;
     setIsLoading(true);
-    setSelectedHour(null);
     fetchAllModels(spot.latitude, spot.longitude).then((data) => {
       if (!cancelled) {
         setForecasts(data);
         setIsLoading(false);
+        // Auto-select current hour so wind arrows show by default
+        const nowHour = new Date().toISOString().slice(0, 13);
+        const timeline = data[0]?.hourly.time ?? [];
+        const match = timeline.find((t) => t.startsWith(nowHour)) ?? timeline.find((t) => t > nowHour) ?? null;
+        setSelectedHour(match);
       }
     });
     return () => {
@@ -78,7 +60,8 @@ function App() {
     };
   }, [spot]);
 
-  const canSave = spot != null && !isCustom(spot);
+  const isDefault = spot != null && spot.latitude === RADE_MARSEILLE.latitude && spot.longitude === RADE_MARSEILLE.longitude && !isCustom(spot);
+  const canSave = spot != null && !isCustom(spot) && !isDefault;
   const isSaved = spot != null && isCustom(spot);
 
   const mapCenter: Spot = spot ?? RADE_MARSEILLE;
@@ -90,45 +73,38 @@ function App() {
         canSave={canSave}
         isSaved={isSaved}
         onSave={() => spot && addSpot(spot)}
-        onRemove={() => spot && removeSpot(spot)}
+        onRemove={() => { if (spot) { removeSpot(spot); setSpot(null); setForecasts([]); setSelectedHour(null); } }}
       />
 
-      {/* Mobile: stacked / Tablet: stacked smaller / Desktop: side by side */}
-      <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
-        {/* Map — collapsible on mobile, sidebar on desktop */}
-        <div className="relative shrink-0 lg:contents">
-          <div className={`overflow-hidden border-b border-gray-700/50 lg:border-b-0 lg:border-r lg:border-r-gray-700/50 transition-[height] duration-300 ease-in-out ${
-            mapCollapsed ? "h-0 border-b-0" : "h-[30vh] md:h-[32vh]"
-          } lg:h-full lg:w-[35%] lg:max-w-[480px] lg:min-w-[340px]`}>
-            <SpotMap
-              current={mapCenter}
-              customSpots={customSpots}
-              onSelectSpot={setSpot}
-              onAddSpot={(s) => { addSpot(s); setSpot(s); }}
-              onRemoveSpot={(s) => { removeSpot(s); if (spot?.latitude === s.latitude && spot?.longitude === s.longitude) setSpot(null); }}
-              onRenameSpot={(s, name) => { renameSpot(s, name); if (spot?.latitude === s.latitude && spot?.longitude === s.longitude) setSpot({ ...s, name }); }}
-              forecasts={forecasts}
-              selectedHour={selectedHour}
-            />
-          </div>
-          <MapToggle collapsed={mapCollapsed} onToggle={() => setMapCollapsed((v) => !v)} />
+      {/* Map fills remaining space, table as bottom panel */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        {/* Map — fills all available space */}
+        <div className="flex-1 min-h-0 relative">
+          <SpotMap
+            current={mapCenter}
+            customSpots={customSpots}
+            onSelectSpot={setSpot}
+            onAddSpot={(s) => { addSpot(s); setSpot(s); }}
+            onRemoveSpot={(s) => { removeSpot(s); if (spot?.latitude === s.latitude && spot?.longitude === s.longitude) { setSpot(null); setForecasts([]); setSelectedHour(null); } }}
+            onRenameSpot={(s, name) => { renameSpot(s, name); if (spot?.latitude === s.latitude && spot?.longitude === s.longitude) setSpot({ ...s, name }); }}
+            forecasts={forecasts}
+            selectedHour={selectedHour}
+          />
         </div>
 
-        {/* Wind data — main content */}
-        <div className="flex-1 min-h-0 flex flex-col min-w-0 bg-gray-950">
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            {spot ? (
-              <WindTable
-                forecasts={forecasts}
-                isLoading={isLoading}
-                selectedHour={selectedHour}
-                onSelectHour={setSelectedHour}
-                spotName={spot?.name}
-              />
-            ) : (
-              <EmptyState />
-            )}
-          </div>
+        {/* Wind table — bottom panel */}
+        <div className="shrink-0 max-h-[45vh] md:max-h-[40vh] overflow-y-auto bg-gray-950 border-t border-gray-700/50">
+          {spot ? (
+            <WindTable
+              forecasts={forecasts}
+              isLoading={isLoading}
+              selectedHour={selectedHour}
+              onSelectHour={setSelectedHour}
+              spotName={spot?.name}
+            />
+          ) : (
+            <EmptyState />
+          )}
           <footer className="text-center text-gray-400 text-[11px] py-1 shrink-0">
             Data by{" "}
             <a
