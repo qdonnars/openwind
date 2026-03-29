@@ -43,7 +43,7 @@ export function WindCell({ speed, gusts, direction, selected, isNow, onSelect }:
           <span className="text-[17px] lg:text-[20px] font-bold">{Math.round(speed)}</span>
         </div>
         {gusts != null && (
-          <span className="text-[11px] lg:text-[12px] opacity-85 font-semibold">{Math.round(gusts)}</span>
+          <span className="text-[13px] lg:text-[14px] opacity-90 font-semibold">{Math.round(gusts)}</span>
         )}
       </div>
     </td>
