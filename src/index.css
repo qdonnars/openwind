@@ -110,6 +110,18 @@ body {
   animation: fadeInUp 0.35s ease-out;
 }
 
+/* Model row alternating bg for visual separation */
+.model-row-alt td {
+  position: relative;
+}
+.model-row-alt td::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.03);
+  pointer-events: none;
+}
+
 /* Cell press feedback */
 .wind-cell {
   transition: transform 0.1s ease, filter 0.1s ease;
@@ -117,6 +129,30 @@ body {
 .wind-cell:active {
   transform: scale(0.95);
   filter: brightness(0.85);
+}
+
+/* Modal enter animation */
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.animate-modal-in {
+  animation: modalIn 0.2s ease-out;
+}
+
+/* Empty state pulse */
+@keyframes emptyPulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+.animate-empty-pulse {
+  animation: emptyPulse 3s ease-in-out infinite;
 }
 
 /* Leaflet attribution smaller on mobile */

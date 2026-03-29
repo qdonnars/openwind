@@ -12,13 +12,13 @@ interface WindCellProps {
 
 export function WindCell({ speed, gusts, direction, selected, isNow, onSelect }: WindCellProps) {
   const nowBorder = isNow ? "border-l-2 border-l-teal-400" : "";
+  const selectedStyle = selected ? "ring-2 ring-teal-400/70 ring-inset bg-teal-400/10" : "";
 
   if (speed == null) {
     return (
       <td
-        className={`wind-cell min-w-[44px] h-12 bg-gray-800/40 text-center text-gray-600 text-xs align-middle cursor-pointer ${nowBorder} ${
-          selected ? "outline outline-2 outline-teal-400 -outline-offset-1" : ""
-        }`}
+        role="cell"
+        className={`wind-cell min-w-[44px] lg:min-w-[52px] h-12 lg:h-14 bg-gray-800/40 text-center text-gray-600 text-xs align-middle cursor-pointer ${nowBorder} ${selectedStyle}`}
         onClick={onSelect}
       >
         —
@@ -31,19 +31,19 @@ export function WindCell({ speed, gusts, direction, selected, isNow, onSelect }:
 
   return (
     <td
-      className={`wind-cell min-w-[44px] h-12 text-center align-middle p-0 cursor-pointer ${nowBorder} ${
-        selected ? "outline outline-2 outline-teal-400 -outline-offset-1" : ""
-      }`}
+      role="cell"
+      className={`wind-cell min-w-[44px] lg:min-w-[52px] h-12 lg:h-14 text-center align-middle p-0 cursor-pointer ${nowBorder} ${selectedStyle}`}
       style={{ backgroundColor: bg, color }}
       onClick={onSelect}
+      aria-label={`${Math.round(speed)} noeuds${gusts != null ? `, rafales ${Math.round(gusts)}` : ""}${direction != null ? `, direction ${direction}°` : ""}`}
     >
       <div className="flex flex-col items-center leading-none gap-0.5">
         <div className="flex items-center gap-0.5">
           {direction != null && <WindArrow degrees={direction} />}
-          <span className="text-[13px] font-bold">{Math.round(speed)}</span>
+          <span className="text-[13px] lg:text-[15px] font-bold">{Math.round(speed)}</span>
         </div>
         {gusts != null && (
-          <span className="text-[10px] opacity-70 font-medium">{Math.round(gusts)}</span>
+          <span className="text-[11px] lg:text-[12px] opacity-85 font-semibold">{Math.round(gusts)}</span>
         )}
       </div>
     </td>

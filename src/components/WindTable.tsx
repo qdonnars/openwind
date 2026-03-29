@@ -129,8 +129,8 @@ export function WindTable({
     <div className="animate-fade-in">
       <div className={`scroll-container ${scrolledEnd ? "scrolled-end" : ""}`}>
         <div ref={scrollRef} className="overflow-x-auto wind-table-scroll">
-          <table className="border-collapse">
-            <thead>
+          <table className="border-collapse" role="table">
+            <thead className="sticky top-0 z-20">
               <TimelineHeader
                 times={masterTimeline}
                 selectedHour={selectedHour}
@@ -143,12 +143,9 @@ export function WindTable({
               {forecasts.map((forecast) => {
                 const timeIndex = buildTimeIndex(forecast.hourly.time);
                 return (
-                  <tr key={forecast.modelName}>
-                    <td className="sticky left-0 z-10 bg-gray-900 px-2 py-1 whitespace-nowrap border-r border-gray-700 min-w-[52px]">
-                      <div className="flex flex-col items-center leading-tight">
-                        <span className="text-[11px] font-bold text-gray-100 tracking-wide">kn</span>
-                        <span className="text-[10px] font-medium text-gray-400">{MODEL_LABELS[forecast.modelName] ?? forecast.modelName}</span>
-                      </div>
+                  <tr key={forecast.modelName} className={forecasts.indexOf(forecast) % 2 === 1 ? "model-row-alt" : ""}>
+                    <td className="sticky left-0 z-10 bg-gray-900 px-2 py-1.5 whitespace-nowrap border-r border-gray-700/60 min-w-[52px]" role="rowheader">
+                      <span className="text-[12px] lg:text-[13px] font-bold text-gray-200 tracking-wide">{MODEL_LABELS[forecast.modelName] ?? forecast.modelName}</span>
                     </td>
                     {masterTimeline.map((t, i) => {
                       const idx = timeIndex.get(t);

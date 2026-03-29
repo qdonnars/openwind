@@ -67,7 +67,7 @@ export function SpotSearch({ onSelect }: SpotSearchProps) {
           onKeyDown={(e) => {
             if (e.key === "Escape") setOpen(false);
           }}
-          placeholder="Rechercher un spot..."
+          placeholder="Rechercher..."
           className="w-full pl-9 pr-3 py-2.5 min-h-[44px] bg-gray-800/80 border border-gray-700/60 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-teal-500/60 focus:ring-1 focus:ring-teal-500/20 transition-all"
         />
       </div>

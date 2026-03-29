@@ -62,12 +62,13 @@ export function TimelineHeader({
     <>
       {/* Day headers */}
       <tr>
-        <th className="sticky left-0 z-10 bg-gray-900 min-w-[52px]" />
+        <th className="sticky left-0 z-20 bg-gray-900 min-w-[52px]" scope="col" />
         {Array.from(days.entries()).map(([dateKey, indices]) => (
           <th
             key={dateKey}
             colSpan={indices.length}
-            className="bg-gray-900 text-gray-200 text-xs font-semibold py-2 border-b border-gray-700 border-l border-l-gray-600 uppercase tracking-wide"
+            scope="colgroup"
+            className="bg-gray-900 text-gray-200 text-xs lg:text-sm font-bold py-2 border-b border-gray-700 border-l border-l-gray-600 uppercase tracking-wide"
           >
             {formatDayHeader(times[indices[0]])}
           </th>
@@ -75,7 +76,7 @@ export function TimelineHeader({
       </tr>
       {/* Weather icons */}
       <tr>
-        <td className="sticky left-0 z-10 bg-gray-900 min-w-[52px]" />
+        <td className="sticky left-0 z-20 bg-gray-900 min-w-[52px]" />
         {times.map((t, i) => (
           <td
             key={i}
@@ -87,9 +88,9 @@ export function TimelineHeader({
           </td>
         ))}
       </tr>
-      {/* Color bar — thicker for visibility */}
+      {/* Color bar */}
       <tr>
-        <td className="sticky left-0 z-10 bg-gray-900 min-w-[52px]" />
+        <td className="sticky left-0 z-20 bg-gray-900 min-w-[52px]" />
         {times.map((t, i) => (
           <td
             key={i}
@@ -101,13 +102,16 @@ export function TimelineHeader({
       </tr>
       {/* Hour numbers */}
       <tr>
-        <th className="sticky left-0 z-10 bg-gray-900 min-w-[52px]" />
+        <th className="sticky left-0 z-20 bg-gray-900 min-w-[52px]" scope="col">
+          <span className="text-[11px] lg:text-[12px] font-semibold text-gray-400">kn</span>
+        </th>
         {times.map((t, i) => {
           const isNow = t.startsWith(nowHour);
           return (
             <th
               key={i}
-              className={`text-xs font-semibold py-1 cursor-pointer transition-colors relative ${
+              scope="col"
+              className={`text-xs lg:text-sm font-semibold py-1.5 cursor-pointer transition-colors relative ${
                 t === selectedHour
                   ? "text-white bg-teal-600"
                   : isNow
@@ -118,7 +122,7 @@ export function TimelineHeader({
             >
               {formatHour(t)}
               {isNow && (
-                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-teal-400" />
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-teal-400" />
               )}
             </th>
           );
