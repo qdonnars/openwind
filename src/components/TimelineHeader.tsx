@@ -115,7 +115,7 @@ export function TimelineHeader({
                 t === selectedHour
                   ? "text-white bg-teal-600"
                   : isNow
-                  ? "text-teal-300 bg-teal-900/40"
+                  ? "text-teal-100 bg-teal-700/70 font-bold"
                   : "text-gray-400 bg-gray-900 hover:text-gray-200 hover:bg-gray-800"
               }`}
               onClick={() => onSelectHour(t)}
