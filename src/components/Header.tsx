@@ -27,7 +27,7 @@ export function Header({
   onRemove,
 }: HeaderProps) {
   return (
-    <header className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur-lg border-b border-gray-800/60 px-3 py-2 lg:px-6">
+    <header className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur-lg border-b border-teal-500/20 px-3 py-2 lg:px-6">
       <div className="flex items-center gap-3 max-w-screen-2xl mx-auto">
         <div className="flex items-center gap-2 shrink-0">
           <WindIcon />
@@ -40,11 +40,11 @@ export function Header({
         {isSaved && (
           <button
             onClick={onRemove}
-            className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-gray-800/80 text-red-400 hover:bg-red-900/60 active:bg-red-900 active:scale-95 transition-all"
-            title="Supprimer ce spot"
-            aria-label="Supprimer ce spot"
+            className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-red-700/20 text-red-400 hover:bg-red-700/40 active:bg-red-700/60 active:scale-95 transition-all border border-red-700/30"
+            title="Delete this spot"
+            aria-label="Delete this spot"
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
         )}
         {canSave && (

@@ -62,7 +62,7 @@ export function TimelineHeader({
     <>
       {/* Day headers */}
       <tr>
-        <th className="sticky left-0 z-20 bg-gray-900 min-w-[52px]" scope="col" />
+        <th className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" scope="col" />
         {Array.from(days.entries()).map(([dateKey, indices]) => (
           <th
             key={dateKey}
@@ -76,7 +76,7 @@ export function TimelineHeader({
       </tr>
       {/* Weather icons */}
       <tr>
-        <td className="sticky left-0 z-20 bg-gray-900 min-w-[52px]" />
+        <td className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" />
         {times.map((t, i) => (
           <td
             key={i}
@@ -90,11 +90,11 @@ export function TimelineHeader({
       </tr>
       {/* Color bar */}
       <tr>
-        <td className="sticky left-0 z-20 bg-gray-900 min-w-[52px]" />
+        <td className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" />
         {times.map((t, i) => (
           <td
             key={i}
-            className="h-2 p-0 cursor-pointer transition-colors"
+            className="h-3 p-0 cursor-pointer transition-colors"
             style={{ backgroundColor: getWindColor(avgSpeed(t)) }}
             onClick={() => onSelectHour(t)}
           />
@@ -102,8 +102,8 @@ export function TimelineHeader({
       </tr>
       {/* Hour numbers */}
       <tr>
-        <th className="sticky left-0 z-20 bg-gray-900 min-w-[52px]" scope="col">
-          <span className="text-[11px] lg:text-[12px] font-semibold text-gray-400">kn</span>
+        <th className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" scope="col">
+          <span className="text-[12px] lg:text-[13px] font-bold text-gray-300">kn</span>
         </th>
         {times.map((t, i) => {
           const isNow = t.startsWith(nowHour);

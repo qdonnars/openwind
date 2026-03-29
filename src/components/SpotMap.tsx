@@ -231,8 +231,13 @@ export function SpotMap({
 
     setTimeout(() => map.invalidateSize(), 200);
 
+    // Re-invalidate map when container resizes (e.g. mobile collapse, desktop layout)
+    const ro = new ResizeObserver(() => map.invalidateSize());
+    ro.observe(el);
+
     return () => {
       cancelPress();
+      ro.disconnect();
       el.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
@@ -351,7 +356,7 @@ export function SpotMap({
       <div ref={containerRef} className="w-full h-full overflow-hidden" />
       {/* Marker long-press: rename or delete */}
       {pendingEdit && (
-        <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50 backdrop-blur-sm animate-fade-in" role="dialog" aria-label="Options du spot">
+        <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50 backdrop-blur-sm animate-fade-in" role="dialog" aria-label="Spot options">
           <div className="bg-gray-800/95 backdrop-blur rounded-xl p-5 mx-4 w-full max-w-xs shadow-2xl border border-gray-700/50 animate-modal-in">
             <p className="text-white text-sm font-semibold mb-1">{pendingEdit.name}</p>
             <p className="text-gray-400 text-xs mb-4">
@@ -366,7 +371,7 @@ export function SpotMap({
                   setPendingSpot({ lat: s.latitude, lng: s.longitude, name: s.name, editingSpot: s });
                 }}
               >
-                Renommer
+                Rename
               </button>
               <button
                 className="w-full min-h-[44px] py-2.5 rounded-lg bg-red-700/80 text-white text-sm font-medium hover:bg-red-600 active:bg-red-500 active:scale-[0.98] transition-all"
@@ -375,13 +380,13 @@ export function SpotMap({
                   setPendingEdit(null);
                 }}
               >
-                Supprimer
+                Delete
               </button>
               <button
                 className="w-full min-h-[44px] py-2.5 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700/50 hover:text-gray-200 active:scale-[0.98] transition-all"
                 onClick={() => setPendingEdit(null)}
               >
-                Annuler
+                Cancel
               </button>
             </div>
           </div>
@@ -390,10 +395,10 @@ export function SpotMap({
 
       {/* New spot / rename spot */}
       {pendingSpot && (
-        <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50 backdrop-blur-sm animate-fade-in" role="dialog" aria-label={pendingSpot.editingSpot ? "Renommer le spot" : "Nouveau spot"}>
+        <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50 backdrop-blur-sm animate-fade-in" role="dialog" aria-label={pendingSpot.editingSpot ? "Rename spot" : "New spot"}>
           <div className="bg-gray-800/95 backdrop-blur rounded-xl p-5 mx-4 w-full max-w-xs shadow-2xl border border-gray-700/50 animate-modal-in">
             <p className="text-white text-sm font-semibold mb-1">
-              {pendingSpot.editingSpot ? "Renommer le spot" : "Nouveau spot"}
+              {pendingSpot.editingSpot ? "Rename spot" : "New spot"}
             </p>
             <p className="text-gray-400 text-xs mb-3">
               {pendingSpot.lat.toFixed(4)}, {pendingSpot.lng.toFixed(4)}
@@ -403,14 +408,14 @@ export function SpotMap({
               value={pendingSpot.name}
               onChange={(e) => setPendingSpot({ ...pendingSpot, name: e.target.value })}
               autoFocus
-              aria-label="Nom du spot"
+              aria-label="Spot name"
             />
             <div className="flex gap-2">
               <button
                 className="flex-1 min-h-[44px] py-2.5 rounded-lg border border-gray-600 text-gray-300 text-sm font-medium hover:bg-gray-700/50 hover:text-gray-200 active:scale-[0.98] transition-all"
                 onClick={() => setPendingSpot(null)}
               >
-                Annuler
+                Cancel
               </button>
               <button
                 className="flex-1 min-h-[44px] py-2.5 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-500 active:scale-[0.98] transition-all"
@@ -427,7 +432,7 @@ export function SpotMap({
                   setPendingSpot(null);
                 }}
               >
-                {pendingSpot.editingSpot ? "Renommer" : "Créer"}
+                {pendingSpot.editingSpot ? "Rename" : "Create"}
               </button>
             </div>
           </div>

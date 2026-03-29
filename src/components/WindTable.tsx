@@ -13,8 +13,8 @@ const MODEL_STEP: Record<string, number> = {
 };
 
 const MODEL_LABELS: Record<string, string> = {
-  AROME: "Arome",
-  ICON: "Icon",
+  AROME: "AROME",
+  ICON: "ICON",
   GFS: "GFS",
   ECMWF: "ECMWF",
 };
@@ -33,6 +33,7 @@ interface WindTableProps {
   isLoading: boolean;
   selectedHour: string | null;
   onSelectHour: (time: string) => void;
+  spotName?: string;
 }
 
 function getMasterTimeline(forecasts: ModelForecast[]): string[] {
@@ -77,6 +78,7 @@ export function WindTable({
   isLoading,
   selectedHour,
   onSelectHour,
+  spotName,
 }: WindTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolledEnd, setScrolledEnd] = useState(false);
@@ -113,6 +115,16 @@ export function WindTable({
     return () => el.removeEventListener("scroll", checkScrollEnd);
   }, [checkScrollEnd]);
 
+  const scrollToNow = useCallback(() => {
+    if (!scrollRef.current || masterTimeline.length === 0) return;
+    const idx = masterTimeline.findIndex((t) => t.startsWith(nowHour));
+    const nearestIdx = idx >= 0 ? idx : masterTimeline.findIndex((t) => t > nowHour.slice(0, 13));
+    if (nearestIdx >= 0) {
+      const cellWidth = 44;
+      scrollRef.current.scrollTo({ left: Math.max(0, nearestIdx * cellWidth - 60), behavior: "smooth" });
+    }
+  }, [masterTimeline, nowHour]);
+
   if (isLoading) {
     return <SkeletonTable />;
   }
@@ -120,13 +132,38 @@ export function WindTable({
   if (forecasts.length === 0) {
     return (
       <div className="text-gray-500 text-center py-8 text-sm">
-        Aucune donnee disponible
+        No data available
       </div>
     );
   }
 
   return (
     <div className="animate-fade-in">
+      {/* Spot name bar + Now button */}
+      <div className="flex items-center justify-between px-3 py-1.5 bg-gray-900/80 border-b border-gray-800/60">
+        {spotName ? (
+          <div className="flex items-center gap-2 min-w-0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-teal-400 shrink-0">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+            <span className="text-sm font-semibold text-gray-200 truncate">{spotName}</span>
+          </div>
+        ) : (
+          <div />
+        )}
+        <button
+          onClick={scrollToNow}
+          className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-teal-300 bg-teal-500/10 hover:bg-teal-500/20 active:scale-95 transition-all border border-teal-500/20"
+          aria-label="Scroll to current hour"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-teal-400">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          Now
+        </button>
+      </div>
       <div className={`scroll-container ${scrolledEnd ? "scrolled-end" : ""}`}>
         <div ref={scrollRef} className="overflow-x-auto wind-table-scroll">
           <table className="border-collapse" role="table">
@@ -144,7 +181,7 @@ export function WindTable({
                 const timeIndex = buildTimeIndex(forecast.hourly.time);
                 return (
                   <tr key={forecast.modelName} className={forecasts.indexOf(forecast) % 2 === 1 ? "model-row-alt" : ""}>
-                    <td className="sticky left-0 z-10 bg-gray-900 px-2 py-1.5 whitespace-nowrap border-r border-gray-700/60 min-w-[52px]" role="rowheader">
+                    <td className="sticky left-0 z-10 bg-gray-900 px-2 py-1.5 whitespace-nowrap border-r border-gray-700 min-w-[56px]" role="rowheader">
                       <span className="text-[12px] lg:text-[13px] font-bold text-gray-200 tracking-wide">{MODEL_LABELS[forecast.modelName] ?? forecast.modelName}</span>
                     </td>
                     {masterTimeline.map((t, i) => {

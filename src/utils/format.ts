@@ -1,4 +1,4 @@
-const DAYS_FR = ["DIM", "LUN", "MAR", "MER", "JEU", "VEN", "SAM"];
+const DAYS_EN = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
 export function formatHour(iso: string): string {
   const d = new Date(iso);
@@ -7,7 +7,7 @@ export function formatHour(iso: string): string {
 
 export function formatDayHeader(iso: string): string {
   const d = new Date(iso);
-  return `${DAYS_FR[d.getDay()]}. ${d.getDate()}`;
+  return `${DAYS_EN[d.getDay()]} ${d.getDate()}`;
 }
 
 export function groupHoursByDay(times: string[]): Map<string, number[]> {

@@ -14,15 +14,17 @@ function EmptyState() {
       <div className="text-center py-10 max-w-xs mx-auto">
         <div className="mb-4 inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-teal-500/10 animate-empty-pulse">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-teal-400">
-            <circle cx="12" cy="12" r="10" strokeDasharray="4 3" />
-            <path d="M12 8v4M12 16h.01" />
+            <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2" />
+            <path d="M9.6 4.6A2 2 0 1 1 11 8H2" />
+            <path d="M12.6 19.4A2 2 0 1 0 14 16H2" />
           </svg>
         </div>
         <p className="text-gray-200 text-base font-semibold mb-1.5">
-          Ajouter un spot
+          Add a spot
         </p>
         <p className="text-gray-400 text-sm leading-relaxed">
-          Maintenir le doigt appuyé sur la carte pour placer un spot de vent
+          <span className="lg:hidden">Long press on the map to place a wind spot</span>
+          <span className="hidden lg:inline">Long click on the map to place a wind spot</span>
         </p>
       </div>
     </div>
@@ -38,7 +40,7 @@ function MapToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () =
           ? "mx-2 mt-1.5 mb-0.5 bg-gray-800/80"
           : "absolute bottom-2 right-2 bg-gray-900/90 backdrop-blur"
       }`}
-      aria-label={collapsed ? "Agrandir la carte" : "Réduire la carte"}
+      aria-label={collapsed ? "Expand map" : "Collapse map"}
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
         {collapsed ? (
@@ -47,7 +49,7 @@ function MapToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () =
           <><path d="M4 14h6v6M14 4h6v6M10 14l-7 7M20 4l-6 6" /></>
         )}
       </svg>
-      {collapsed ? "Carte" : "Réduire"}
+      {collapsed ? "Map" : "Collapse"}
     </button>
   );
 }
@@ -95,8 +97,8 @@ function App() {
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
         {/* Map — collapsible on mobile, sidebar on desktop */}
         <div className="relative shrink-0 lg:contents">
-          <div className={`overflow-hidden border-b border-gray-800/60 lg:border-b-0 lg:border-r lg:border-r-gray-800/60 transition-[height] duration-300 ease-in-out ${
-            mapCollapsed ? "h-0 border-b-0" : "h-[25vh] md:h-[28vh]"
+          <div className={`overflow-hidden border-b border-gray-700/50 lg:border-b-0 lg:border-r lg:border-r-gray-700/50 transition-[height] duration-300 ease-in-out ${
+            mapCollapsed ? "h-0 border-b-0" : "h-[35vh] md:h-[35vh]"
           } lg:h-full lg:w-[35%] lg:max-w-[480px] lg:min-w-[340px]`}>
             <SpotMap
               current={mapCenter}
@@ -113,7 +115,7 @@ function App() {
         </div>
 
         {/* Wind data — main content */}
-        <div className="flex-1 min-h-0 flex flex-col min-w-0">
+        <div className="flex-1 min-h-0 flex flex-col min-w-0 bg-gray-950">
           <div className="flex-1 min-h-0 overflow-y-auto">
             {spot ? (
               <WindTable
@@ -121,17 +123,19 @@ function App() {
                 isLoading={isLoading}
                 selectedHour={selectedHour}
                 onSelectHour={setSelectedHour}
+                spotName={spot?.name}
               />
             ) : (
               <EmptyState />
             )}
           </div>
-          <footer className="text-center text-gray-500 text-[11px] py-1.5 border-t border-gray-800/40 shrink-0">
+          <footer className="text-center text-gray-400 text-[11px] py-1 shrink-0">
+            Data by{" "}
             <a
               href="https://open-meteo.com/"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline hover:text-gray-300 transition-colors"
+              className="underline hover:text-gray-200 transition-colors"
             >
               Open-Meteo.com
             </a>{" "}

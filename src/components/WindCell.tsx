@@ -35,7 +35,7 @@ export function WindCell({ speed, gusts, direction, selected, isNow, onSelect }:
       className={`wind-cell min-w-[44px] lg:min-w-[52px] h-12 lg:h-14 text-center align-middle p-0 cursor-pointer ${nowBorder} ${selectedStyle}`}
       style={{ backgroundColor: bg, color }}
       onClick={onSelect}
-      aria-label={`${Math.round(speed)} noeuds${gusts != null ? `, rafales ${Math.round(gusts)}` : ""}${direction != null ? `, direction ${direction}°` : ""}`}
+      aria-label={`${Math.round(speed)} knots${gusts != null ? `, gusts ${Math.round(gusts)}` : ""}${direction != null ? `, direction ${direction}°` : ""}`}
     >
       <div className="flex flex-col items-center leading-none gap-0.5">
         <div className="flex items-center gap-0.5">
