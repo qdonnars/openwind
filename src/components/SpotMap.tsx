@@ -29,10 +29,10 @@ function createArrowSvg(
     <line x1="150" y1="150" x2="${tipX}" y2="${tipY}" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>
     <polygon points="${tipX},${tipY} ${lx},${ly} ${rx},${ry}" fill="${color}"/>
     <text x="${lblX}" y="${lblY}" text-anchor="middle" dominant-baseline="middle"
-      font-size="7" font-weight="700" fill="#fff"
+      font-size="9" font-weight="700" fill="#fff"
       style="text-shadow:0 0 3px #000,0 0 6px #000">${Math.round(speed)}</text>
-    <text x="${lblX}" y="${lblY + 9}" text-anchor="middle" dominant-baseline="middle"
-      font-size="5.5" fill="${bg}"
+    <text x="${lblX}" y="${lblY + 11}" text-anchor="middle" dominant-baseline="middle"
+      font-size="7" fill="${bg}"
       style="text-shadow:0 0 3px #000">${label}</text>
   </svg>`;
 }
@@ -210,9 +210,9 @@ export function SpotMap({
       const marker = L.circleMarker([spot.latitude, spot.longitude], {
         radius: active ? 10 : 7,
         color: active ? "#ffffff" : "#9ca3af",
-        fillColor: active ? "#3b82f6" : "#6b7280",
+        fillColor: active ? "#2dd4bf" : "#6b7280",
         fillOpacity: active ? 0.9 : 0.6,
-        weight: active ? 2 : 1,
+        weight: active ? 2.5 : 1,
         bubblingMouseEvents: false,
       })
         .bindTooltip(spot.name, {
@@ -231,8 +231,13 @@ export function SpotMap({
 
     setTimeout(() => map.invalidateSize(), 200);
 
+    // Re-invalidate map when container resizes (e.g. mobile collapse, desktop layout)
+    const ro = new ResizeObserver(() => map.invalidateSize());
+    ro.observe(el);
+
     return () => {
       cancelPress();
+      ro.disconnect();
       el.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
@@ -268,9 +273,9 @@ export function SpotMap({
       const style = {
         radius: active ? 10 : 7,
         color: active ? "#ffffff" : "#9ca3af",
-        fillColor: active ? "#3b82f6" : "#6b7280",
+        fillColor: active ? "#2dd4bf" : "#6b7280",
         fillOpacity: active ? 0.9 : 0.6,
-        weight: active ? 2 : 1,
+        weight: active ? 2.5 : 1,
       };
 
       const isCustom = customSpots.some((cs) => spotKey(cs) === key);
@@ -351,37 +356,37 @@ export function SpotMap({
       <div ref={containerRef} className="w-full h-full overflow-hidden" />
       {/* Marker long-press: rename or delete */}
       {pendingEdit && (
-        <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50">
-          <div className="bg-gray-800 rounded-xl p-5 mx-4 w-full max-w-xs shadow-2xl">
+        <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50 backdrop-blur-sm animate-fade-in" role="dialog" aria-label="Spot options">
+          <div className="bg-gray-800/95 backdrop-blur rounded-xl p-5 mx-4 w-full max-w-xs shadow-2xl border border-gray-700/50 animate-modal-in">
             <p className="text-white text-sm font-semibold mb-1">{pendingEdit.name}</p>
             <p className="text-gray-400 text-xs mb-4">
               {pendingEdit.latitude.toFixed(4)}, {pendingEdit.longitude.toFixed(4)}
             </p>
             <div className="flex flex-col gap-2">
               <button
-                className="w-full py-2 rounded-lg bg-gray-700 text-white text-sm hover:bg-gray-600"
+                className="w-full min-h-[44px] py-2.5 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-600 active:bg-gray-500 active:scale-[0.98] transition-all"
                 onClick={() => {
                   const s = pendingEdit;
                   setPendingEdit(null);
                   setPendingSpot({ lat: s.latitude, lng: s.longitude, name: s.name, editingSpot: s });
                 }}
               >
-                Renommer
+                Rename
               </button>
               <button
-                className="w-full py-2 rounded-lg bg-red-700 text-white text-sm hover:bg-red-600"
+                className="w-full min-h-[44px] py-2.5 rounded-lg bg-red-700/80 text-white text-sm font-medium hover:bg-red-600 active:bg-red-500 active:scale-[0.98] transition-all"
                 onClick={() => {
                   onRemoveRef.current(pendingEdit);
                   setPendingEdit(null);
                 }}
               >
-                Supprimer
+                Delete
               </button>
               <button
-                className="w-full py-2 rounded-lg bg-transparent text-gray-400 text-sm"
+                className="w-full min-h-[44px] py-2.5 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700/50 hover:text-gray-200 active:scale-[0.98] transition-all"
                 onClick={() => setPendingEdit(null)}
               >
-                Annuler
+                Cancel
               </button>
             </div>
           </div>
@@ -390,29 +395,30 @@ export function SpotMap({
 
       {/* New spot / rename spot */}
       {pendingSpot && (
-        <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50">
-          <div className="bg-gray-800 rounded-xl p-5 mx-4 w-full max-w-xs shadow-2xl">
+        <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50 backdrop-blur-sm animate-fade-in" role="dialog" aria-label={pendingSpot.editingSpot ? "Rename spot" : "New spot"}>
+          <div className="bg-gray-800/95 backdrop-blur rounded-xl p-5 mx-4 w-full max-w-xs shadow-2xl border border-gray-700/50 animate-modal-in">
             <p className="text-white text-sm font-semibold mb-1">
-              {pendingSpot.editingSpot ? "Renommer le spot" : "Nouveau spot"}
+              {pendingSpot.editingSpot ? "Rename spot" : "New spot"}
             </p>
             <p className="text-gray-400 text-xs mb-3">
               {pendingSpot.lat.toFixed(4)}, {pendingSpot.lng.toFixed(4)}
             </p>
             <input
-              className="w-full bg-gray-700 text-white text-sm rounded-lg px-3 py-2 mb-4 outline-none border border-gray-600 focus:border-blue-500"
+              className="w-full bg-gray-700 text-white text-sm rounded-lg px-3 py-2.5 mb-4 outline-none border border-gray-600 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30 transition-colors"
               value={pendingSpot.name}
               onChange={(e) => setPendingSpot({ ...pendingSpot, name: e.target.value })}
               autoFocus
+              aria-label="Spot name"
             />
             <div className="flex gap-2">
               <button
-                className="flex-1 py-2 rounded-lg bg-gray-700 text-gray-300 text-sm hover:bg-gray-600"
+                className="flex-1 min-h-[44px] py-2.5 rounded-lg border border-gray-600 text-gray-300 text-sm font-medium hover:bg-gray-700/50 hover:text-gray-200 active:scale-[0.98] transition-all"
                 onClick={() => setPendingSpot(null)}
               >
-                Annuler
+                Cancel
               </button>
               <button
-                className="flex-1 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-500"
+                className="flex-1 min-h-[44px] py-2.5 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-500 active:scale-[0.98] transition-all"
                 onClick={() => {
                   if (pendingSpot.editingSpot) {
                     onRenameRef.current(pendingSpot.editingSpot, pendingSpot.name);
@@ -426,7 +432,7 @@ export function SpotMap({
                   setPendingSpot(null);
                 }}
               >
-                {pendingSpot.editingSpot ? "Renommer" : "Créer"}
+                {pendingSpot.editingSpot ? "Rename" : "Create"}
               </button>
             </div>
           </div>

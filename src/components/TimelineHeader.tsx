@@ -7,6 +7,7 @@ interface TimelineHeaderProps {
   selectedHour: string | null;
   onSelectHour: (time: string) => void;
   forecasts: ModelForecast[];
+  nowHour: string;
 }
 
 function wmoIcon(code: number | null): string {
@@ -30,6 +31,7 @@ export function TimelineHeader({
   selectedHour,
   onSelectHour,
   forecasts,
+  nowHour,
 }: TimelineHeaderProps) {
   const days = groupHoursByDay(times);
 
@@ -60,12 +62,13 @@ export function TimelineHeader({
     <>
       {/* Day headers */}
       <tr>
-        <th className="sticky left-0 z-10 bg-gray-900 min-w-[40px]" />
+        <th className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" scope="col" />
         {Array.from(days.entries()).map(([dateKey, indices]) => (
           <th
             key={dateKey}
             colSpan={indices.length}
-            className="bg-gray-900 text-gray-200 text-[9px] font-semibold py-1 border-b border-gray-700 border-l border-l-gray-600"
+            scope="colgroup"
+            className="bg-gray-900 text-gray-200 text-xs lg:text-sm font-bold py-2 border-b border-gray-700 border-l border-l-gray-600 uppercase tracking-wide"
           >
             {formatDayHeader(times[indices[0]])}
           </th>
@@ -73,12 +76,12 @@ export function TimelineHeader({
       </tr>
       {/* Weather icons */}
       <tr>
-        <td className="sticky left-0 z-10 bg-gray-900 min-w-[40px]" />
+        <td className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" />
         {times.map((t, i) => (
           <td
             key={i}
             className="text-center p-0 bg-gray-900 cursor-pointer leading-none"
-            style={{ fontSize: "14px", lineHeight: "16px" }}
+            style={{ fontSize: "16px", lineHeight: "22px" }}
             onClick={() => onSelectHour(t)}
           >
             {wmoIcon(weatherCode(t))}
@@ -87,11 +90,11 @@ export function TimelineHeader({
       </tr>
       {/* Color bar */}
       <tr>
-        <td className="sticky left-0 z-10 bg-gray-900 min-w-[40px]" />
+        <td className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" />
         {times.map((t, i) => (
           <td
             key={i}
-            className="h-1.5 p-0 cursor-pointer"
+            className="h-3 p-0 cursor-pointer transition-colors"
             style={{ backgroundColor: getWindColor(avgSpeed(t)) }}
             onClick={() => onSelectHour(t)}
           />
@@ -99,20 +102,31 @@ export function TimelineHeader({
       </tr>
       {/* Hour numbers */}
       <tr>
-        <th className="sticky left-0 z-10 bg-gray-900 min-w-[40px]" />
-        {times.map((t, i) => (
-          <th
-            key={i}
-            className={`text-[8px] font-normal py-px cursor-pointer ${
-              t === selectedHour
-                ? "text-white bg-red-600"
-                : "text-gray-500 bg-gray-900 hover:text-gray-300"
-            }`}
-            onClick={() => onSelectHour(t)}
-          >
-            {formatHour(t)}
-          </th>
-        ))}
+        <th className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" scope="col">
+          <span className="text-[12px] lg:text-[13px] font-bold text-gray-300">kn</span>
+        </th>
+        {times.map((t, i) => {
+          const isNow = t.startsWith(nowHour);
+          return (
+            <th
+              key={i}
+              scope="col"
+              className={`text-xs lg:text-sm font-semibold py-1.5 cursor-pointer transition-colors relative ${
+                t === selectedHour
+                  ? "text-white bg-teal-600"
+                  : isNow
+                  ? "text-teal-100 bg-teal-700/70 font-bold"
+                  : "text-gray-400 bg-gray-900 hover:text-gray-200 hover:bg-gray-800"
+              }`}
+              onClick={() => onSelectHour(t)}
+            >
+              {formatHour(t)}
+              {isNow && (
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-teal-400" />
+              )}
+            </th>
+          );
+        })}
       </tr>
     </>
   );
