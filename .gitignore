@@ -26,6 +26,9 @@ dist-ssr
 # Claude Code
 .claude/
 
+# Internal scoping/decision docs (not part of the public repo)
+plan/
+
 # Test artifacts
 test-results/
 eval_screenshots.ts

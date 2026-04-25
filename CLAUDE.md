@@ -1,13 +1,13 @@
-# OpenWind — Working Notes for Claude
+# OpenWind — Working Notes
 
 ## Mission
 
 Open-source Mediterranean sailing planner powered by an MCP server and a public web app.
-The user describes their trip in natural language to an LLM (Claude Desktop, Claude.ai, any MCP client).
-The LLM orchestrates marine data fetches, estimates passage time and complexity via MCP tools,
+The user describes their trip in natural language to an MCP client (e.g. Claude Desktop, or any other).
+The client orchestrates marine data fetches, estimates passage time and complexity via MCP tools,
 and renders a precomputed plan in the standalone web app.
 
-The web app is **strictly standalone** — it never proposes "talk to Claude". Conversational entry happens on the user's MCP client side.
+The web app is **strictly standalone** — it never proposes "talk to an assistant". Conversational entry happens client-side.
 
 ## Architecture (cible)
 
@@ -16,7 +16,7 @@ The web app is **strictly standalone** — it never proposes "talk to Claude". C
 - `packages/mcp-core/` — Python lib, FastMCP server definition (cloud-agnostic, redeployable anywhere)
 - `packages/hf-space/` — Thin Gradio wrapper for Hugging Face Spaces deployment, served at **mcp.openwind.fr**
 
-État actuel (2026-04-26) : la migration vers cette structure est en cours, voir `plan/` à la racine.
+Plan d'exécution détaillé : `plan/` (local, non-tracké).
 
 ## Cloud-agnostic principle (non-négociable)
 
@@ -50,7 +50,6 @@ We could re-deploy on Fly.io, Modal, or self-hosted by writing a different wrapp
 - Commits: **conventional commits** (`feat:`, `fix:`, `refacto:`, `docs:`, `chore:`, `test:`)
 - All adapters implement `MarineDataAdapter` Protocol from `adapters/base.py`
 - Async everywhere (httpx, asyncio.gather)
-- Browser automation : **Chrome DevTools MCP** (Playwright débranché)
 
 ## Failure modes — things to avoid
 
@@ -60,38 +59,11 @@ We could re-deploy on Fly.io, Modal, or self-hosted by writing a different wrapp
 - ❌ Don't replace LLM qualitative judgment with numerical scoring (no `find_best_window` in V1)
 - ❌ Don't try to compete with real routing tools (Predict Wind, qtVlm) on optimization
 - ❌ Don't couple `mcp-core` to Gradio or HF Spaces — those belong only in `hf-space/`
-- ❌ Don't make the web app propose "chat with Claude" — it stays standalone
-- ❌ Don't réintroduire les zones d'accélération côtière (retiré V1, cf. `plan/02-decisions.md`)
+- ❌ Don't make the web app propose to chat with an assistant — it stays standalone
+- ❌ Don't réintroduire les zones d'accélération côtière (retiré V1)
 - ❌ Don't shipper de mapping "Sun Odyssey 32 → cruiser_30ft" en dur côté serveur — le LLM décide à partir des descriptions de `list_boat_archetypes()`
-
-## HF Space deployment notes
-
-- Space type: Gradio, hardware CPU Basic (free)
-- Custom domain `mcp.openwind.fr` via CNAME to `hf.space`
-- Space autosleeps; first call after idle has ~5s cold start — accepté en V1, pas de pré-warming
-- Public README of the Space is `packages/hf-space/README.md` — treat as marketing surface
-- Auto-deploy via GitHub Action (push `packages/hf-space/**` → repo HF Space, secret `HF_TOKEN`)
-
-## URL `/plan` format
-
-Format actée : Option B (cf. `plan/03-url-format.md`).
-
-```
-https://openwind.fr/plan?v=1&wp=43.30,5.35|43.10,5.80|43.00,6.20&dep=2026-04-26T08:00&boat=cruiser_30ft
-```
-
-- `v=1` : version du format
-- `wp` : waypoints `lat,lon` séparés par `|`, 4 décimales max
-- `dep` : ISO 8601 local time (Europe/Paris implicite)
-- `boat` : slug d'archétype
 
 ## Workflow
 
-- Plan files in `plan/` are the source of truth for scope and decisions
+- Local `plan/` files (gitignored) are the source of truth for scope and decisions
 - Tests must pass before commit
-- After-action: every recurring mistake gets logged here as a new "Failure mode"
-- Pour toute tâche browser/UI : utiliser Chrome DevTools MCP, pas Playwright
-
-## Plan en cours
-
-Voir `plan/README.md` pour l'index. Sprints 0 → 4 documentés, Sprint 0 en attente d'actions humaines (rename GitHub repo + DNS Gandi).
