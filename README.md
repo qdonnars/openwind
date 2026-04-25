@@ -1,6 +1,6 @@
 # OpenWind
 
-**[Live App](https://qdonnars.github.io/open_wind/)**
+**[Live App](https://qdonnars.github.io/openwind/)**
 
 Free wind forecast. Compare wind predictions from multiple weather models side by side for any spot.
 

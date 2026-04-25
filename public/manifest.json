@@ -2,13 +2,13 @@
   "name": "OpenWind",
   "short_name": "OpenWind",
   "description": "Prévisions vent kitesurf et voile",
-  "start_url": "/open_wind/",
+  "start_url": "/openwind/",
   "display": "standalone",
   "background_color": "#030712",
   "theme_color": "#030712",
   "orientation": "portrait-primary",
   "icons": [
-    { "src": "/open_wind/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/open_wind/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "/openwind/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/openwind/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }
