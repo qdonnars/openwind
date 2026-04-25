@@ -30,3 +30,13 @@ dist-ssr
 test-results/
 eval_screenshots.ts
 strategy_improvement.sh
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+.coverage
