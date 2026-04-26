@@ -19,10 +19,11 @@ V1 design choices:
 from __future__ import annotations
 
 import asyncio
+import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from openwind_data.adapters.base import MarineDataAdapter, WindPoint
+from openwind_data.adapters.base import MarineDataAdapter, SeaPoint, WindPoint
 from openwind_data.adapters.openmeteo import DEFAULT_MODEL, OpenMeteoAdapter
 from openwind_data.routing.archetypes import get_polar, lookup_polar
 from openwind_data.routing.geometry import (
@@ -39,6 +40,24 @@ MIN_BOAT_SPEED_KN = 0.5  # floor to avoid division blow-up in extreme stalls
 STRONG_WIND_THRESHOLD_KN = 25.0
 LIGHT_WIND_THRESHOLD_KN = 4.0
 
+# Wave derate — see README "References" section for sources.
+WAVE_DERATE_K = 0.05
+WAVE_DERATE_P = 1.75
+WAVE_DERATE_FLOOR = 0.5
+
+
+def wave_derate(hs_m: float, twa_deg: float) -> float:
+    """Multiplicative speed factor in waves; returns 1.0 in flat water.
+
+    Form: ``max(floor, 1 - k * Hs^p * f(TWA))`` with ``f(TWA) = cos²(TWA/2)``
+    peaking head-seas (TWA=0) and zero down-seas (TWA=180). Defaults
+    ``k=0.05``, ``p=1.75``, ``floor=0.5`` — see README for sourcing.
+    """
+    if hs_m < 0:
+        raise ValueError("hs_m must be >= 0")
+    angular_factor = math.cos(math.radians(twa_deg / 2)) ** 2
+    return max(WAVE_DERATE_FLOOR, 1.0 - WAVE_DERATE_K * hs_m**WAVE_DERATE_P * angular_factor)
+
 
 @dataclass(frozen=True, slots=True)
 class SegmentReport:
@@ -54,6 +73,8 @@ class SegmentReport:
     polar_speed_kn: float
     boat_speed_kn: float
     duration_h: float
+    hs_m: float | None = None
+    wave_derate_factor: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +96,13 @@ def _closest_wind_point(points: tuple[WindPoint, ...], target: datetime) -> Wind
     return min(points, key=lambda p: abs((p.time - target).total_seconds()))
 
 
+def _closest_sea_hs(points: tuple[SeaPoint, ...], target: datetime) -> float | None:
+    valid = [p for p in points if p.wave_height_m is not None]
+    if not valid:
+        return None
+    return min(valid, key=lambda p: abs((p.time - target).total_seconds())).wave_height_m
+
+
 async def estimate_passage(
     waypoints: list[Point],
     departure_time: datetime,
@@ -85,6 +113,7 @@ async def estimate_passage(
     adapter: MarineDataAdapter | None = None,
     model: str = DEFAULT_MODEL,
     heuristic_speed_kn: float = HEURISTIC_SPEED_KN,
+    use_wave_correction: bool = False,
 ) -> PassageReport:
     """Estimate a passage's per-segment timing, speed, and warnings.
 
@@ -152,7 +181,13 @@ async def estimate_passage(
         wp = _closest_wind_point(wind_series.points, mid_time)
         twa = normalize_twa(twd=wp.direction_deg, course=seg.bearing_deg)
         polar_speed = lookup_polar(polar, wp.speed_kn, twa)
-        boat_speed = max(polar_speed * efficiency, MIN_BOAT_SPEED_KN)
+        hs_m: float | None = None
+        derate = 1.0
+        if use_wave_correction:
+            hs_m = _closest_sea_hs(bundle.sea.points, mid_time)
+            if hs_m is not None:
+                derate = wave_derate(hs_m, twa)
+        boat_speed = max(polar_speed * efficiency * derate, MIN_BOAT_SPEED_KN)
         seg_duration = timedelta(hours=seg.distance_nm / boat_speed)
         seg_start = departure_utc + cumulative_actual
         seg_end = seg_start + seg_duration
@@ -173,6 +208,8 @@ async def estimate_passage(
                 polar_speed_kn=polar_speed,
                 boat_speed_kn=boat_speed,
                 duration_h=seg_duration.total_seconds() / 3600.0,
+                hs_m=hs_m,
+                wave_derate_factor=derate,
             )
         )
 
