@@ -11,6 +11,7 @@ from openwind_data.adapters.base import (
 from openwind_data.adapters.openmeteo import OpenMeteoAdapter
 from openwind_data.routing import (
     BoatPolar,
+    ComplexityScore,
     PassageReport,
     Point,
     Segment,
@@ -18,10 +19,12 @@ from openwind_data.routing import (
     estimate_passage,
     get_polar,
     list_archetypes,
+    score_complexity,
 )
 
 __all__ = [
     "BoatPolar",
+    "ComplexityScore",
     "ForecastBundle",
     "MarineDataAdapter",
     "OpenMeteoAdapter",
@@ -36,4 +39,5 @@ __all__ = [
     "estimate_passage",
     "get_polar",
     "list_archetypes",
+    "score_complexity",
 ]
