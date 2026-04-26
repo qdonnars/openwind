@@ -1,0 +1,70 @@
+name: Sync HF Space
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/hf-space/**"
+      - "packages/mcp-core/**"
+      - "packages/data-adapters/**"
+      - ".github/workflows/sync-hf-space.yml"
+  workflow_dispatch:
+
+# Single source of truth = this repo. The HF Space repo is treated as a mirror;
+# any direct commit there will be overwritten on the next sync.
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      # Override via repo Variables → Actions if you renamed the Space.
+      HF_SPACE_ID: ${{ vars.HF_SPACE_ID || 'qdonnars/openwind-mcp' }}
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+
+      - name: Assemble Space build context
+        run: |
+          set -euo pipefail
+          BUILD_DIR=/tmp/hf-build
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$BUILD_DIR/vendor"
+          cp -R packages/hf-space/. "$BUILD_DIR/"
+          cp -R packages/data-adapters "$BUILD_DIR/vendor/data-adapters"
+          cp -R packages/mcp-core      "$BUILD_DIR/vendor/mcp-core"
+          # Strip artefacts that don't belong on the Space.
+          find "$BUILD_DIR/vendor" -type d \( -name __pycache__ -o -name .pytest_cache -o -name .ruff_cache -o -name tests \) -prune -exec rm -rf {} +
+          find "$BUILD_DIR/vendor" -type f -name "*.pyc" -delete
+          rm -f "$BUILD_DIR/.gitignore"
+          ls -la "$BUILD_DIR"
+          ls -la "$BUILD_DIR/vendor"
+
+      - name: Push to HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GIT_USER_NAME: openwind-ci
+          GIT_USER_EMAIL: ci@openwind.fr
+        run: |
+          set -euo pipefail
+          if [ -z "${HF_TOKEN:-}" ]; then
+            echo "::error::HF_TOKEN secret is not set"
+            exit 1
+          fi
+          BUILD_DIR=/tmp/hf-build
+          SPACE_DIR=/tmp/hf-space
+          rm -rf "$SPACE_DIR"
+          git clone --depth 1 "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID}" "$SPACE_DIR"
+          cd "$SPACE_DIR"
+          # Replace contents wholesale (preserve .git).
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R "$BUILD_DIR/." ./
+          git lfs install --local || true
+          git config user.name  "$GIT_USER_NAME"
+          git config user.email "$GIT_USER_EMAIL"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to push."
+            exit 0
+          fi
+          SHA="${GITHUB_SHA::7}"
+          git commit -m "sync: github ${SHA}"
+          git push
