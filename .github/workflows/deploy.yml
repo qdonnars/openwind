@@ -24,10 +24,10 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npm run build
+      - run: npm run build --workspace=packages/web
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: packages/web/dist
       - id: deployment
         uses: actions/deploy-pages@v4
