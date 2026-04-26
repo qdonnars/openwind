@@ -40,6 +40,9 @@ GRID_DECIMALS = 2
 # When fetching uncached, prefetch this many days from the start so that subsequent
 # calls with later `departure` windows in the same forecast issue still hit cache.
 FETCH_HORIZON_DAYS = 7
+# Cap entries per adapter instance — adapter may live across many MCP tool
+# calls; without a cap, each new (lat, lon, models) tuple grows the dict.
+CACHE_MAX_ENTRIES = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,9 +55,7 @@ class _CacheKey:
 @dataclass(frozen=True, slots=True)
 class _CacheEntry:
     fetched_at: datetime
-    fetch_start: datetime
-    fetch_end: datetime
-    bundle: ForecastBundle
+    bundle: ForecastBundle  # bundle.start / bundle.end define the cached window
 
 
 class OpenMeteoAdapter:
@@ -109,18 +110,18 @@ class OpenMeteoAdapter:
         if (
             cached is not None
             and (now - cached.fetched_at) < CACHE_TTL
-            and cached.fetch_start <= start_utc
-            and cached.fetch_end >= end_utc
+            and cached.bundle.start <= start_utc
+            and cached.bundle.end >= end_utc
         ):
-            return _slice_bundle(cached.bundle, start_utc, end_utc, now)
+            return _slice_bundle(cached.bundle, start_utc, end_utc)
 
         # Fetch a wide window so future calls with later `departure` can be served
         # from cache. If a stale-but-narrower entry exists, widen to cover both.
         fetch_start = start_utc.replace(hour=0, minute=0, second=0, microsecond=0)
         fetch_end = max(end_utc, start_utc + timedelta(days=FETCH_HORIZON_DAYS))
         if cached is not None:
-            fetch_start = min(fetch_start, cached.fetch_start)
-            fetch_end = max(fetch_end, cached.fetch_end)
+            fetch_start = min(fetch_start, cached.bundle.start)
+            fetch_end = max(fetch_end, cached.bundle.end)
 
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(timeout=self._timeout)
@@ -145,13 +146,10 @@ class OpenMeteoAdapter:
             sea=sea_series,
             requested_at=now,
         )
-        self._cache[key] = _CacheEntry(
-            fetched_at=now,
-            fetch_start=fetch_start,
-            fetch_end=fetch_end,
-            bundle=full_bundle,
-        )
-        return _slice_bundle(full_bundle, start_utc, end_utc, now)
+        if len(self._cache) >= CACHE_MAX_ENTRIES and key not in self._cache:
+            self._cache.pop(next(iter(self._cache)))  # FIFO eviction
+        self._cache[key] = _CacheEntry(fetched_at=now, bundle=full_bundle)
+        return _slice_bundle(full_bundle, start_utc, end_utc)
 
     async def _fetch_wind(
         self,
@@ -197,9 +195,7 @@ class OpenMeteoAdapter:
         return _parse_sea(resp.json(), start, end)
 
 
-def _slice_bundle(
-    bundle: ForecastBundle, start: datetime, end: datetime, requested_at: datetime
-) -> ForecastBundle:
+def _slice_bundle(bundle: ForecastBundle, start: datetime, end: datetime) -> ForecastBundle:
     """Return a view of ``bundle`` restricted to [start, end]."""
     sliced_winds = {
         model: WindSeries(
@@ -216,7 +212,7 @@ def _slice_bundle(
         end=end,
         wind_by_model=sliced_winds,
         sea=sliced_sea,
-        requested_at=requested_at,
+        requested_at=bundle.requested_at,
     )
 
 
