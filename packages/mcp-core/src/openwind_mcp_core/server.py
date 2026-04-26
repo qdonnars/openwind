@@ -152,7 +152,7 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         departure: str,
         archetype: str,
         efficiency: float = 0.75,
-        segment_length_nm: float = 5.0,
+        segment_length_nm: float = 10.0,
         model: str = AUTO_MODEL,
     ) -> dict[str, Any]:
         """Estimate passage timing along a polyline.
@@ -166,7 +166,10 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
             efficiency: multiplier on polar speed. Reference values:
                 ``0.85`` racing trim, ``0.75`` cruising (default), ``0.65``
                 loaded family cruising, ``0.55`` heavy seas / fouled hull.
-            segment_length_nm: target sub-segment length.
+            segment_length_nm: target sub-segment length. Default 10 nm
+                balances precision against Open-Meteo request budget; drop
+                to 5 for tight coastal work, raise to 20 for long offshore
+                legs.
             model: wind model. Default ``"auto"`` tries AROME (≤48 h) →
                 ICON-EU (≤5 d) → GFS (≤16 d). The actually-chosen model is
                 returned in ``model``. Pass an explicit name to bypass.
@@ -194,7 +197,7 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         archetype: str,
         max_hs_m: float | None = None,
         efficiency: float = 0.75,
-        segment_length_nm: float = 5.0,
+        segment_length_nm: float = 10.0,
         model: str = AUTO_MODEL,
     ) -> dict[str, Any]:
         """Score a passage on a 1-5 difficulty scale (wind + optional sea).

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -43,6 +44,13 @@ FETCH_HORIZON_DAYS = 7
 # Cap entries per adapter instance — adapter may live across many MCP tool
 # calls; without a cap, each new (lat, lon, models) tuple grows the dict.
 CACHE_MAX_ENTRIES = 64
+# Minimum spacing between consecutive HTTP request *starts* on a single adapter.
+# A passage routes 12+ sub-segments through `asyncio.gather`, each fetching wind
+# + sea; without pacing, that's 24 simultaneous requests on the HF Space's
+# shared egress IP, which Open-Meteo rate-limits. The lock serialises starts
+# (cache hits stay free); 0.1 s ≈ 10 req/s, well under the public-API quota.
+# Disable in tests with `http_min_interval_s=0`.
+DEFAULT_HTTP_MIN_INTERVAL_S = 0.1
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,10 +87,28 @@ class OpenMeteoAdapter:
         client: httpx.AsyncClient | None = None,
         *,
         timeout: float = 10.0,
+        http_min_interval_s: float = DEFAULT_HTTP_MIN_INTERVAL_S,
     ) -> None:
         self._client = client
         self._timeout = timeout
         self._cache: dict[_CacheKey, _CacheEntry] = {}
+        self._http_min_interval_s = http_min_interval_s
+        self._http_lock = asyncio.Lock()
+        self._last_http_at: float = 0.0
+
+    async def _pace_http(self) -> None:
+        """Block until ≥ ``http_min_interval_s`` has elapsed since the last
+        HTTP start on this adapter. Cache hits never reach this — they stay
+        free.
+        """
+        if self._http_min_interval_s <= 0:
+            return
+        async with self._http_lock:
+            elapsed = time.monotonic() - self._last_http_at
+            wait = self._http_min_interval_s - elapsed
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_http_at = time.monotonic()
 
     async def fetch(
         self,
@@ -170,6 +196,7 @@ class OpenMeteoAdapter:
             "start_date": start.date().isoformat(),
             "end_date": end.date().isoformat(),
         }
+        await self._pace_http()
         resp = await client.get(FORECAST_URL, params=params)
         resp.raise_for_status()
         return _parse_wind(resp.json(), model, start, end)
@@ -190,6 +217,7 @@ class OpenMeteoAdapter:
             "start_date": start.date().isoformat(),
             "end_date": end.date().isoformat(),
         }
+        await self._pace_http()
         resp = await client.get(MARINE_URL, params=params)
         resp.raise_for_status()
         return _parse_sea(resp.json(), start, end)
