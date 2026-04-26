@@ -38,7 +38,6 @@ function App() {
   const [forecasts, setForecasts] = useState<ModelForecast[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedHour, setSelectedHour] = useState<string | null>(null);
-  const [dataFetchedAt, setDataFetchedAt] = useState<Date | null>(null);
 
 
   useEffect(() => {
@@ -48,7 +47,6 @@ function App() {
     fetchAllModels(spot.latitude, spot.longitude).then((data) => {
       if (!cancelled) {
         setForecasts(data);
-        setDataFetchedAt(new Date());
         setIsLoading(false);
         // Auto-select current hour so wind arrows show by default
         const nowHour = new Date().toISOString().slice(0, 13);
@@ -69,7 +67,10 @@ function App() {
   const mapCenter: Spot = spot ?? RADE_MARSEILLE;
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ background: 'var(--ow-bg-0)', color: 'var(--ow-fg-0)' }}>
+    <div
+      className="h-screen flex flex-col overflow-hidden"
+      style={{ background: 'var(--ow-bg-0)', color: 'var(--ow-fg-0)' }}
+    >
       <Header
         onSelectSpot={setSpot}
         canSave={canSave}
@@ -95,7 +96,10 @@ function App() {
         </div>
 
         {/* Wind table — bottom panel */}
-        <div className="shrink-0 max-h-[45vh] md:max-h-[40vh] overflow-y-auto" style={{ background: 'var(--ow-bg-0)', borderTop: '1px solid var(--ow-line)' }}>
+        <div
+          className="shrink-0 max-h-[45vh] md:max-h-[40vh] overflow-y-auto"
+          style={{ background: 'var(--ow-bg-0)', borderTop: '1px solid var(--ow-line)' }}
+        >
           {spot ? (
             <WindTable
               forecasts={forecasts}
@@ -107,20 +111,18 @@ function App() {
           ) : (
             <EmptyState />
           )}
-          <footer className="text-center text-gray-400 text-[11px] py-1 shrink-0">
+          <footer className="text-center text-[11px] py-1 shrink-0" style={{ color: 'var(--ow-fg-2)' }}>
             Data by{" "}
             <a
               href="https://open-meteo.com/"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline hover:text-gray-200 transition-colors"
+              className="underline transition-colors"
+              style={{ color: 'var(--ow-fg-1)' }}
             >
               Open-Meteo.com
             </a>{" "}
             (CC BY 4.0)
-            {dataFetchedAt && (
-              <span className="ml-2 opacity-60">· Updated {dataFetchedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            )}
           </footer>
         </div>
       </div>

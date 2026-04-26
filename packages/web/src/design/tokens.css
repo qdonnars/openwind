@@ -1,0 +1,148 @@
+/* =============================================================
+   OpenWind Design Tokens
+   Defines all --ow-* custom properties.
+   Dark theme is the default; light theme overrides are listed
+   after. Both selectors are applied to <html data-theme="...">
+   via ThemeProvider in theme.tsx.
+   ============================================================= */
+
+[data-theme="dark"] {
+  /* Backgrounds */
+  --ow-bg-0: #030712;        /* deepest bg (gray-950) */
+  --ow-bg-1: #0d1117;        /* surface panel */
+  --ow-bg-2: #161b22;        /* elevated surface */
+
+  /* Foreground */
+  --ow-fg-0: #e8eaf0;        /* primary text */
+  --ow-fg-1: #8b95a8;        /* secondary */
+  --ow-fg-2: #565e6b;        /* tertiary */
+  --ow-fg-3: #3a4250;        /* placeholder */
+
+  /* Accent (cyan-teal) */
+  --ow-accent: #2dd4bf;
+  --ow-accent-soft: rgba(45, 212, 191, 0.12);
+  --ow-accent-line: rgba(45, 212, 191, 0.25);
+
+  /* Lines */
+  --ow-line: rgba(255, 255, 255, 0.08);
+  --ow-line-2: rgba(255, 255, 255, 0.14);
+
+  /* Surfaces */
+  --ow-surface-pop: rgba(13, 17, 23, 0.92);
+  --ow-surface-glass: rgba(13, 17, 23, 0.80);
+
+  /* Shadows */
+  --ow-shadow-1: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --ow-shadow-2: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --ow-shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.6);
+
+  /* Radius */
+  --ow-r-sm: 4px;
+  --ow-r-md: 8px;
+  --ow-r-lg: 12px;
+
+  /* Typography */
+  --ow-font-ui: 'Inter', system-ui, sans-serif;
+  --ow-font-mono: 'JetBrains Mono', 'Fira Mono', monospace;
+  --ow-font-display: 'Inter', system-ui, sans-serif;
+
+  /* Beaufort wind colors — 9 paliers (kn < 4, 7, 11, 15, 19, 23, 28, 33, 33+) */
+  --ow-w-0: #1e2d40;         /* calme */
+  --ow-w-1: #0e7c4a;         /* petite brise */
+  --ow-w-2: #12a35e;         /* jolie brise */
+  --ow-w-3: #2dc97a;         /* bonne brise */
+  --ow-w-4: #e8c432;         /* bonne brise forte — jaune */
+  --ow-w-5: #e87a18;         /* fraîche — orange */
+  --ow-w-6: #e84118;         /* fort — rouge-orange */
+  --ow-w-7: #c41408;         /* très fort — rouge */
+  --ow-w-8: #8b1460;         /* tempête — magenta foncé */
+  --ow-cell-ink: #0B1D14;    /* texte sur cellules claires (B0-B3) */
+
+  /* Complexity colors — 5 paliers */
+  --ow-c-1: #2dc97a;
+  --ow-c-2: #8fcc30;
+  --ow-c-3: #e8c432;
+  --ow-c-4: #e87a18;
+  --ow-c-5: #e84118;
+
+  /* Semantic */
+  --ow-err: #f87171;
+  --ow-err-soft: rgba(248, 113, 113, 0.12);
+  --ow-err-line: rgba(248, 113, 113, 0.25);
+  --ow-warn: #fbbf24;
+  --ow-warn-soft: rgba(251, 191, 36, 0.12);
+  --ow-warn-line: rgba(251, 191, 36, 0.25);
+
+  /* Map */
+  --ow-map-sea-0: #0B1A2E;
+  --ow-map-sea-1: #060B17;
+  --ow-map-land-0: #0F1A2A;
+  --ow-map-land-1: #0A1424;
+}
+
+[data-theme="light"] {
+  --ow-bg-0: #f4f6fb;
+  --ow-bg-1: #ffffff;
+  --ow-bg-2: #e8ecf3;
+
+  --ow-fg-0: #0d1117;
+  --ow-fg-1: #3a4250;
+  --ow-fg-2: #6b7280;
+  --ow-fg-3: #9ca3af;
+
+  /* Accent unchanged — cyan works on both themes */
+  --ow-accent: #2dd4bf;
+  --ow-accent-soft: rgba(45, 212, 191, 0.12);
+  --ow-accent-line: rgba(45, 212, 191, 0.25);
+
+  --ow-line: rgba(0, 0, 0, 0.08);
+  --ow-line-2: rgba(0, 0, 0, 0.14);
+
+  --ow-surface-pop: rgba(255, 255, 255, 0.95);
+  --ow-surface-glass: rgba(255, 255, 255, 0.85);
+
+  --ow-shadow-1: 0 1px 4px rgba(0, 0, 0, 0.12);
+  --ow-shadow-2: 0 4px 16px rgba(0, 0, 0, 0.14);
+  --ow-shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.16);
+
+  --ow-map-sea-0: #c8ddf0;
+  --ow-map-sea-1: #b0cee8;
+  --ow-map-land-0: #e8ede0;
+  --ow-map-land-1: #dfe5d4;
+
+  /* Radius, typography, and wind/complexity colors are identical to dark */
+  --ow-r-sm: 4px;
+  --ow-r-md: 8px;
+  --ow-r-lg: 12px;
+
+  --ow-font-ui: 'Inter', system-ui, sans-serif;
+  --ow-font-mono: 'JetBrains Mono', 'Fira Mono', monospace;
+  --ow-font-display: 'Inter', system-ui, sans-serif;
+
+  /* Beaufort wind colors — identical palette (couleurs météo ne changent pas) */
+  --ow-w-0: #1e2d40;
+  --ow-w-1: #0e7c4a;
+  --ow-w-2: #12a35e;
+  --ow-w-3: #2dc97a;
+  --ow-w-4: #e8c432;
+  --ow-w-5: #e87a18;
+  --ow-w-6: #e84118;
+  --ow-w-7: #c41408;
+  --ow-w-8: #8b1460;
+  --ow-cell-ink: #0B1D14;
+
+  /* Complexity colors — identical */
+  --ow-c-1: #2dc97a;
+  --ow-c-2: #8fcc30;
+  --ow-c-3: #e8c432;
+  --ow-c-4: #e87a18;
+  --ow-c-5: #e84118;
+
+  /* Semantic */
+  --ow-err: #f87171;
+  --ow-err-soft: rgba(248, 113, 113, 0.12);
+  --ow-err-line: rgba(248, 113, 113, 0.25);
+  --ow-warn: #fbbf24;
+  --ow-warn-soft: rgba(251, 191, 36, 0.12);
+  --ow-warn-line: rgba(251, 191, 36, 0.25);
+}

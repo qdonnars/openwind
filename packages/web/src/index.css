@@ -1,10 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
+@import './design/tokens.css';
 
 :root {
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --color-accent: #2dd4bf;
-  --color-accent-dim: rgba(45, 212, 191, 0.15);
 }
 
 body {
@@ -22,17 +22,17 @@ body {
 }
 
 .spot-tooltip {
-  background: #1f2937;
-  color: #fff;
-  border: 1px solid #374151;
+  background: var(--ow-surface-pop);
+  color: var(--ow-fg-0);
+  border: 1px solid var(--ow-line-2);
   border-radius: 6px;
   padding: 2px 8px;
   font-size: 12px;
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--ow-shadow-1);
 }
 .spot-tooltip::before {
-  border-top-color: #374151;
+  border-top-color: var(--ow-line-2);
 }
 
 /* Wind table scroll snap */
@@ -58,7 +58,7 @@ body {
   right: 0;
   bottom: 0;
   width: 32px;
-  background: linear-gradient(to right, transparent, rgb(3 7 18 / 0.9));
+  background: linear-gradient(to right, transparent, var(--ow-surface-pop));
   pointer-events: none;
   z-index: 5;
   transition: opacity 0.3s;
@@ -80,7 +80,7 @@ body {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: var(--color-accent);
+  background: var(--ow-accent);
 }
 
 /* Skeleton loader animation */
@@ -89,7 +89,7 @@ body {
   100% { background-position: 200% 0; }
 }
 .skeleton {
-  background: linear-gradient(90deg, #1f2937 25%, #374151 50%, #1f2937 75%);
+  background: linear-gradient(90deg, var(--ow-bg-2) 25%, var(--ow-line-2) 50%, var(--ow-bg-2) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
   border-radius: 4px;
@@ -119,11 +119,11 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ow-line);
   pointer-events: none;
 }
 .model-row-alt td:first-child {
-  background: rgb(14 17 23); /* slightly lighter than gray-950 for alt rows */
+  background: var(--ow-bg-1);
 }
 
 /* Cell press feedback */
