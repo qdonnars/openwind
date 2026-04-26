@@ -92,6 +92,51 @@ async def test_cache_hits_within_ttl(forecast_marseille_arome, marine_porqueroll
 
 
 @respx.mock
+async def test_cache_serves_subwindow_without_refetch(
+    forecast_marseille_arome, marine_porquerolles
+):
+    """A second fetch with a narrower [start, end] inside the cached window must hit cache."""
+    forecast_route = respx.get(FORECAST_URL).mock(
+        return_value=httpx.Response(200, json=forecast_marseille_arome)
+    )
+    marine_route = respx.get(MARINE_URL).mock(
+        return_value=httpx.Response(200, json=marine_porquerolles)
+    )
+
+    adapter = OpenMeteoAdapter()
+    start, end = _start_end()
+    await adapter.fetch(lat=43.30, lon=5.35, start=start, end=end)
+    # Sub-window inside the original day — must be served from cache.
+    sub_start = datetime(2026, 4, 26, 6, 0, tzinfo=UTC)
+    sub_end = datetime(2026, 4, 26, 12, 0, tzinfo=UTC)
+    bundle = await adapter.fetch(lat=43.30, lon=5.35, start=sub_start, end=sub_end)
+
+    assert forecast_route.call_count == 1
+    assert marine_route.call_count == 1
+    wind = bundle.wind_by_model[DEFAULT_MODEL]
+    assert all(sub_start <= p.time <= sub_end for p in wind.points)
+    assert len(wind.points) == 7  # 06:00..12:00 inclusive
+
+
+@respx.mock
+async def test_cache_dedupes_close_lat_lon_within_grid_cell(
+    forecast_marseille_arome, marine_porquerolles
+):
+    """Two waypoints within the AROME grid cell (~1.1 km) share a cache entry."""
+    forecast_route = respx.get(FORECAST_URL).mock(
+        return_value=httpx.Response(200, json=forecast_marseille_arome)
+    )
+    respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
+
+    adapter = OpenMeteoAdapter()
+    start, end = _start_end()
+    await adapter.fetch(lat=43.301, lon=5.351, start=start, end=end)
+    await adapter.fetch(lat=43.304, lon=5.348, start=start, end=end)  # same 2dp cell
+
+    assert forecast_route.call_count == 1
+
+
+@respx.mock
 async def test_multi_model_runs_parallel_requests(forecast_marseille_arome, marine_porquerolles):
     forecast_route = respx.get(FORECAST_URL).mock(
         return_value=httpx.Response(200, json=forecast_marseille_arome)
