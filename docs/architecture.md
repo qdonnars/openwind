@@ -20,8 +20,8 @@ on the server.
         │  openwind-mcp-core   (FastMCP, cloud-agnostic)│
         │   ┌── list_boat_archetypes                    │
         │   ├── get_marine_forecast                     │
-        │   ├── estimate_passage_tool                   │
-        │   └── score_complexity_tool                   │
+        │   ├── estimate_passage                   │
+        │   └── score_complexity                   │
         └────────────┬─────────────────────────────────┘
                      │ pure Python calls
         ┌────────────▼─────────────────────────────────┐
@@ -50,11 +50,11 @@ A typical Claude Desktop conversation produces this tool sequence:
 2. **Sample the forecast.** `get_marine_forecast(lat, lon, start, end)` for the
    route's midpoint(s) and the candidate window. AROME is the default model
    for the Mediterranean. Claude reads wind, gusts, and (when relevant) Hs.
-3. **Estimate the passage.** `estimate_passage_tool(waypoints, departure,
+3. **Estimate the passage.** `estimate_passage(waypoints, departure,
    archetype)` returns per-segment timing, TWA, polar speed, and warnings.
    The server fetches one wind bundle per segment (single-pass approximation;
    no convergence loop — challenge #7 in `plan/01-challenges.md`).
-4. **Score it.** `score_complexity_tool(...)` returns a 1-5 difficulty level
+4. **Score it.** `score_complexity(...)` returns a 1-5 difficulty level
    from wind max (and Hs max if the LLM passes one). The level is a hint;
    Claude is expected to re-frame qualitatively.
 5. **Render.** Claude narrates: arrival ETA, complexity, warnings, and (V2)

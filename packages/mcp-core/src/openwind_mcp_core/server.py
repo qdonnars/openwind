@@ -6,12 +6,26 @@ local stdio runner, and any future deployment all import this same factory.
 
 Tools exposed (V1):
 
-1. `list_boat_archetypes` — descriptive list for LLM mapping ("Sun Odyssey 32"
-   → `cruiser_30ft`). No server-side mapping table.
-2. `get_marine_forecast` — wind+sea around a point/window for one or more models.
-3. `estimate_passage` — per-segment timing along a polyline for a given
+1. ``list_boat_archetypes`` — descriptive list for LLM mapping ("Sun Odyssey 32"
+   → ``cruiser_30ft``). No server-side mapping table.
+2. ``get_marine_forecast`` — wind+sea around a point/window for one or more models.
+3. ``estimate_passage`` — per-segment timing along a polyline for a given
    archetype + departure time.
-4. `score_complexity` — 1-5 difficulty score from a passage + optional Hs max.
+4. ``score_complexity`` — 1-5 difficulty score from a passage + optional Hs max.
+
+Typical orchestration pattern (LLM perspective):
+
+* Call ``list_boat_archetypes`` once at the start of the conversation, map the
+  user's commercial model from ``examples`` + ``length_ft`` + ``type``.
+* Then loop ``estimate_passage`` (and optionally ``score_complexity``) over
+  candidate departure windows. Use ``model="auto"`` so the server picks
+  AROME (≤48 h) → ICON-EU (≤5 d) → GFS (≤16 d) automatically — the chosen
+  model is reflected in ``PassageReport.model``.
+* ``get_marine_forecast`` is the lower-level escape hatch for sea-state lookup
+  or model comparison; you don't need it for the typical "A → B by date X"
+  question.
+* Sea state (``Hs``): pass ``max_hs_m`` to ``score_complexity`` if you read it
+  from a forecast and want it factored into the difficulty score.
 """
 
 from __future__ import annotations
@@ -22,12 +36,16 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from openwind_data.adapters.base import MarineDataAdapter
-from openwind_data.adapters.openmeteo import DEFAULT_MODEL, OpenMeteoAdapter
+from openwind_data.adapters.openmeteo import AUTO_MODEL, OpenMeteoAdapter
 from openwind_data.routing import (
     Point,
-    estimate_passage,
     list_archetypes,
-    score_complexity,
+)
+from openwind_data.routing import (
+    estimate_passage as _estimate_passage,
+)
+from openwind_data.routing import (
+    score_complexity as _score_complexity,
 )
 
 
@@ -124,27 +142,36 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         }
 
     @server.tool()
-    async def estimate_passage_tool(
+    async def estimate_passage(
         waypoints: list[dict[str, float]],
         departure: str,
         archetype: str,
         efficiency: float = 0.75,
         segment_length_nm: float = 5.0,
-        model: str = DEFAULT_MODEL,
+        model: str = AUTO_MODEL,
     ) -> dict[str, Any]:
         """Estimate passage timing along a polyline.
 
         Args:
-            waypoints: list of {"lat": ..., "lon": ...} dicts (>=2).
+            waypoints: list of ``{"lat": ..., "lon": ...}`` dicts (>=2). The
+                caller is responsible for keeping the polyline off land —
+                add intermediate waypoints to skirt capes and peninsulas.
             departure: ISO-8601 datetime, timezone-aware.
-            archetype: one of `list_boat_archetypes()` names.
-            efficiency: multiplier on polar speed; 0.75 = cruising.
+            archetype: one of ``list_boat_archetypes()`` names.
+            efficiency: multiplier on polar speed. Reference values:
+                ``0.85`` racing trim, ``0.75`` cruising (default), ``0.65``
+                loaded family cruising, ``0.55`` heavy seas / fouled hull.
             segment_length_nm: target sub-segment length.
-            model: wind model name (default AROME for the Med).
+            model: wind model. Default ``"auto"`` tries AROME (≤48 h) →
+                ICON-EU (≤5 d) → GFS (≤16 d). The actually-chosen model is
+                returned in ``model``. Pass an explicit name to bypass.
+
+        On horizon overflow, raises a ``ForecastHorizonError`` whose message
+        names the failing model and suggests longer-range alternatives.
         """
         pts = [Point(w["lat"], w["lon"]) for w in waypoints]
         dep = datetime.fromisoformat(departure)
-        report = await estimate_passage(
+        report = await _estimate_passage(
             pts,
             dep,
             archetype,
@@ -156,23 +183,26 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         return _passage_to_dict(report)
 
     @server.tool()
-    async def score_complexity_tool(
+    async def score_complexity(
         waypoints: list[dict[str, float]],
         departure: str,
         archetype: str,
         max_hs_m: float | None = None,
         efficiency: float = 0.75,
         segment_length_nm: float = 5.0,
-        model: str = DEFAULT_MODEL,
+        model: str = AUTO_MODEL,
     ) -> dict[str, Any]:
         """Score a passage on a 1-5 difficulty scale (wind + optional sea).
 
-        This computes the passage internally; pass `max_hs_m` if you have a
-        sea-state estimate from `get_marine_forecast`.
+        Computes the passage internally. Pass ``max_hs_m`` if you have a
+        sea-state estimate from ``get_marine_forecast`` and want it factored
+        into the score; otherwise the score is wind-only.
+
+        Same ``model`` semantics as ``estimate_passage`` (default ``"auto"``).
         """
         pts = [Point(w["lat"], w["lon"]) for w in waypoints]
         dep = datetime.fromisoformat(departure)
-        report = await estimate_passage(
+        report = await _estimate_passage(
             pts,
             dep,
             archetype,
@@ -181,7 +211,7 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
             adapter=fetch_adapter,
             model=model,
         )
-        score = score_complexity(report, max_hs_m=max_hs_m)
+        score = _score_complexity(report, max_hs_m=max_hs_m)
         return asdict(score)
 
     return server

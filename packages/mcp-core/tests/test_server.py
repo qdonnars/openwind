@@ -59,8 +59,8 @@ class TestBuildServer:
         assert names == {
             "list_boat_archetypes",
             "get_marine_forecast",
-            "estimate_passage_tool",
-            "score_complexity_tool",
+            "estimate_passage",
+            "score_complexity",
         }
 
 
@@ -81,7 +81,7 @@ class TestEstimatePassageTool:
         server = build_server(adapter=StubAdapter())
         out = await _call(
             server,
-            "estimate_passage_tool",
+            "estimate_passage",
             {
                 "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
                 "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
@@ -95,13 +95,30 @@ class TestEstimatePassageTool:
         assert len(out["segments"]) >= 1
         assert isinstance(out["segments"][0]["start_time"], str)
 
+    async def test_estimate_passage_default_uses_auto(self) -> None:
+        # No `model` argument → server default is AUTO_MODEL.
+        # StubAdapter returns data for any model, so auto resolves on first try.
+        server = build_server(adapter=StubAdapter())
+        out = await _call(
+            server,
+            "estimate_passage",
+            {
+                "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
+                "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
+                "archetype": "cruiser_40ft",
+                "segment_length_nm": 10.0,
+            },
+        )
+        assert out["model"] == "meteofrance_arome_france"
+        assert len(out["segments"]) >= 1
+
 
 class TestScoreComplexityTool:
     async def test_wind_only(self) -> None:
         server = build_server(adapter=StubAdapter())
         out = await _call(
             server,
-            "score_complexity_tool",
+            "score_complexity",
             {
                 "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
                 "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
@@ -115,7 +132,7 @@ class TestScoreComplexityTool:
         server = build_server(adapter=StubAdapter())
         out = await _call(
             server,
-            "score_complexity_tool",
+            "score_complexity",
             {
                 "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
                 "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),

@@ -4,8 +4,8 @@ Cloud-agnostic FastMCP server for OpenWind. Exposes 4 tools:
 
 - `list_boat_archetypes` — descriptive list, no server-side mapping
 - `get_marine_forecast` — wind + sea around a point/window
-- `estimate_passage_tool` — per-segment timing along a polyline
-- `score_complexity_tool` — 1-5 difficulty score
+- `estimate_passage` — per-segment timing along a polyline
+- `score_complexity` — 1-5 difficulty score
 
 `build_server()` is the single factory; no Gradio, no `huggingface_hub`. The
 HF Spaces wrapper (Sprint 4) and any future deployment use the same factory.
@@ -65,7 +65,7 @@ asyncio.run(main())
 Expected output:
 
 ```
-['list_boat_archetypes', 'get_marine_forecast', 'estimate_passage_tool', 'score_complexity_tool']
+['list_boat_archetypes', 'get_marine_forecast', 'estimate_passage', 'score_complexity']
 ```
 
 ### Smoke conversation prompt
@@ -76,8 +76,8 @@ Once wired, ask the client something like:
 > Bonne idée ? Tu as combien de temps de route et quelle complexité ?
 
 The client should call `list_boat_archetypes` (to map → `cruiser_40ft`),
-`get_marine_forecast` for one or more points, then `estimate_passage_tool`,
-then `score_complexity_tool`, and narrate the result.
+`get_marine_forecast` for one or more points, then `estimate_passage`,
+then `score_complexity`, and narrate the result.
 
 > First request after inactivity may incur ~5s of cold-start once deployed
 > on HF Spaces. Local stdio has no cold-start.

@@ -5,6 +5,25 @@ from datetime import datetime
 from typing import Protocol
 
 
+class ForecastHorizonError(RuntimeError):
+    """Raised when a forecast model's horizon does not cover the requested time.
+
+    Carries the failing model, the requested timestamp, and a human-actionable
+    message suggesting longer-horizon fallbacks. Open-Meteo silently returns
+    empty rows past horizon, so detection happens after the fetch.
+    """
+
+    def __init__(self, model: str, requested_time: datetime) -> None:
+        self.model = model
+        self.requested_time = requested_time
+        super().__init__(
+            f"forecast horizon exceeded for model {model!r} at "
+            f"{requested_time.isoformat()}; AROME ~48h, ICON-EU ~5d, "
+            f"GFS ~16d, ECMWF ~10d — try a longer-range model "
+            f"or pass model='auto' to fall back automatically"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class WindPoint:
     time: datetime

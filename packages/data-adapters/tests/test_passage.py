@@ -7,6 +7,7 @@ import pytest
 
 from openwind_data.adapters.base import (
     ForecastBundle,
+    ForecastHorizonError,
     SeaPoint,
     SeaSeries,
     WindPoint,
@@ -297,3 +298,115 @@ class TestEstimatePassageWaveCorrection:
         assert rough_report.duration_h > flat_report.duration_h * 1.05
         assert rough_report.segments[0].hs_m == pytest.approx(3.0)
         assert rough_report.segments[0].wave_derate_factor < 1.0
+
+
+class HorizonLimitedStubAdapter:
+    """Returns empty wind points for `short_horizon_models`; constant wind otherwise."""
+
+    def __init__(
+        self,
+        short_horizon_models: tuple[str, ...] = ("meteofrance_arome_france",),
+        tws_kn: float = 10.0,
+        twd_deg: float = 0.0,
+    ) -> None:
+        self.short_horizon_models = short_horizon_models
+        self.tws_kn = tws_kn
+        self.twd_deg = twd_deg
+
+    async def fetch(
+        self,
+        lat: float,
+        lon: float,
+        start: datetime,
+        end: datetime,
+        models: list[str] | None = None,
+    ) -> ForecastBundle:
+        models = models or ["meteofrance_arome_france"]
+        wind: dict[str, WindSeries] = {}
+        for m in models:
+            if m in self.short_horizon_models:
+                wind[m] = WindSeries(model=m, points=())
+            else:
+                points: list[WindPoint] = []
+                t = start
+                while t <= end:
+                    points.append(
+                        WindPoint(
+                            time=t,
+                            speed_kn=self.tws_kn,
+                            direction_deg=self.twd_deg,
+                            gust_kn=None,
+                        )
+                    )
+                    t = t + timedelta(hours=1)
+                wind[m] = WindSeries(model=m, points=tuple(points))
+        return ForecastBundle(
+            lat=lat,
+            lon=lon,
+            start=start,
+            end=end,
+            wind_by_model=wind,
+            sea=SeaSeries(points=()),
+            requested_at=start,
+        )
+
+
+class TestModelFallback:
+    async def test_auto_uses_first_model(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            model="auto",
+            segment_length_nm=10.0,
+        )
+        assert report.model == "meteofrance_arome_france"
+
+    async def test_auto_falls_back_when_first_horizon_short(self) -> None:
+        adapter = HorizonLimitedStubAdapter(short_horizon_models=("meteofrance_arome_france",))
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            model="auto",
+            segment_length_nm=10.0,
+        )
+        assert report.model == "icon_eu"
+
+    async def test_explicit_model_horizon_error_propagates(self) -> None:
+        adapter = HorizonLimitedStubAdapter(short_horizon_models=("meteofrance_arome_france",))
+        with pytest.raises(ForecastHorizonError) as excinfo:
+            await estimate_passage(
+                [MARSEILLE, PORQUEROLLES],
+                DEPARTURE,
+                "cruiser_40ft",
+                adapter=adapter,
+                model="meteofrance_arome_france",
+                segment_length_nm=10.0,
+            )
+        assert excinfo.value.model == "meteofrance_arome_france"
+        msg = str(excinfo.value)
+        assert "horizon" in msg
+        assert "meteofrance_arome_france" in msg
+
+    async def test_auto_all_fail_raises_last(self) -> None:
+        adapter = HorizonLimitedStubAdapter(
+            short_horizon_models=(
+                "meteofrance_arome_france",
+                "icon_eu",
+                "gfs_seamless",
+            )
+        )
+        with pytest.raises(ForecastHorizonError) as excinfo:
+            await estimate_passage(
+                [MARSEILLE, PORQUEROLLES],
+                DEPARTURE,
+                "cruiser_40ft",
+                adapter=adapter,
+                model="auto",
+                segment_length_nm=10.0,
+            )
+        assert excinfo.value.model == "gfs_seamless"

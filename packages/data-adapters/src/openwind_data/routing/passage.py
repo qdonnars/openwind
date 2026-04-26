@@ -23,8 +23,18 @@ import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from openwind_data.adapters.base import MarineDataAdapter, SeaPoint, WindPoint
-from openwind_data.adapters.openmeteo import DEFAULT_MODEL, OpenMeteoAdapter
+from openwind_data.adapters.base import (
+    ForecastHorizonError,
+    MarineDataAdapter,
+    SeaPoint,
+    WindPoint,
+)
+from openwind_data.adapters.openmeteo import (
+    AUTO_FALLBACK_CHAIN,
+    AUTO_MODEL,
+    DEFAULT_MODEL,
+    OpenMeteoAdapter,
+)
 from openwind_data.routing.archetypes import get_polar, lookup_polar
 from openwind_data.routing.geometry import (
     Point,
@@ -85,7 +95,7 @@ class PassageReport:
     duration_h: float
     distance_nm: float
     efficiency: float
-    model: str
+    model: str  # The model actually used (resolved from "auto" if applicable).
     segments: tuple[SegmentReport, ...]
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
@@ -121,17 +131,74 @@ async def estimate_passage(
         waypoints: ordered list of route waypoints (>=2 points).
         departure_time: timezone-aware datetime; converted to UTC internally.
         boat_archetype: one of the registry names (see `list_archetypes()`).
-        efficiency: multiplier on polar speeds; default 0.75 (cruising).
+        efficiency: multiplier on polar speeds. Reference table:
+            - ``0.85`` racing trim (clean hull, fresh sails, attentive crew)
+            - ``0.75`` cruising (default — sail trim, comfort margins, helm)
+            - ``0.65`` loaded family cruising (water/fuel/gear, fouled hull)
+            - ``0.55`` heavy seas, neglected hull, short-handed
         segment_length_nm: target sub-segment length in NM.
         adapter: any `MarineDataAdapter` (defaults to a fresh `OpenMeteoAdapter`).
-        model: wind model name as understood by the adapter.
+        model: wind model name. Pass ``"auto"`` to try AROME → ICON → GFS in
+            order and use the first one whose horizon covers the passage.
+            The model actually used is reported in ``PassageReport.model``.
         heuristic_speed_kn: speed used for the single-pass timing estimate.
+        use_wave_correction: if True, multiply boat speed by ``wave_derate(Hs, TWA)``
+            using sea state from the bundle. Default False keeps V1 timings.
+
+    Raises:
+        ForecastHorizonError: if the chosen model's horizon does not cover the
+            passage time (and ``model != "auto"``, or all auto candidates fail).
     """
     if departure_time.tzinfo is None:
         raise ValueError("departure_time must be timezone-aware")
     if not 0.0 < efficiency <= 1.0:
         raise ValueError("efficiency must be in (0, 1]")
 
+    if model == AUTO_MODEL:
+        last_err: ForecastHorizonError | None = None
+        for candidate in AUTO_FALLBACK_CHAIN:
+            try:
+                return await _estimate_with_model(
+                    waypoints,
+                    departure_time,
+                    boat_archetype,
+                    efficiency=efficiency,
+                    segment_length_nm=segment_length_nm,
+                    adapter=adapter,
+                    model=candidate,
+                    heuristic_speed_kn=heuristic_speed_kn,
+                    use_wave_correction=use_wave_correction,
+                )
+            except ForecastHorizonError as exc:
+                last_err = exc
+                continue
+        assert last_err is not None
+        raise last_err
+    return await _estimate_with_model(
+        waypoints,
+        departure_time,
+        boat_archetype,
+        efficiency=efficiency,
+        segment_length_nm=segment_length_nm,
+        adapter=adapter,
+        model=model,
+        heuristic_speed_kn=heuristic_speed_kn,
+        use_wave_correction=use_wave_correction,
+    )
+
+
+async def _estimate_with_model(
+    waypoints: list[Point],
+    departure_time: datetime,
+    boat_archetype: str,
+    *,
+    efficiency: float,
+    segment_length_nm: float,
+    adapter: MarineDataAdapter | None,
+    model: str,
+    heuristic_speed_kn: float,
+    use_wave_correction: bool,
+) -> PassageReport:
     polar = get_polar(boat_archetype)
     segments = segment_route(waypoints, segment_length_nm)
     departure_utc = departure_time.astimezone(UTC)
@@ -169,15 +236,12 @@ async def estimate_passage(
     cumulative_actual = timedelta(0)
     max_tws = 0.0
     min_boat_speed = float("inf")
-    for seg, mid_time, mid_pt, bundle in zip(
+    for seg, mid_time, _mid_pt, bundle in zip(
         segments, seg_mid_times, seg_mid_points, bundles, strict=True
     ):
         wind_series = bundle.wind_by_model.get(model)
-        if wind_series is None:
-            raise RuntimeError(
-                f"adapter returned no wind series for model {model!r} at "
-                f"({mid_pt.lat:.4f}, {mid_pt.lon:.4f})"
-            )
+        if wind_series is None or not wind_series.points:
+            raise ForecastHorizonError(model, mid_time)
         wp = _closest_wind_point(wind_series.points, mid_time)
         twa = normalize_twa(twd=wp.direction_deg, course=seg.bearing_deg)
         polar_speed = lookup_polar(polar, wp.speed_kn, twa)

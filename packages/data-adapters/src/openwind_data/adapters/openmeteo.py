@@ -20,6 +20,16 @@ MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
 
 DEFAULT_MODEL = "meteofrance_arome_france"
 
+# Ordered fallback when caller passes model="auto": from highest-resolution /
+# shortest-horizon to lowest / longest. AROME captures Med thermals at 1.3 km
+# but only ~48 h; ICON-EU covers ~5 d; GFS covers ~16 d.
+AUTO_MODEL = "auto"
+AUTO_FALLBACK_CHAIN: tuple[str, ...] = (
+    "meteofrance_arome_france",
+    "icon_eu",
+    "gfs_seamless",
+)
+
 _WIND_VARS = "wind_speed_10m,wind_direction_10m,wind_gusts_10m"
 _MARINE_VARS = "wave_height,wave_period,wave_direction,wind_wave_height,swell_wave_height"
 
