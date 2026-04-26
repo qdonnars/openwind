@@ -113,6 +113,24 @@ LANDING_HTML = """<!doctype html>
     .perks li { padding: 0.65rem 0.9rem; background: var(--card); border: 1px solid var(--border);
                 border-radius: 8px; font-size: 0.95rem; }
     .perks strong { color: var(--text); }
+    details.connector {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      margin: 0.6rem 0; overflow: hidden;
+    }
+    details.connector summary {
+      cursor: pointer; padding: 0.85rem 1rem; font-weight: 600; list-style: none;
+      display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    }
+    details.connector summary::-webkit-details-marker { display: none; }
+    details.connector summary::after {
+      content: "›"; color: var(--faint); font-size: 1.4rem; line-height: 1;
+      transition: transform 0.15s ease; transform-origin: center;
+    }
+    details.connector[open] summary::after { transform: rotate(90deg); }
+    details.connector[open] summary { border-bottom: 1px solid var(--border); }
+    details.connector ol { padding: 0.85rem 1rem 1rem 2.25rem; margin: 0; }
+    details.connector ol li { margin: 0.45rem 0; }
+    details.connector pre { margin: 0.5rem 0; }
     .footnote { color: var(--faint); font-size: 0.85rem; margin-top: 2.5rem; }
   </style>
 </head>
@@ -125,25 +143,54 @@ LANDING_HTML = """<!doctype html>
   <img class="hero" src="https://raw.githubusercontent.com/qdonnars/openwind/main/docs/screenshots/plan.png"
        alt="OpenWind passage plan: 5 waypoints, 48.6 nm, ETA 21:24, complexity 3 of 5.">
 
-  <h2>Try it in 30 seconds</h2>
-  <ol>
-    <li>In your MCP client, add the endpoint:
-      <pre><code>https://qdonnars-openwind-mcp.hf.space/mcp</code></pre></li>
-    <li>Ask, in your own words:
-      <blockquote>I'm leaving Marseille tomorrow morning for Porquerolles on a Sun Odyssey 36.
-        How long is the passage and how tricky is it?</blockquote></li>
-    <li>Your assistant calls the OpenWind tools, renders an inline preview card,
-      and hands you a deep-link to the full plan on
-      <a href="https://openwind.fr">openwind.fr</a>. No account. No API key.</li>
-  </ol>
+  <h2>Connect it to your assistant</h2>
+  <p>Pick yours below — under a minute, no install, no API key.</p>
 
-  <h2>New to MCP?</h2>
-  <p>It takes 2 minutes. Pick your client on
-    <a href="https://modelcontextprotocol.io/clients">modelcontextprotocol.io/clients</a>,
-    then follow the
-    <a href="https://modelcontextprotocol.io/docs/develop/connect-remote-servers">remote-server quickstart</a>.
-    Works with Claude Desktop, Le Chat, Cursor, Goose, Zed, Continue, and any
-    other MCP-compatible host.</p>
+  <details class="connector">
+    <summary>Claude (claude.ai)</summary>
+    <ol>
+      <li>Open <a href="https://claude.ai/settings/connectors" target="_blank" rel="noopener">claude.ai → Settings → Connectors</a>.</li>
+      <li>Scroll to the bottom and click <strong>Add custom connector</strong>.</li>
+      <li>Set <strong>Name</strong>: <code>OpenWind</code>.</li>
+      <li>Paste this in <strong>Remote MCP server URL</strong>:
+        <pre><code>https://qdonnars-openwind-mcp.hf.space/mcp</code></pre></li>
+      <li>Click <strong>Add</strong>. In any new chat, OpenWind shows up in the
+        <strong>Search and tools</strong> menu — toggle it on.</li>
+    </ol>
+  </details>
+
+  <details class="connector">
+    <summary>Le Chat (Mistral)</summary>
+    <ol>
+      <li>Open <a href="https://chat.mistral.ai" target="_blank" rel="noopener">chat.mistral.ai</a> and sign in.</li>
+      <li>In the left sidebar, click <strong>Connectors</strong>, then <strong>Add MCP server</strong>.</li>
+      <li>Set <strong>Name</strong>: <code>OpenWind</code> · <strong>Auth</strong>: <code>None</code>.</li>
+      <li>Paste this in <strong>URL</strong>:
+        <pre><code>https://qdonnars-openwind-mcp.hf.space/mcp</code></pre></li>
+      <li>Save, then enable the OpenWind toggle inside any conversation.</li>
+    </ol>
+  </details>
+
+  <details class="connector">
+    <summary>ChatGPT (OpenAI)</summary>
+    <ol>
+      <li>Requires ChatGPT <strong>Pro</strong>, Business, or Enterprise (custom connectors).</li>
+      <li>Open <a href="https://chatgpt.com/#settings/Connectors" target="_blank" rel="noopener">ChatGPT → Settings → Connectors</a>.</li>
+      <li>In <strong>Advanced</strong>, turn on <strong>Developer mode</strong>.</li>
+      <li>Back in <strong>Connectors</strong>, click <strong>Create</strong>.</li>
+      <li>Set <strong>Name</strong>: <code>OpenWind</code> · <strong>Authentication</strong>: <code>No authentication</code>.</li>
+      <li>Paste this in <strong>MCP server URL</strong>:
+        <pre><code>https://qdonnars-openwind-mcp.hf.space/mcp</code></pre></li>
+      <li>Trust the connector and save. Activate it in a chat via
+        <strong>+ → Developer connectors → OpenWind</strong>.</li>
+    </ol>
+  </details>
+
+  <h2>Then ask, in your own words</h2>
+  <blockquote>I'm leaving Marseille tomorrow morning for Porquerolles on a Sun Odyssey 36.
+    How long is the passage and how tricky is it?</blockquote>
+  <p>Your assistant calls the OpenWind tools, renders an inline preview card, and hands
+    you a deep-link to the full plan on <a href="https://openwind.fr">openwind.fr</a>.</p>
 
   <h2>Why OpenWind</h2>
   <ul class="perks">
@@ -155,12 +202,11 @@ LANDING_HTML = """<!doctype html>
     <li><strong>Open source, MIT.</strong> Self-host on Fly, Modal, your VPS.</li>
   </ul>
 
-  <h2>Six tools</h2>
+  <h2>Three tools</h2>
   <p><code>list_boat_archetypes</code>, <code>get_marine_forecast</code>,
-    <code>estimate_passage</code>, <code>score_complexity</code>,
-    <code>render_passage_widget</code> (returns ready-to-display HTML),
-    <code>read_me</code> (template + instructions, fallback for clients
-    that customise rendering).</p>
+    and <code>plan_passage</code> — the workhorse: one call returns timing,
+    1-5 complexity score, a ready-to-display HTML widget, and a deep-link
+    to the full plan on openwind.fr.</p>
 
   <h2>Source</h2>
   <p>Project site: <a href="https://openwind.fr">openwind.fr</a> &middot;
