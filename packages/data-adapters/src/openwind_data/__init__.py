@@ -9,13 +9,31 @@ from openwind_data.adapters.base import (
     WindSeries,
 )
 from openwind_data.adapters.openmeteo import OpenMeteoAdapter
+from openwind_data.routing import (
+    BoatPolar,
+    PassageReport,
+    Point,
+    Segment,
+    SegmentReport,
+    estimate_passage,
+    get_polar,
+    list_archetypes,
+)
 
 __all__ = [
+    "BoatPolar",
     "ForecastBundle",
     "MarineDataAdapter",
     "OpenMeteoAdapter",
+    "PassageReport",
+    "Point",
     "SeaPoint",
     "SeaSeries",
+    "Segment",
+    "SegmentReport",
     "WindPoint",
     "WindSeries",
+    "estimate_passage",
+    "get_polar",
+    "list_archetypes",
 ]
