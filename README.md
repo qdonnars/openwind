@@ -9,7 +9,7 @@
 
 [**openwind.fr**](https://openwind.fr) · [`mcp.openwind.fr`](https://qdonnars-openwind-mcp.hf.space/) · MIT
 
-![OpenWind passage plan rendered in the web app](docs/screenshots/widget-preview.png)
+![OpenWind passage plan rendered in the web app](docs/screenshots/plan.png)
 
 ---
 

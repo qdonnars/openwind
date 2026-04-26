@@ -122,7 +122,7 @@ LANDING_HTML = """<!doctype html>
     A free, keyless, open-source Mediterranean passage planner — exposed as an
     MCP server, so any compatible assistant can use it.</p>
 
-  <img class="hero" src="https://raw.githubusercontent.com/qdonnars/openwind/main/docs/screenshots/widget-preview.png"
+  <img class="hero" src="https://raw.githubusercontent.com/qdonnars/openwind/main/docs/screenshots/plan.png"
        alt="OpenWind passage plan: 5 waypoints, 48.6 nm, ETA 21:24, complexity 3 of 5.">
 
   <h2>Try it in 30 seconds</h2>
