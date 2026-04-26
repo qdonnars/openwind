@@ -61,6 +61,7 @@ class TestBuildServer:
             "get_marine_forecast",
             "estimate_passage",
             "score_complexity",
+            "render_passage_widget",
             "read_me",
         }
 
@@ -142,6 +143,126 @@ class TestScoreComplexityTool:
             },
         )
         assert out["sea_level"] == 4
+
+
+class TestRenderPassageWidgetTool:
+    """The fast path — server-side rendering of final HTML.
+
+    Anchors the contract: *no placeholders* in the output, the deep-link URL
+    points at openwind.fr, FR/EN labels swap, and the segment data drives the
+    leg blocks.
+    """
+
+    @staticmethod
+    async def _build_passage(server: FastMCP) -> dict:
+        out = await _call(
+            server,
+            "estimate_passage",
+            {
+                "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
+                "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
+                "archetype": "cruiser_40ft",
+                "segment_length_nm": 10.0,
+            },
+        )
+        return out
+
+    @staticmethod
+    async def _build_complexity(server: FastMCP) -> dict:
+        return await _call(
+            server,
+            "score_complexity",
+            {
+                "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
+                "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
+                "archetype": "cruiser_40ft",
+            },
+        )
+
+    @staticmethod
+    async def _render(server: FastMCP, args: dict) -> str:
+        out = await _call(server, "render_passage_widget", args)
+        body = out["result"] if isinstance(out, dict) and "result" in out else out
+        assert isinstance(body, str)
+        return body
+
+    async def test_returns_final_html_with_no_placeholders(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        passage = await self._build_passage(server)
+        complexity = await self._build_complexity(server)
+
+        body = await self._render(server, {"passage": passage, "complexity": complexity})
+        # The whole point: substitution happened server-side. Any leftover
+        # mustache-style placeholder is a bug — the LLM would render it raw.
+        assert "{{" not in body
+        assert "}}" not in body
+
+    async def test_renders_one_leg_block_per_segment(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        passage = await self._build_passage(server)
+        complexity = await self._build_complexity(server)
+
+        body = await self._render(server, {"passage": passage, "complexity": complexity})
+        assert body.count('class="ow-leg"') == len(passage["segments"])
+
+    async def test_includes_openwind_deeplink(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        passage = await self._build_passage(server)
+        body = await self._render(
+            server,
+            {
+                "passage": passage,
+                "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
+            },
+        )
+        # Deep-link uses the explicit waypoints arg — fail loudly if the URL
+        # ever moves or the encoder drops args.
+        assert "https://openwind.fr/plan?" in body
+        assert "wpts=43.300,5.350;43.000,6.200" in body
+        assert "archetype=cruiser_40ft" in body
+
+    async def test_locale_fr_swaps_labels(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        passage = await self._build_passage(server)
+        body = await self._render(server, {"passage": passage, "locale": "fr"})
+        # FR swap targets the label text between tags, not arbitrary occurrences.
+        assert ">DÉPART<" in body
+        assert ">Durée<" in body
+        assert ">Complexité<" in body
+        assert ">Ouvrir dans OpenWind &rarr;<" in body
+        assert ">DEPARTURE<" not in body
+
+    async def test_locale_en_keeps_english(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        passage = await self._build_passage(server)
+        body = await self._render(server, {"passage": passage, "locale": "en"})
+        assert ">DEPARTURE<" in body
+        assert ">DÉPART<" not in body
+
+    async def test_complexity_optional(self) -> None:
+        # Without complexity, score shows "-" and no bars are filled.
+        server = build_server(adapter=StubAdapter())
+        passage = await self._build_passage(server)
+        body = await self._render(server, {"passage": passage})
+        # 5 bar elements present, none with a background colour set.
+        assert body.count('<span class="ow-cx-bar"') == 5
+        assert 'class="ow-cx-bar" style="background:#' not in body
+
+    async def test_boat_name_and_leg_titles(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        passage = await self._build_passage(server)
+        custom_titles = [f"Custom leg {i}" for i in range(len(passage["segments"]))]
+        body = await self._render(
+            server,
+            {
+                "passage": passage,
+                "boat_name": "OTAGO III",
+                "leg_titles": custom_titles,
+            },
+        )
+        assert "OTAGO III" in body
+        for title in custom_titles:
+            assert title in body
 
 
 class TestReadMeTool:
