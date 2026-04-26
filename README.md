@@ -68,7 +68,8 @@ and dark hosts, no Claude-specific CSS variables, no vendor lock-in.
 packages/
 ├── data-adapters/   # pure domain logic (forecast adapters, polars, routing, complexity)
 ├── mcp-core/        # FastMCP server (cloud-agnostic, no Gradio, no HF deps)
-└── hf-space/        # ~20-line Docker wrapper for Hugging Face Spaces
+├── hf-space/        # ~20-line Docker wrapper for Hugging Face Spaces
+└── web/             # React 19 + Vite app deployed to GitHub Pages (openwind.fr)
 ```
 
 `mcp-core` stays deployment-agnostic. Re-deploying on Fly, Modal, or a VPS is
@@ -87,6 +88,12 @@ uv run ruff check .
 # Local HTTP MCP smoke
 cd packages/hf-space
 uv run python app.py   # serves :7860 — point any MCP client at /mcp
+
+# Web app (openwind.fr)
+cd packages/web
+npm install
+npm run dev            # vite dev server
+npm run build          # outputs packages/web/dist
 ```
 
 ## V1 scope
