@@ -56,7 +56,7 @@ export function SpotSearch({ onSelect }: SpotSearchProps) {
   return (
     <div ref={containerRef} className="relative w-full max-w-md lg:max-w-lg">
       <div className="relative">
-        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--ow-fg-2)' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <circle cx="11" cy="11" r="8" />
           <path d="M21 21l-4.35-4.35" />
         </svg>
@@ -68,22 +68,22 @@ export function SpotSearch({ onSelect }: SpotSearchProps) {
             if (e.key === "Escape") setOpen(false);
           }}
           placeholder="Search..."
-          className="w-full pl-9 pr-3 py-2.5 min-h-[44px] bg-gray-800/80 border border-gray-700/60 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-teal-500/60 focus:ring-1 focus:ring-teal-500/20 transition-all"
+          className="ow-search-input w-full pl-9 pr-3 py-2.5 min-h-[44px] rounded-xl text-sm transition-all"
         />
       </div>
       {open && (
-        <ul className="absolute top-full left-0 right-0 mt-1.5 bg-gray-800 border border-gray-700/60 rounded-xl overflow-hidden z-50 shadow-2xl animate-fade-in">
+        <ul className="ow-search-dropdown absolute top-full left-0 right-0 mt-1.5 rounded-xl overflow-hidden z-50 animate-fade-in">
           {results.map((r) => (
             <li
               key={r.id}
               onClick={() => handleSelect(r)}
-              className="px-3 py-2.5 min-h-[44px] flex items-center hover:bg-gray-700/80 active:bg-gray-600 cursor-pointer text-sm transition-colors border-b border-gray-700/30 last:border-b-0"
+              className="ow-search-item px-3 py-2.5 min-h-[44px] flex items-center cursor-pointer text-sm transition-colors"
             >
-              <span className="text-white font-medium">{r.name}</span>
+              <span className="font-medium" style={{ color: 'var(--ow-fg-0)' }}>{r.name}</span>
               {r.admin1 && (
-                <span className="text-gray-400">, {r.admin1}</span>
+                <span style={{ color: 'var(--ow-fg-1)' }}>, {r.admin1}</span>
               )}
-              <span className="text-gray-500"> — {r.country}</span>
+              <span style={{ color: 'var(--ow-fg-2)' }}> — {r.country}</span>
             </li>
           ))}
         </ul>

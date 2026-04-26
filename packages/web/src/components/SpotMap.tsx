@@ -4,6 +4,7 @@ import "leaflet/dist/leaflet.css";
 import type { Spot, ModelForecast } from "../types";
 import { QUICK_SPOTS } from "../spots";
 import { getWindColor } from "../utils/colors";
+import { useTheme } from "../design/theme";
 
 function createArrowSvg(
   degrees: number,
@@ -116,6 +117,19 @@ export function SpotMap({
   const cancelPressRef = useRef<() => void>(() => {});
   // Maps each marker's SVG element → its spot (for native long-press detection)
   const elementToSpotRef = useRef<Map<Element, Spot>>(new Map());
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+
+  const { resolvedTheme } = useTheme();
+
+  // Switch Carto tiles when theme changes
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const variant = resolvedTheme === "light" ? "light_all" : "dark_all";
+    const url = `https://{s}.basemaps.cartocdn.com/${variant}/{z}/{x}/{y}{r}.png`;
+    if (tileLayerRef.current) {
+      tileLayerRef.current.setUrl(url);
+    }
+  }, [resolvedTheme]);
 
   // Init map once
   useEffect(() => {
@@ -126,9 +140,11 @@ export function SpotMap({
       attributionControl: false,
     }).setView([current.latitude, current.longitude], 10);
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    const variant = resolvedTheme === "light" ? "light_all" : "dark_all";
+    const tile = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${variant}/{z}/{x}/{y}{r}.png`, {
       maxZoom: 19,
     }).addTo(map);
+    tileLayerRef.current = tile;
 
     L.control.attribution({ position: "bottomright", prefix: false })
       .addAttribution('&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>')
@@ -357,14 +373,14 @@ export function SpotMap({
       {/* Marker long-press: rename or delete */}
       {pendingEdit && (
         <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50 backdrop-blur-sm animate-fade-in" role="dialog" aria-label="Spot options">
-          <div className="bg-gray-800/95 backdrop-blur rounded-xl p-5 mx-4 w-full max-w-xs shadow-2xl border border-gray-700/50 animate-modal-in">
-            <p className="text-white text-sm font-semibold mb-1">{pendingEdit.name}</p>
-            <p className="text-gray-400 text-xs mb-4">
+          <div className="ow-modal-surface backdrop-blur rounded-xl p-5 mx-4 w-full max-w-xs animate-modal-in">
+            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--ow-fg-0)' }}>{pendingEdit.name}</p>
+            <p className="text-xs mb-4" style={{ color: 'var(--ow-fg-1)' }}>
               {pendingEdit.latitude.toFixed(4)}, {pendingEdit.longitude.toFixed(4)}
             </p>
             <div className="flex flex-col gap-2">
               <button
-                className="w-full min-h-[44px] py-2.5 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-600 active:bg-gray-500 active:scale-[0.98] transition-all"
+                className="ow-modal-btn w-full min-h-[44px] py-2.5 rounded-lg text-sm font-medium transition-all"
                 onClick={() => {
                   const s = pendingEdit;
                   setPendingEdit(null);
@@ -383,7 +399,7 @@ export function SpotMap({
                 Delete
               </button>
               <button
-                className="w-full min-h-[44px] py-2.5 rounded-lg border border-gray-600 text-gray-300 text-sm hover:bg-gray-700/50 hover:text-gray-200 active:scale-[0.98] transition-all"
+                className="ow-modal-btn-outline w-full min-h-[44px] py-2.5 rounded-lg text-sm transition-all"
                 onClick={() => setPendingEdit(null)}
               >
                 Cancel
@@ -396,15 +412,15 @@ export function SpotMap({
       {/* New spot / rename spot */}
       {pendingSpot && (
         <div className="absolute inset-0 flex items-center justify-center z-[1000] bg-black/50 backdrop-blur-sm animate-fade-in" role="dialog" aria-label={pendingSpot.editingSpot ? "Rename spot" : "New spot"}>
-          <div className="bg-gray-800/95 backdrop-blur rounded-xl p-5 mx-4 w-full max-w-xs shadow-2xl border border-gray-700/50 animate-modal-in">
-            <p className="text-white text-sm font-semibold mb-1">
+          <div className="ow-modal-surface backdrop-blur rounded-xl p-5 mx-4 w-full max-w-xs animate-modal-in">
+            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--ow-fg-0)' }}>
               {pendingSpot.editingSpot ? "Rename spot" : "New spot"}
             </p>
-            <p className="text-gray-400 text-xs mb-3">
+            <p className="text-xs mb-3" style={{ color: 'var(--ow-fg-1)' }}>
               {pendingSpot.lat.toFixed(4)}, {pendingSpot.lng.toFixed(4)}
             </p>
             <input
-              className="w-full bg-gray-700 text-white text-sm rounded-lg px-3 py-2.5 mb-4 outline-none border border-gray-600 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30 transition-colors"
+              className="ow-modal-input w-full text-sm rounded-lg px-3 py-2.5 mb-4 transition-colors"
               value={pendingSpot.name}
               onChange={(e) => setPendingSpot({ ...pendingSpot, name: e.target.value })}
               autoFocus
@@ -412,7 +428,7 @@ export function SpotMap({
             />
             <div className="flex gap-2">
               <button
-                className="flex-1 min-h-[44px] py-2.5 rounded-lg border border-gray-600 text-gray-300 text-sm font-medium hover:bg-gray-700/50 hover:text-gray-200 active:scale-[0.98] transition-all"
+                className="ow-modal-btn-outline flex-1 min-h-[44px] py-2.5 rounded-lg text-sm font-medium transition-all"
                 onClick={() => setPendingSpot(null)}
               >
                 Cancel
