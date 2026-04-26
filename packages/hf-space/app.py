@@ -17,16 +17,27 @@ website, not via the HF catalog. Re-evaluate if traffic plateaus.
 
 from __future__ import annotations
 
+import uvicorn
 from openwind_mcp_core import build_server
 
 PORT = 7860
 
 
 def main() -> None:
-    server = build_server()
-    server.settings.host = "0.0.0.0"
-    server.settings.port = PORT
-    server.run(transport="streamable-http")
+    # Run uvicorn explicitly (rather than ``server.run(transport=...)``) so we
+    # can enable ``proxy_headers``/``forwarded_allow_ips``. HF Spaces front
+    # the container with a TLS-terminating reverse proxy; without these flags
+    # FastMCP's ASGI app sees ``http`` + the internal Host header and emits
+    # broken 307 redirects (``http://...:443/mcp/``) that the edge then
+    # answers with 421 Misdirected Request.
+    app = build_server().streamable_http_app()
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=PORT,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )
 
 
 if __name__ == "__main__":
