@@ -31,7 +31,7 @@ async def test_fetch_returns_bundle_with_default_model(
         return_value=httpx.Response(200, json=marine_porquerolles)
     )
 
-    adapter = OpenMeteoAdapter()
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
     start, end = _start_end()
     bundle = await adapter.fetch(lat=43.30, lon=5.35, start=start, end=end)
 
@@ -63,7 +63,7 @@ async def test_fetch_passes_arome_as_default_model_param(
     )
     respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
 
-    adapter = OpenMeteoAdapter()
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
     start, end = _start_end()
     await adapter.fetch(lat=43.30, lon=5.35, start=start, end=end)
 
@@ -82,7 +82,7 @@ async def test_cache_hits_within_ttl(forecast_marseille_arome, marine_porqueroll
         return_value=httpx.Response(200, json=marine_porquerolles)
     )
 
-    adapter = OpenMeteoAdapter()
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
     start, end = _start_end()
     await adapter.fetch(lat=43.30, lon=5.35, start=start, end=end)
     await adapter.fetch(lat=43.30, lon=5.35, start=start, end=end)
@@ -103,7 +103,7 @@ async def test_cache_serves_subwindow_without_refetch(
         return_value=httpx.Response(200, json=marine_porquerolles)
     )
 
-    adapter = OpenMeteoAdapter()
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
     start, end = _start_end()
     await adapter.fetch(lat=43.30, lon=5.35, start=start, end=end)
     # Sub-window inside the original day — must be served from cache.
@@ -128,7 +128,7 @@ async def test_cache_dedupes_close_lat_lon_within_grid_cell(
     )
     respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
 
-    adapter = OpenMeteoAdapter()
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
     start, end = _start_end()
     await adapter.fetch(lat=43.301, lon=5.351, start=start, end=end)
     await adapter.fetch(lat=43.304, lon=5.348, start=start, end=end)  # same 2dp cell
@@ -143,7 +143,7 @@ async def test_multi_model_runs_parallel_requests(forecast_marseille_arome, mari
     )
     respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
 
-    adapter = OpenMeteoAdapter()
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
     start, end = _start_end()
     bundle = await adapter.fetch(
         lat=43.30,
@@ -162,7 +162,7 @@ async def test_multi_model_runs_parallel_requests(forecast_marseille_arome, mari
 
 
 async def test_naive_datetime_raises():
-    adapter = OpenMeteoAdapter()
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
     with pytest.raises(ValueError, match="timezone-aware"):
         await adapter.fetch(
             lat=43.0,
@@ -173,7 +173,7 @@ async def test_naive_datetime_raises():
 
 
 async def test_end_before_start_raises():
-    adapter = OpenMeteoAdapter()
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
     end = datetime(2026, 4, 26, 0, 0, tzinfo=UTC)
     start = datetime(2026, 4, 26, 23, 0, tzinfo=UTC)
     with pytest.raises(ValueError, match="after start"):
@@ -185,7 +185,62 @@ async def test_http_error_propagates(marine_porquerolles):
     respx.get(FORECAST_URL).mock(return_value=httpx.Response(500))
     respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
 
-    adapter = OpenMeteoAdapter()
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
     start, end = _start_end()
     with pytest.raises(httpx.HTTPStatusError):
         await adapter.fetch(lat=43.0, lon=5.0, start=start, end=end)
+
+
+@respx.mock
+async def test_http_pacing_serializes_concurrent_starts(
+    forecast_marseille_arome, marine_porquerolles
+):
+    # A passage routes ~12 sub-segments through asyncio.gather; without pacing
+    # that's a 24-request burst on Open-Meteo's free tier. The lock should
+    # space starts by ≥http_min_interval_s. Use distinct lat/lon so the cache
+    # never short-circuits the HTTP path.
+    import asyncio
+    import time
+
+    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=forecast_marseille_arome))
+    respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
+
+    adapter = OpenMeteoAdapter(http_min_interval_s=0.05)
+    start, end = _start_end()
+    coords = [(43.30, 5.30), (43.40, 5.30), (43.50, 5.30), (43.60, 5.30)]
+
+    t0 = time.monotonic()
+    await asyncio.gather(
+        *[adapter.fetch(lat=lat, lon=lon, start=start, end=end) for lat, lon in coords]
+    )
+    elapsed = time.monotonic() - t0
+
+    # 4 fetches x 2 endpoints = 8 HTTP starts; serialized at 50ms each => >=350ms
+    # for the spaces between starts (8 starts means 7 inter-start gaps). Be
+    # generous on the upper bound to keep the test stable on slow CI.
+    assert elapsed >= 0.35, f"pacing not enforced (elapsed={elapsed:.3f}s)"
+
+
+async def test_http_pacing_disabled_when_zero(forecast_marseille_arome, marine_porquerolles):
+    # http_min_interval_s=0 must skip the lock entirely (cheap path for tests
+    # and for callers who already rate-limit upstream).
+    import asyncio
+    import time
+
+    with respx.mock(assert_all_called=False) as r:
+        r.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=forecast_marseille_arome))
+        r.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
+
+        adapter = OpenMeteoAdapter(http_min_interval_s=0)
+        start, end = _start_end()
+        coords = [(43.30, 5.30), (43.40, 5.30), (43.50, 5.30), (43.60, 5.30)]
+
+        t0 = time.monotonic()
+        await asyncio.gather(
+            *[adapter.fetch(lat=lat, lon=lon, start=start, end=end) for lat, lon in coords]
+        )
+        elapsed = time.monotonic() - t0
+
+    # No artificial wait: 4 mocked fetches in parallel should finish in well
+    # under 100ms on any sane runner.
+    assert elapsed < 0.1, f"unexpected slowdown with pacing off (elapsed={elapsed:.3f}s)"

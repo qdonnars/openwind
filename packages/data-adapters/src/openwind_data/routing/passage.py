@@ -119,7 +119,7 @@ async def estimate_passage(
     boat_archetype: str,
     *,
     efficiency: float = 0.75,
-    segment_length_nm: float = 5.0,
+    segment_length_nm: float = 10.0,
     adapter: MarineDataAdapter | None = None,
     model: str = DEFAULT_MODEL,
     heuristic_speed_kn: float = HEURISTIC_SPEED_KN,
@@ -136,7 +136,10 @@ async def estimate_passage(
             - ``0.75`` cruising (default — sail trim, comfort margins, helm)
             - ``0.65`` loaded family cruising (water/fuel/gear, fouled hull)
             - ``0.55`` heavy seas, neglected hull, short-handed
-        segment_length_nm: target sub-segment length in NM.
+        segment_length_nm: target sub-segment length in NM. Default 10 nm
+            balances precision and Open-Meteo request budget — Med wind
+            gradients <10 nm are rare offshore. Drop to 5 for tight coastal
+            work; raise to 20 for long offshore legs.
         adapter: any `MarineDataAdapter` (defaults to a fresh `OpenMeteoAdapter`).
         model: wind model name. Pass ``"auto"`` to try AROME → ICON → GFS in
             order and use the first one whose horizon covers the passage.
