@@ -12,9 +12,13 @@ Tools exposed (V1):
 3. ``estimate_passage`` — per-segment timing along a polyline for a given
    archetype + departure time.
 4. ``score_complexity`` — 1-5 difficulty score from a passage + optional Hs max.
-5. ``read_me`` — returns the HTML template + rendering instructions the client
-   should use to display passage results inline. Client-agnostic (no Claude
-   CSS-variable coupling — palette switches via ``prefers-color-scheme``).
+5. ``render_passage_widget`` — server-side render of the passage widget to
+   final HTML. Fast path: substitution happens in Python, the LLM doesn't
+   regenerate ~5 KB of markup token by token.
+6. ``read_me`` — returns the HTML template + rendering instructions for
+   clients/LLMs that want to substitute placeholders themselves (fallback,
+   debugging, customisation). Client-agnostic (no Claude CSS-variable
+   coupling — palette switches via ``prefers-color-scheme``).
 
 Typical orchestration pattern (LLM perspective):
 
@@ -51,6 +55,7 @@ from openwind_data.routing import (
     score_complexity as _score_complexity,
 )
 
+from .render import render_passage
 from .widget import PASSAGE_WIDGET_INSTRUCTIONS
 
 
@@ -223,15 +228,61 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         return asdict(score)
 
     @server.tool()
+    def render_passage_widget(
+        passage: dict[str, Any],
+        complexity: dict[str, Any] | None = None,
+        waypoints: list[dict[str, float]] | None = None,
+        boat_name: str | None = None,
+        leg_titles: list[str] | None = None,
+        locale: str = "fr",
+        timezone: str = "Europe/Paris",
+    ) -> str:
+        """Render the passage widget to final, self-contained HTML.
+
+        Pass the dicts returned by ``estimate_passage`` and (optionally)
+        ``score_complexity``. The server substitutes every placeholder, picks
+        complexity colours, formats dates/durations, and returns ~5 KB of
+        ready-to-display HTML. The LLM either relays the string verbatim or
+        hands it to the host client's artifact / show_widget capability.
+
+        Prefer this over manually substituting the ``read_me`` template —
+        deterministic, ~10x faster, no formatting mistakes.
+
+        Args:
+            passage: dict from ``estimate_passage``.
+            complexity: dict from ``score_complexity``. If omitted, the
+                complexity card renders empty (score "-", bars unfilled).
+            waypoints: original user waypoints for the deep-link URL. If
+                omitted, derived from segment endpoints (less accurate when
+                segments were sub-divided).
+            boat_name: optional commercial name (e.g. ``"OTAGO III"``);
+                prepended to the boat line.
+            leg_titles: optional human-friendly per-leg titles (e.g.
+                ``["Sortie rade", "Cap Sicié → Grand Ribaud"]``). Falls back to
+                ``"Leg N · wpN → wpN+1"`` for missing entries.
+            locale: ``"fr"`` (default) or ``"en"`` — drives label text and
+                date format.
+            timezone: IANA tz for time display (default ``"Europe/Paris"``).
+        """
+        return render_passage(
+            passage,
+            complexity,
+            waypoints=waypoints,
+            boat_name=boat_name,
+            leg_titles=leg_titles,
+            locale=locale,
+            timezone=timezone,
+        )
+
+    @server.tool()
     def read_me() -> str:
         """Return the OpenWind passage-widget rendering instructions.
 
-        Call this **once** per conversation, before rendering passage results
-        to the user. The returned text contains a self-contained HTML template
-        and a data-mapping guide; substitute the ``{{placeholders}}`` with
-        values from ``estimate_passage`` + ``score_complexity`` and surface
-        the result inline (e.g. via the host client's ``show_widget`` /
-        artifact / fenced-HTML capability).
+        Fallback for clients/LLMs that want to substitute placeholders
+        themselves (e.g. to customise the rendering, or for debugging).
+        For the standard flow, prefer ``render_passage_widget`` — it does the
+        substitution server-side and returns final HTML directly, avoiding
+        ~3 minutes of token-by-token regeneration.
 
         The template adapts to light / dark mode automatically via
         ``prefers-color-scheme`` — no client-specific CSS variables.
