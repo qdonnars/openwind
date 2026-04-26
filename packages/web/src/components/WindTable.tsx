@@ -3,6 +3,7 @@ import type { ModelForecast } from "../types";
 import { TimelineHeader } from "./TimelineHeader";
 import { WindCell } from "./WindCell";
 import { BEAUFORT_STEPS } from "../utils/colors";
+import { useTimezone } from "../hooks/useTimezone";
 
 // Native time step (hours) for each model — Open-Meteo interpolates to 1h,
 // but these are the actual forecast resolution worth displaying
@@ -112,6 +113,7 @@ export function WindTable({
 }: WindTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolledEnd, setScrolledEnd] = useState(false);
+  const [timezoneMode, cycleTimezone] = useTimezone();
 
   const masterTimeline = useMemo(() => {
     const resolution = autoResolution(forecasts);
@@ -187,6 +189,8 @@ export function WindTable({
                 onSelectHour={onSelectHour}
                 forecasts={forecasts}
                 nowHour={nowHour}
+                timezoneMode={timezoneMode}
+                onCycleTimezone={cycleTimezone}
               />
             </thead>
             <tbody>

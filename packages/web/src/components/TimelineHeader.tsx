@@ -1,6 +1,19 @@
 import { formatHour, formatDayHeader, groupHoursByDay } from "../utils/format";
 import { getWindColor } from "../utils/colors";
 import type { ModelForecast } from "../types";
+import type { TimezoneMode } from "../hooks/useTimezone";
+
+const TZ_LABELS: Record<TimezoneMode, string> = {
+  local: "LCL",
+  utc: "UTC",
+  boat: "BOAT",
+};
+
+const TZ_TITLES: Record<TimezoneMode, string> = {
+  local: "Browser local time — click to switch to UTC",
+  utc: "UTC — click to switch to Boat (Europe/Paris)",
+  boat: "Boat time (Europe/Paris) — click to switch to Local",
+};
 
 interface TimelineHeaderProps {
   times: string[];
@@ -8,6 +21,8 @@ interface TimelineHeaderProps {
   onSelectHour: (time: string) => void;
   forecasts: ModelForecast[];
   nowHour: string;
+  timezoneMode: TimezoneMode;
+  onCycleTimezone: () => void;
 }
 
 function wmoIcon(code: number | null): string {
@@ -32,6 +47,8 @@ export function TimelineHeader({
   onSelectHour,
   forecasts,
   nowHour,
+  timezoneMode,
+  onCycleTimezone,
 }: TimelineHeaderProps) {
   const days = groupHoursByDay(times);
 
@@ -70,7 +87,7 @@ export function TimelineHeader({
             scope="colgroup"
             className="bg-gray-900 text-gray-200 text-xs lg:text-sm font-bold py-2 border-b border-gray-700 border-l border-l-gray-600 uppercase tracking-wide"
           >
-            {formatDayHeader(times[indices[0]])}
+            {formatDayHeader(times[indices[0]], timezoneMode)}
           </th>
         ))}
       </tr>
@@ -100,10 +117,17 @@ export function TimelineHeader({
           />
         ))}
       </tr>
-      {/* Hour numbers */}
+      {/* Hour numbers + timezone toggle */}
       <tr>
-        <th className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" scope="col">
-          <span className="text-[12px] lg:text-[13px] font-bold text-gray-300">kn</span>
+        <th className="sticky left-0 z-20 bg-gray-900 min-w-[56px] px-1" scope="col">
+          <button
+            onClick={onCycleTimezone}
+            title={TZ_TITLES[timezoneMode]}
+            aria-label={`Timezone: ${timezoneMode}. Click to cycle.`}
+            className="text-[10px] lg:text-[11px] font-bold text-teal-400 hover:text-teal-200 active:scale-95 transition-all leading-none whitespace-nowrap"
+          >
+            {TZ_LABELS[timezoneMode]}
+          </button>
         </th>
         {times.map((t, i) => {
           const isNow = t.startsWith(nowHour);
@@ -120,7 +144,7 @@ export function TimelineHeader({
               }`}
               onClick={() => onSelectHour(t)}
             >
-              {formatHour(t)}
+              {formatHour(t, timezoneMode)}
               {isNow && (
                 <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-teal-400" />
               )}
