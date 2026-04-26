@@ -169,3 +169,85 @@ body {
 .leaflet-control-attribution a {
   color: #9ca3af !important;
 }
+
+/* ── Theme-aware table header ────────────────────────────────── */
+.ow-tbl-bg {
+  background: var(--ow-bg-1);
+}
+.ow-tbl-day-th {
+  background: var(--ow-bg-1);
+  color: var(--ow-fg-0);
+  border-bottom: 1px solid var(--ow-line-2);
+  border-left: 1px solid var(--ow-line-2);
+}
+.ow-hour-cell {
+  background: var(--ow-bg-1);
+  color: var(--ow-fg-1);
+}
+.ow-hour-cell:hover {
+  background: var(--ow-bg-2);
+  color: var(--ow-fg-0);
+}
+.ow-null-cell {
+  background: var(--ow-bg-2);
+  color: var(--ow-fg-2);
+}
+
+/* ── Theme-aware search ──────────────────────────────────────── */
+.ow-search-input {
+  background: color-mix(in srgb, var(--ow-bg-2) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ow-line-2) 60%, transparent);
+  color: var(--ow-fg-0);
+}
+.ow-search-input::placeholder {
+  color: var(--ow-fg-3);
+}
+.ow-search-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--ow-accent) 60%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ow-accent) 20%, transparent);
+}
+.ow-search-dropdown {
+  background: var(--ow-bg-2);
+  border: 1px solid color-mix(in srgb, var(--ow-line-2) 60%, transparent);
+  box-shadow: var(--ow-shadow-pop);
+}
+.ow-search-item {
+  border-bottom: 1px solid color-mix(in srgb, var(--ow-line) 30%, transparent);
+  color: var(--ow-fg-0);
+}
+.ow-search-item:last-child { border-bottom: none; }
+.ow-search-item:hover { background: color-mix(in srgb, var(--ow-bg-1) 80%, transparent); }
+.ow-search-item:active { background: var(--ow-bg-1); }
+
+/* ── Theme-aware modals (SpotMap) ────────────────────────────── */
+.ow-modal-surface {
+  background: color-mix(in srgb, var(--ow-bg-2) 95%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ow-line-2) 50%, transparent);
+  box-shadow: var(--ow-shadow-pop);
+}
+.ow-modal-btn {
+  background: var(--ow-bg-1);
+  color: var(--ow-fg-0);
+}
+.ow-modal-btn:hover { background: var(--ow-bg-0); }
+.ow-modal-btn:active { background: var(--ow-bg-0); transform: scale(0.98); }
+.ow-modal-btn-outline {
+  border: 1px solid var(--ow-line-2);
+  color: var(--ow-fg-1);
+}
+.ow-modal-btn-outline:hover {
+  background: color-mix(in srgb, var(--ow-bg-1) 50%, transparent);
+  color: var(--ow-fg-0);
+}
+.ow-modal-btn-outline:active { transform: scale(0.98); }
+.ow-modal-input {
+  background: var(--ow-bg-1);
+  color: var(--ow-fg-0);
+  border: 1px solid var(--ow-line-2);
+  outline: none;
+}
+.ow-modal-input:focus {
+  border-color: var(--ow-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ow-accent) 30%, transparent);
+}

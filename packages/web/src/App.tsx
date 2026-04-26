@@ -19,10 +19,10 @@ function EmptyState() {
             <path d="M12.6 19.4A2 2 0 1 0 14 16H2" />
           </svg>
         </div>
-        <p className="text-gray-200 text-base font-semibold mb-1.5">
+        <p className="text-base font-semibold mb-1.5" style={{ color: 'var(--ow-fg-0)' }}>
           Add a spot
         </p>
-        <p className="text-gray-400 text-sm leading-relaxed">
+        <p className="text-sm leading-relaxed" style={{ color: 'var(--ow-fg-1)' }}>
           <span className="lg:hidden">Long press on the map to place a wind spot</span>
           <span className="hidden lg:inline">Long click on the map to place a wind spot</span>
         </p>

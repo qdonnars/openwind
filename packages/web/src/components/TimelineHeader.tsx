@@ -23,6 +23,7 @@ interface TimelineHeaderProps {
   nowHour: string;
   timezoneMode: TimezoneMode;
   onCycleTimezone: () => void;
+  visibleDay: string; // ISO date string "2025-04-26" of leftmost visible day
 }
 
 function wmoIcon(code: number | null): string {
@@ -41,6 +42,12 @@ function wmoIcon(code: number | null): string {
   return "";
 }
 
+function formatStickyDay(isoDate: string): string {
+  if (!isoDate) return "";
+  const d = new Date(isoDate + "T12:00:00Z");
+  return d.toLocaleDateString("en-US", { weekday: "short", day: "numeric", timeZone: "UTC" });
+}
+
 export function TimelineHeader({
   times,
   selectedHour,
@@ -49,6 +56,7 @@ export function TimelineHeader({
   nowHour,
   timezoneMode,
   onCycleTimezone,
+  visibleDay,
 }: TimelineHeaderProps) {
   const days = groupHoursByDay(times);
 
@@ -77,15 +85,21 @@ export function TimelineHeader({
 
   return (
     <>
-      {/* Day headers */}
+      {/* Day headers — sticky left cell shows currently-visible day */}
       <tr>
-        <th className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" scope="col" />
+        <th
+          className="sticky left-0 z-20 min-w-[56px] px-1 text-[10px] font-bold uppercase tracking-wide"
+          style={{ background: 'var(--ow-bg-1)', color: 'var(--ow-accent)' }}
+          scope="col"
+        >
+          {formatStickyDay(visibleDay)}
+        </th>
         {Array.from(days.entries()).map(([dateKey, indices]) => (
           <th
             key={dateKey}
             colSpan={indices.length}
             scope="colgroup"
-            className="bg-gray-900 text-gray-200 text-xs lg:text-sm font-bold py-2 border-b border-gray-700 border-l border-l-gray-600 uppercase tracking-wide"
+            className="ow-tbl-day-th text-[10px] lg:text-xs font-bold py-1.5 uppercase tracking-wide"
           >
             {formatDayHeader(times[indices[0]], timezoneMode)}
           </th>
@@ -93,12 +107,12 @@ export function TimelineHeader({
       </tr>
       {/* Weather icons */}
       <tr>
-        <td className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" />
+        <td className="sticky left-0 z-20 ow-tbl-bg min-w-[56px]" />
         {times.map((t, i) => (
           <td
             key={i}
-            className="text-center p-0 bg-gray-900 cursor-pointer leading-none"
-            style={{ fontSize: "16px", lineHeight: "22px" }}
+            className="text-center p-0 ow-tbl-bg cursor-pointer leading-none"
+            style={{ fontSize: "14px", lineHeight: "20px" }}
             onClick={() => onSelectHour(t)}
           >
             {wmoIcon(weatherCode(t))}
@@ -107,11 +121,11 @@ export function TimelineHeader({
       </tr>
       {/* Color bar */}
       <tr>
-        <td className="sticky left-0 z-20 bg-gray-900 min-w-[56px]" />
+        <td className="sticky left-0 z-20 ow-tbl-bg min-w-[56px]" />
         {times.map((t, i) => (
           <td
             key={i}
-            className="h-3 p-0 cursor-pointer transition-colors"
+            className="h-2 p-0 cursor-pointer transition-colors"
             style={{ backgroundColor: getWindColor(avgSpeed(t)) }}
             onClick={() => onSelectHour(t)}
           />
@@ -119,12 +133,15 @@ export function TimelineHeader({
       </tr>
       {/* Hour numbers + timezone toggle */}
       <tr>
-        <th className="sticky left-0 z-20 bg-gray-900 min-w-[56px] px-1" scope="col">
+        <th
+          className="sticky left-0 z-20 ow-tbl-bg min-w-[56px] px-1"
+          scope="col"
+        >
           <button
             onClick={onCycleTimezone}
             title={TZ_TITLES[timezoneMode]}
             aria-label={`Timezone: ${timezoneMode}. Click to cycle.`}
-            className="text-[10px] lg:text-[11px] font-bold text-teal-400 hover:text-teal-200 active:scale-95 transition-all leading-none whitespace-nowrap"
+            className="text-[9px] lg:text-[10px] font-bold text-teal-400 hover:text-teal-200 active:scale-95 transition-all leading-none whitespace-nowrap"
           >
             {TZ_LABELS[timezoneMode]}
           </button>
@@ -135,18 +152,18 @@ export function TimelineHeader({
             <th
               key={i}
               scope="col"
-              className={`text-xs lg:text-sm font-semibold py-1.5 cursor-pointer transition-colors relative ${
+              className={`text-[10px] lg:text-xs font-semibold py-1 cursor-pointer transition-colors relative ${
                 t === selectedHour
                   ? "text-white bg-teal-600"
                   : isNow
                   ? "text-teal-100 bg-teal-700/70 font-bold"
-                  : "text-gray-400 bg-gray-900 hover:text-gray-200 hover:bg-gray-800"
+                  : "ow-hour-cell"
               }`}
               onClick={() => onSelectHour(t)}
             >
               {formatHour(t, timezoneMode)}
               {isNow && (
-                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-teal-400" />
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-teal-400" />
               )}
             </th>
           );
