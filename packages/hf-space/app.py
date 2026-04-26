@@ -155,11 +155,12 @@ LANDING_HTML = """<!doctype html>
     <li><strong>Open source, MIT.</strong> Self-host on Fly, Modal, your VPS.</li>
   </ul>
 
-  <h2>Five tools</h2>
+  <h2>Six tools</h2>
   <p><code>list_boat_archetypes</code>, <code>get_marine_forecast</code>,
     <code>estimate_passage</code>, <code>score_complexity</code>,
-    <code>read_me</code> — the last one hands the client a self-contained
-    HTML widget for inline rendering of the result.</p>
+    <code>render_passage_widget</code> (returns ready-to-display HTML),
+    <code>read_me</code> (template + instructions, fallback for clients
+    that customise rendering).</p>
 
   <h2>Source</h2>
   <p>Project site: <a href="https://openwind.fr">openwind.fr</a> &middot;

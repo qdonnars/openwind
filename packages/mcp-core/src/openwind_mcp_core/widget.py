@@ -150,13 +150,14 @@ markup, scripts, fetches, or iframes — the widget must stay static.
 ## Data mapping
 
 From the `estimate_passage` response:
-- `total_distance_nm` -> `{{{{total_distance}}}}` (1 decimal)
+- `distance_nm` -> `{{{{total_distance}}}}` (1 decimal)
 - `departure_time` (ISO) -> `{{{{departure_time}}}}` (HH:MM, in the departure
   tz), `{{{{departure_date_display}}}}` (e.g. "Sun 26 Apr"),
   `{{{{timezone}}}}` (e.g. "CEST")
 - `arrival_time` (ISO) -> `{{{{eta_time}}}}` (HH:MM, same tz)
-- `duration_s` -> `{{{{duration_hours}}}}` and `{{{{duration_minutes}}}}`
-  (integers; floor-divide by 3600 / 60)
+- `duration_h` -> `{{{{duration_hours}}}}` and `{{{{duration_minutes}}}}`
+  (integers; ``total_min = round(duration_h * 60)``, then
+  ``hours = total_min // 60``, ``minutes = total_min % 60``)
 - `archetype` -> `{{{{archetype_display}}}}` (humanised, e.g.
   "Sun Odyssey 380" or fallback "Cruiser 30ft"). Pair with `{{{{efficiency}}}}`
   formatted as `0.75`.
