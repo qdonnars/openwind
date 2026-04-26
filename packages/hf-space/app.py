@@ -49,52 +49,125 @@ LANDING_HTML = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>OpenWind MCP</title>
+  <title>OpenWind MCP — talk to your LLM, cast off with confidence</title>
   <style>
-    :root { color-scheme: light dark; }
-    body { font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-           max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem; }
-    h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
-    .tag { color: #666; font-size: 0.95rem; margin-top: 0; }
-    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
-    pre { background: rgba(127,127,127,0.12); padding: 0.85rem 1rem; border-radius: 8px; overflow-x: auto; }
-    a { color: #1a6dff; }
-    ul { padding-left: 1.25rem; }
-    .badge { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px;
-             background: rgba(34,139,230,0.12); color: #228be6; font-size: 0.78rem;
-             font-weight: 600; letter-spacing: 0.02em; vertical-align: middle; }
+    :root {
+      color-scheme: light dark;
+      --bg: #FAF7EE;
+      --card: #FFFFFF;
+      --text: #1A1A1A;
+      --muted: #4A4A4A;
+      --faint: #777169;
+      --border: #E2DDCD;
+      --accent: #1D9E75;
+      --soft: #F1ECDF;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #15140F;
+        --card: rgba(255,255,255,0.04);
+        --text: #F2F2F2;
+        --muted: #B8B5AC;
+        --faint: #888780;
+        --border: rgba(255,255,255,0.10);
+        --accent: #2BBE93;
+        --soft: rgba(255,255,255,0.06);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      max-width: 44rem; margin: 0 auto; padding: 3rem 1.25rem 4rem;
+      background: var(--bg); color: var(--text);
+    }
+    h1 { font-size: 2rem; margin: 0 0 0.5rem; letter-spacing: -0.01em; }
+    .lede { font-size: 1.15rem; color: var(--muted); margin: 0 0 2rem; line-height: 1.45; }
+    h2 { font-size: 1.15rem; margin: 2.25rem 0 0.75rem; letter-spacing: -0.005em; }
+    p { margin: 0.6rem 0; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    code { font-size: 0.92em; background: var(--soft); padding: 0.1rem 0.35rem; border-radius: 4px; }
+    pre { background: var(--card); border: 1px solid var(--border); padding: 0.85rem 1rem;
+          border-radius: 10px; overflow-x: auto; margin: 0.75rem 0; }
+    pre code { background: none; padding: 0; font-size: 0.95em; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .hero {
+      display: block; width: 100%; max-width: 100%; height: auto;
+      border-radius: 12px; border: 1px solid var(--border);
+      margin: 1rem 0 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .badge {
+      display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
+      background: var(--soft); color: var(--accent); font-size: 0.75rem;
+      font-weight: 600; letter-spacing: 0.04em; vertical-align: middle;
+      text-transform: uppercase;
+    }
+    blockquote {
+      margin: 0.75rem 0; padding: 0.75rem 1rem; border-left: 3px solid var(--accent);
+      background: var(--soft); border-radius: 0 8px 8px 0; color: var(--muted);
+      font-style: italic;
+    }
+    ol { padding-left: 1.25rem; line-height: 1.7; }
+    ol li { margin: 0.4rem 0; }
+    .perks { display: grid; grid-template-columns: 1fr; gap: 0.5rem; margin: 1rem 0; padding: 0; list-style: none; }
+    .perks li { padding: 0.65rem 0.9rem; background: var(--card); border: 1px solid var(--border);
+                border-radius: 8px; font-size: 0.95rem; }
+    .perks strong { color: var(--text); }
+    .footnote { color: var(--faint); font-size: 0.85rem; margin-top: 2.5rem; }
   </style>
 </head>
 <body>
-  <h1>⛵ OpenWind MCP <span class="badge">running</span></h1>
-  <p class="tag">Mediterranean sailing planner — Model Context Protocol server.</p>
+  <h1>OpenWind MCP <span class="badge">running</span></h1>
+  <p class="lede">Talk to your LLM. Cast off with confidence.<br>
+    A free, keyless, open-source Mediterranean passage planner — exposed as an
+    MCP server, so any compatible assistant can use it.</p>
 
-  <p>Four tools for an LLM client to plan a coastal passage:
-    <code>list_boat_archetypes</code>, <code>get_marine_forecast</code>,
-    <code>estimate_passage</code>, <code>score_complexity</code>.
-    Wind &amp; sea data via <a href="https://open-meteo.com">Open-Meteo</a> (keyless).</p>
+  <img class="hero" src="https://raw.githubusercontent.com/qdonnars/openwind/main/docs/screenshots/widget-preview.png"
+       alt="OpenWind passage plan: 5 waypoints, 48.6 nm, ETA 21:24, complexity 3 of 5.">
 
-  <h2>Connect from an MCP client</h2>
-  <p>Add this URL to any client that accepts an HTTP MCP endpoint
-    (Claude Desktop, ChatGPT, Mistral Le Chat, Goose, Continue, Zed, …):</p>
-  <pre><code>https://qdonnars-openwind-mcp.hf.space/mcp</code></pre>
+  <h2>Try it in 30 seconds</h2>
+  <ol>
+    <li>In your MCP client, add the endpoint:
+      <pre><code>https://qdonnars-openwind-mcp.hf.space/mcp</code></pre></li>
+    <li>Ask, in your own words:
+      <blockquote>I'm leaving Marseille tomorrow morning for Porquerolles on a Sun Odyssey 36.
+        How long is the passage and how tricky is it?</blockquote></li>
+    <li>Your assistant calls the OpenWind tools, renders an inline preview card,
+      and hands you a deep-link to the full plan on
+      <a href="https://openwind.fr">openwind.fr</a>. No account. No API key.</li>
+  </ol>
 
-  <h2>Try it</h2>
-  <p>Once connected, ask your LLM something like:</p>
-  <blockquote>
-    <em>I'm leaving Marseille tomorrow morning for Porquerolles on a Sun Odyssey 36.
-    Good idea? How long is the passage and how tricky is it?</em>
-  </blockquote>
+  <h2>New to MCP?</h2>
+  <p>It takes 2 minutes. Pick your client on
+    <a href="https://modelcontextprotocol.io/clients">modelcontextprotocol.io/clients</a>,
+    then follow the
+    <a href="https://modelcontextprotocol.io/docs/develop/connect-remote-servers">remote-server quickstart</a>.
+    Works with Claude Desktop, Le Chat, Cursor, Goose, Zed, Continue, and any
+    other MCP-compatible host.</p>
 
-  <h2>Source &amp; docs</h2>
-  <ul>
-    <li>Project site: <a href="https://openwind.fr">openwind.fr</a></li>
-    <li>GitHub: <a href="https://github.com/qdonnars/openwind">qdonnars/openwind</a> (MIT)</li>
+  <h2>Why OpenWind</h2>
+  <ul class="perks">
+    <li><strong>Free &amp; keyless.</strong> Wind + sea via
+      <a href="https://open-meteo.com">Open-Meteo</a> (CC BY 4.0).</li>
+    <li><strong>Mediterranean-tuned.</strong> AROME 1.3 km by default — catches thermals &amp; mistral.</li>
+    <li><strong>Boat-aware.</strong> Five archetypes, real polars, an <code>efficiency</code> knob.</li>
+    <li><strong>Client-agnostic.</strong> One HTTP MCP endpoint. No vendor lock-in.</li>
+    <li><strong>Open source, MIT.</strong> Self-host on Fly, Modal, your VPS.</li>
   </ul>
 
-  <p style="color: #888; font-size: 0.85rem; margin-top: 2.5rem;">
-    First request after inactivity may take a few seconds (HF Spaces cold-start).
-  </p>
+  <h2>Five tools</h2>
+  <p><code>list_boat_archetypes</code>, <code>get_marine_forecast</code>,
+    <code>estimate_passage</code>, <code>score_complexity</code>,
+    <code>read_me</code> — the last one hands the client a self-contained
+    HTML widget for inline rendering of the result.</p>
+
+  <h2>Source</h2>
+  <p>Project site: <a href="https://openwind.fr">openwind.fr</a> &middot;
+    GitHub: <a href="https://github.com/qdonnars/openwind">qdonnars/openwind</a>
+    (MIT).</p>
+
+  <p class="footnote">First request after inactivity may take a few seconds
+    (HF Spaces cold-start).</p>
 </body>
 </html>
 """
