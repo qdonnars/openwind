@@ -5,8 +5,9 @@ This wrapper is intentionally thin. All tools live in ``openwind_mcp_core``
 different Dockerfile that runs the same ``build_server()`` factory.
 
 Transport: ``streamable-http`` on port 7860 (HF Spaces default). Clients
-connect to ``https://mcp.openwind.fr/mcp`` (custom domain) or to the
-default ``qdonnars-openwind-mcp.hf.space`` URL.
+connect to ``https://qdonnars-openwind-mcp.hf.space``. (Custom domain
+``mcp.openwind.fr`` deferred — HF gates custom domains behind PRO; see
+``plan/04-backlog.md``.)
 
 Trade-off explicitly accepted (cf. ``plan/04-backlog.md``): HF Docker SDK
 Spaces do not get the ``MCP`` badge or the one-click connector flow that
