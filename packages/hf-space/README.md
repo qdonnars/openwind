@@ -7,7 +7,7 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: Mediterranean sailing planner — talk to your LLM, cast off with confidence.
+short_description: Mediterranean sailing planner for any MCP client.
 ---
 
 # OpenWind MCP ⛵
