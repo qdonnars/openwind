@@ -14,6 +14,16 @@ from openwind_mcp_core import build_server
 
 
 class StubAdapter:
+    """Test adapter that records every fetch call.
+
+    The fetch counter is the load-bearing assertion for the V1 surface: the
+    point of merging estimate_passage + score_complexity into ``plan_passage``
+    is to fetch Open-Meteo ONCE per A→B question, not twice.
+    """
+
+    def __init__(self) -> None:
+        self.fetch_calls: int = 0
+
     async def fetch(
         self,
         lat: float,
@@ -22,6 +32,7 @@ class StubAdapter:
         end: datetime,
         models: list[str] | None = None,
     ) -> ForecastBundle:
+        self.fetch_calls += 1
         models = models or ["meteofrance_arome_france"]
         points: list[WindPoint] = []
         t = start
@@ -47,22 +58,27 @@ async def _call(server: FastMCP, name: str, args: dict) -> object:
     return result
 
 
+_BASE_PLAN_ARGS: dict = {
+    "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
+    "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
+    "archetype": "cruiser_40ft",
+}
+
+
 class TestBuildServer:
     def test_returns_fastmcp(self) -> None:
         server = build_server(adapter=StubAdapter())
         assert isinstance(server, FastMCP)
 
-    async def test_lists_all_tools(self) -> None:
+    async def test_lists_three_tools(self) -> None:
+        # The collapsed surface — anything that drifts here is a regression.
         server = build_server(adapter=StubAdapter())
         tools = await server.list_tools()
         names = {t.name for t in tools}
         assert names == {
             "list_boat_archetypes",
             "get_marine_forecast",
-            "estimate_passage",
-            "score_complexity",
-            "render_passage_widget",
-            "read_me",
+            "plan_passage",
         }
 
 
@@ -78,236 +94,121 @@ class TestListArchetypes:
             assert {"length_ft", "type", "category", "performance_class", "examples"} <= a.keys()
 
 
-class TestEstimatePassageTool:
-    async def test_returns_serializable_report(self) -> None:
-        server = build_server(adapter=StubAdapter())
-        out = await _call(
-            server,
-            "estimate_passage",
-            {
-                "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
-                "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
-                "archetype": "cruiser_40ft",
-                "segment_length_nm": 10.0,
-            },
-        )
-        assert isinstance(out["departure_time"], str)
-        assert isinstance(out["arrival_time"], str)
-        assert out["archetype"] == "cruiser_40ft"
-        assert len(out["segments"]) >= 1
-        assert isinstance(out["segments"][0]["start_time"], str)
+class TestPlanPassage:
+    """The single workhorse tool. Replaces estimate_passage + score_complexity
+    + render_passage_widget. The contract is: ONE call returns timing,
+    complexity, html, and openwind_url — and fetches Open-Meteo ONCE."""
 
-    async def test_estimate_passage_default_uses_auto(self) -> None:
-        # No `model` argument → server default is AUTO_MODEL.
-        # StubAdapter returns data for any model, so auto resolves on first try.
-        server = build_server(adapter=StubAdapter())
-        out = await _call(
-            server,
-            "estimate_passage",
-            {
-                "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
-                "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
-                "archetype": "cruiser_40ft",
-                "segment_length_nm": 10.0,
-            },
-        )
-        assert out["model"] == "meteofrance_arome_france"
-        assert len(out["segments"]) >= 1
+    async def test_returns_full_payload(self) -> None:
+        adapter = StubAdapter()
+        server = build_server(adapter=adapter)
+        out = await _call(server, "plan_passage", _BASE_PLAN_ARGS)
 
+        assert {"passage", "complexity", "html", "openwind_url"} <= out.keys()
+        # Passage shape
+        assert isinstance(out["passage"]["departure_time"], str)
+        assert out["passage"]["archetype"] == "cruiser_40ft"
+        assert len(out["passage"]["segments"]) >= 1
+        # Complexity shape
+        assert 1 <= out["complexity"]["level"] <= 5
+        # HTML rendered by default — no placeholders left
+        assert isinstance(out["html"], str)
+        assert "{{" not in out["html"]
+        # URL always present
+        assert out["openwind_url"].startswith("https://openwind.fr/plan?")
 
-class TestScoreComplexityTool:
-    async def test_wind_only(self) -> None:
-        server = build_server(adapter=StubAdapter())
-        out = await _call(
-            server,
-            "score_complexity",
-            {
-                "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
-                "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
-                "archetype": "cruiser_40ft",
-            },
-        )
-        assert 1 <= out["level"] <= 5
-        assert out["sea_level"] is None
-
-    async def test_with_sea(self) -> None:
-        server = build_server(adapter=StubAdapter())
-        out = await _call(
-            server,
-            "score_complexity",
-            {
-                "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
-                "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
-                "archetype": "cruiser_40ft",
-                "max_hs_m": 2.5,
-            },
-        )
-        assert out["sea_level"] == 4
-
-
-class TestRenderPassageWidgetTool:
-    """The fast path — server-side rendering of final HTML.
-
-    Anchors the contract: *no placeholders* in the output, the deep-link URL
-    points at openwind.fr, FR/EN labels swap, and the segment data drives the
-    leg blocks.
-    """
-
-    @staticmethod
-    async def _build_passage(server: FastMCP) -> dict:
-        out = await _call(
-            server,
-            "estimate_passage",
-            {
-                "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
-                "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
-                "archetype": "cruiser_40ft",
-                "segment_length_nm": 10.0,
-            },
-        )
-        return out
-
-    @staticmethod
-    async def _build_complexity(server: FastMCP) -> dict:
-        return await _call(
-            server,
-            "score_complexity",
-            {
-                "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
-                "departure": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
-                "archetype": "cruiser_40ft",
-            },
+    async def test_no_double_fetch(self) -> None:
+        # The whole point of the merge: estimate_passage fetches once per
+        # sub-segment. The OLD two-tool flow (estimate_passage +
+        # score_complexity) ran the whole pipeline twice → 2N fetches.
+        # plan_passage scores from the same report → exactly N fetches.
+        adapter = StubAdapter()
+        server = build_server(adapter=adapter)
+        out = await _call(server, "plan_passage", _BASE_PLAN_ARGS)
+        n_segments = len(out["passage"]["segments"])
+        assert adapter.fetch_calls == n_segments, (
+            f"expected one fetch per segment ({n_segments}), got {adapter.fetch_calls} — "
+            "score_complexity may be re-fetching"
         )
 
-    @staticmethod
-    async def _render(server: FastMCP, args: dict) -> str:
-        out = await _call(server, "render_passage_widget", args)
-        body = out["result"] if isinstance(out, dict) and "result" in out else out
-        assert isinstance(body, str)
-        return body
+    async def test_render_false_skips_html(self) -> None:
+        # Opt-out path for text-only clients that don't need the ~5 KB markup.
+        adapter = StubAdapter()
+        server = build_server(adapter=adapter)
+        out = await _call(server, "plan_passage", {**_BASE_PLAN_ARGS, "render": False})
+        assert out["html"] is None
+        # URL still present — it's the always-on fallback CTA.
+        assert out["openwind_url"].startswith("https://openwind.fr/plan?")
+        # Passage and complexity still computed.
+        assert out["passage"]["archetype"] == "cruiser_40ft"
+        assert 1 <= out["complexity"]["level"] <= 5
 
-    async def test_returns_final_html_with_no_placeholders(self) -> None:
+    async def test_openwind_url_uses_explicit_waypoints(self) -> None:
+        # The URL encodes the user's original waypoints, not the (potentially
+        # subdivided) segments — so partage SMS reproduit fidèlement la nav.
         server = build_server(adapter=StubAdapter())
-        passage = await self._build_passage(server)
-        complexity = await self._build_complexity(server)
+        out = await _call(server, "plan_passage", _BASE_PLAN_ARGS)
+        url = out["openwind_url"]
+        assert "wpts=43.300,5.350;43.000,6.200" in url
+        assert "archetype=cruiser_40ft" in url
 
-        body = await self._render(server, {"passage": passage, "complexity": complexity})
-        # The whole point: substitution happened server-side. Any leftover
-        # mustache-style placeholder is a bug — the LLM would render it raw.
-        assert "{{" not in body
-        assert "}}" not in body
-
-    async def test_renders_one_leg_block_per_segment(self) -> None:
+    async def test_locale_fr_swaps_widget_labels(self) -> None:
         server = build_server(adapter=StubAdapter())
-        passage = await self._build_passage(server)
-        complexity = await self._build_complexity(server)
-
-        body = await self._render(server, {"passage": passage, "complexity": complexity})
-        assert body.count('class="ow-leg"') == len(passage["segments"])
-
-    async def test_includes_openwind_deeplink(self) -> None:
-        server = build_server(adapter=StubAdapter())
-        passage = await self._build_passage(server)
-        body = await self._render(
-            server,
-            {
-                "passage": passage,
-                "waypoints": [{"lat": 43.30, "lon": 5.35}, {"lat": 43.00, "lon": 6.20}],
-            },
-        )
-        # Deep-link uses the explicit waypoints arg — fail loudly if the URL
-        # ever moves or the encoder drops args.
-        assert "https://openwind.fr/plan?" in body
-        assert "wpts=43.300,5.350;43.000,6.200" in body
-        assert "archetype=cruiser_40ft" in body
-
-    async def test_locale_fr_swaps_labels(self) -> None:
-        server = build_server(adapter=StubAdapter())
-        passage = await self._build_passage(server)
-        body = await self._render(server, {"passage": passage, "locale": "fr"})
-        # FR swap targets the label text between tags, not arbitrary occurrences.
+        out = await _call(server, "plan_passage", {**_BASE_PLAN_ARGS, "locale": "fr"})
+        body = out["html"]
         assert ">DÉPART<" in body
         assert ">Durée<" in body
         assert ">Complexité<" in body
-        assert ">Ouvrir dans OpenWind &rarr;<" in body
-        assert ">DEPARTURE<" not in body
 
     async def test_locale_en_keeps_english(self) -> None:
         server = build_server(adapter=StubAdapter())
-        passage = await self._build_passage(server)
-        body = await self._render(server, {"passage": passage, "locale": "en"})
-        assert ">DEPARTURE<" in body
-        assert ">DÉPART<" not in body
+        out = await _call(server, "plan_passage", {**_BASE_PLAN_ARGS, "locale": "en"})
+        assert ">DEPARTURE<" in out["html"]
+        assert ">DÉPART<" not in out["html"]
 
-    async def test_complexity_optional(self) -> None:
-        # Without complexity, score shows "-" and no bars are filled.
+    async def test_boat_name_and_leg_titles_threaded_to_html(self) -> None:
         server = build_server(adapter=StubAdapter())
-        passage = await self._build_passage(server)
-        body = await self._render(server, {"passage": passage})
-        # 5 bar elements present, none with a background colour set.
-        assert body.count('<span class="ow-cx-bar"') == 5
-        assert 'class="ow-cx-bar" style="background:#' not in body
-
-    async def test_boat_name_and_leg_titles(self) -> None:
-        server = build_server(adapter=StubAdapter())
-        passage = await self._build_passage(server)
-        custom_titles = [f"Custom leg {i}" for i in range(len(passage["segments"]))]
-        body = await self._render(
+        out = await _call(
             server,
+            "plan_passage",
             {
-                "passage": passage,
+                **_BASE_PLAN_ARGS,
                 "boat_name": "OTAGO III",
-                "leg_titles": custom_titles,
+                "leg_titles": ["Custom title only"],
             },
         )
-        assert "OTAGO III" in body
-        for title in custom_titles:
-            assert title in body
+        assert "OTAGO III" in out["html"]
+        assert "Custom title only" in out["html"]
 
-
-class TestReadMeTool:
-    async def test_returns_template_with_required_placeholders(self) -> None:
-        # The text returned by `read_me` is contractual: any LLM client that
-        # implemented the widget against today's placeholders will keep
-        # working only if these keep showing up. Guard against accidental
-        # renames.
+    async def test_max_hs_factors_into_complexity(self) -> None:
+        # max_hs_m used to be on its own tool (score_complexity); now it's
+        # a kwarg on plan_passage. Confirm it still drives the score.
         server = build_server(adapter=StubAdapter())
-        out = await _call(server, "read_me", {})
-        body = out["result"] if isinstance(out, dict) and "result" in out else out
-        assert isinstance(body, str)
-        for placeholder in (
-            "{{departure_time}}",
-            "{{departure_date_display}}",
-            "{{timezone}}",
-            "{{num_waypoints}}",
-            "{{total_distance}}",
-            "{{archetype_display}}",
-            "{{efficiency}}",
-            "{{duration_hours}}",
-            "{{duration_minutes}}",
-            "{{eta_time}}",
-            "{{complexity_score}}",
-            "{{complexity_bars}}",
-            "{{legs}}",
-            "{{openwind_url}}",
-        ):
-            assert placeholder in body, f"missing placeholder: {placeholder}"
+        out_no_hs = await _call(server, "plan_passage", _BASE_PLAN_ARGS)
+        out_with_hs = await _call(server, "plan_passage", {**_BASE_PLAN_ARGS, "max_hs_m": 2.5})
+        assert out_no_hs["complexity"]["sea_level"] is None
+        assert out_with_hs["complexity"]["sea_level"] == 4
 
-    async def test_template_is_client_agnostic(self) -> None:
-        # The widget must render in any MCP client, not just Claude. Two
-        # invariants enforce that:
-        #   1. no Claude-specific CSS variables (--color-text-primary, etc.)
-        #   2. a `prefers-color-scheme` block driving the dark palette.
+    async def test_default_uses_auto_model(self) -> None:
+        # No `model` arg → AUTO_MODEL → StubAdapter resolves on first try.
         server = build_server(adapter=StubAdapter())
-        out = await _call(server, "read_me", {})
-        body = out["result"] if isinstance(out, dict) and "result" in out else out
-        assert "var(--color-" not in body
-        assert "prefers-color-scheme: dark" in body
+        out = await _call(server, "plan_passage", _BASE_PLAN_ARGS)
+        assert out["passage"]["model"] == "meteofrance_arome_france"
 
-    async def test_template_points_at_openwind_fr(self) -> None:
-        # Deep-link target is the prod web app. If the route ever moves we
-        # want this to fail loudly rather than silently shipping stale URLs.
+
+class TestGetMarineForecast:
+    async def test_returns_serializable_bundle(self) -> None:
         server = build_server(adapter=StubAdapter())
-        out = await _call(server, "read_me", {})
-        body = out["result"] if isinstance(out, dict) and "result" in out else out
-        assert "https://openwind.fr/plan?" in body
+        out = await _call(
+            server,
+            "get_marine_forecast",
+            {
+                "lat": 43.30,
+                "lon": 5.35,
+                "start": datetime(2026, 5, 1, 6, 0, tzinfo=UTC).isoformat(),
+                "end": datetime(2026, 5, 1, 18, 0, tzinfo=UTC).isoformat(),
+            },
+        )
+        assert "wind" in out
+        assert "meteofrance_arome_france" in out["wind"]
+        assert isinstance(out["wind"]["meteofrance_arome_france"][0]["time"], str)

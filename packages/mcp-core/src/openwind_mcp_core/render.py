@@ -107,11 +107,17 @@ def _archetype_display(archetype: str) -> str:
     return " ".join(p.capitalize() for p in archetype.split("_"))
 
 
-def _build_url(
+def build_openwind_url(
     waypoints: list[dict[str, float]],
     departure_iso: str,
     archetype: str,
 ) -> str:
+    """Build the openwind.fr/plan deep-link URL.
+
+    Public so ``plan_passage`` can include it in its response payload as the
+    fallback CTA for clients that don't render HTML inline (Le Chat, Goose,
+    terminals).
+    """
     wpts = ";".join(f"{w['lat']:.3f},{w['lon']:.3f}" for w in waypoints)
     dep = quote(departure_iso, safe="")
     return f"https://openwind.fr/plan?wpts={wpts}&departure={dep}&archetype={archetype}"
@@ -246,7 +252,7 @@ def render_passage(
         "{{complexity_score}}": complexity_score,
         "{{complexity_bars}}": complexity_bars,
         "{{legs}}": "".join(leg_blocks),
-        "{{openwind_url}}": _build_url(waypoints, dep_iso, archetype),
+        "{{openwind_url}}": build_openwind_url(waypoints, dep_iso, archetype),
     }
 
     html = PASSAGE_WIDGET_HTML
