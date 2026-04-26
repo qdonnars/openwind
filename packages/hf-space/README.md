@@ -21,9 +21,9 @@ FastMCP server exposing 4 tools for Mediterranean sailing passage planning:
 
 ## Connect from an MCP client
 
-This Space serves MCP over **streamable HTTP** at the Space URL (or
-`mcp.openwind.fr` once the custom domain is wired). Add it to any MCP-capable
-client that accepts an HTTP MCP endpoint.
+This Space serves MCP over **streamable HTTP** at
+`https://qdonnars-openwind-mcp.hf.space`. Add it to any MCP-capable client
+that accepts an HTTP MCP endpoint.
 
 > ⚠️ This Space uses the **Docker SDK** (not Gradio). It does **not** carry
 > the HF MCP badge and is not listed in `huggingface.co/spaces?filter=mcp-server`.

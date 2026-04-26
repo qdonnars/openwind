@@ -12,7 +12,7 @@ WORKDIR /app
 COPY vendor/data-adapters /app/data-adapters
 COPY vendor/mcp-core /app/mcp-core
 
-RUN pip install /app/data-adapters /app/mcp-core
+RUN pip install /app/data-adapters /app/mcp-core "uvicorn[standard]>=0.30"
 
 COPY app.py /app/app.py
 
