@@ -6,6 +6,7 @@ from openwind_data.routing.archetypes import (
     list_archetypes,
     lookup_polar,
 )
+from openwind_data.routing.complexity import ComplexityScore, score_complexity
 from openwind_data.routing.geometry import (
     EARTH_RADIUS_NM,
     Point,
@@ -26,6 +27,7 @@ from openwind_data.routing.passage import (
 __all__ = [
     "EARTH_RADIUS_NM",
     "BoatPolar",
+    "ComplexityScore",
     "PassageReport",
     "Point",
     "Segment",
@@ -39,5 +41,6 @@ __all__ = [
     "lookup_polar",
     "midpoint",
     "normalize_twa",
+    "score_complexity",
     "segment_route",
 ]
