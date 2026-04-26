@@ -17,20 +17,41 @@ website, not via the HF catalog. Re-evaluate if traffic plateaus.
 
 from __future__ import annotations
 
+import os
+
 import uvicorn
+from mcp.server.transport_security import TransportSecuritySettings
 from openwind_mcp_core import build_server
 
 PORT = 7860
 
+# FastMCP's streamable-http transport ships DNS-rebinding protection that
+# rejects any Host header outside ``localhost`` by default — on HF that
+# manifests as 421 "Invalid Host header" with the Space hostname. The Space
+# is fronted by HF's TLS proxy which we already authorize via
+# ``proxy_headers``, so we extend the allowed-hosts list to include the
+# Space hostname (overridable via env for future custom domains / migrations).
+DEFAULT_ALLOWED_HOSTS = [
+    "qdonnars-openwind-mcp.hf.space",
+]
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get("OPENWIND_ALLOWED_HOSTS", ",".join(DEFAULT_ALLOWED_HOSTS)).split(",")
+    if h.strip()
+]
+
 
 def main() -> None:
+    server = build_server()
+    server.settings.transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=ALLOWED_HOSTS,
+    )
     # Run uvicorn explicitly (rather than ``server.run(transport=...)``) so we
-    # can enable ``proxy_headers``/``forwarded_allow_ips``. HF Spaces front
-    # the container with a TLS-terminating reverse proxy; without these flags
-    # FastMCP's ASGI app sees ``http`` + the internal Host header and emits
-    # broken 307 redirects (``http://...:443/mcp/``) that the edge then
-    # answers with 421 Misdirected Request.
-    app = build_server().streamable_http_app()
+    # can enable ``proxy_headers``/``forwarded_allow_ips``. HF terminates TLS
+    # at the edge; without these flags ASGI sees ``http`` + the internal Host
+    # and emits broken redirects.
+    app = server.streamable_http_app()
     uvicorn.run(
         app,
         host="0.0.0.0",
