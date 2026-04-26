@@ -12,6 +12,9 @@ Tools exposed (V1):
 3. ``estimate_passage`` — per-segment timing along a polyline for a given
    archetype + departure time.
 4. ``score_complexity`` — 1-5 difficulty score from a passage + optional Hs max.
+5. ``read_me`` — returns the HTML template + rendering instructions the client
+   should use to display passage results inline. Client-agnostic (no Claude
+   CSS-variable coupling — palette switches via ``prefers-color-scheme``).
 
 Typical orchestration pattern (LLM perspective):
 
@@ -47,6 +50,8 @@ from openwind_data.routing import (
 from openwind_data.routing import (
     score_complexity as _score_complexity,
 )
+
+from .widget import PASSAGE_WIDGET_INSTRUCTIONS
 
 
 def _archetype_summary(p: Any) -> dict[str, Any]:
@@ -213,5 +218,21 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         )
         score = _score_complexity(report, max_hs_m=max_hs_m)
         return asdict(score)
+
+    @server.tool()
+    def read_me() -> str:
+        """Return the OpenWind passage-widget rendering instructions.
+
+        Call this **once** per conversation, before rendering passage results
+        to the user. The returned text contains a self-contained HTML template
+        and a data-mapping guide; substitute the ``{{placeholders}}`` with
+        values from ``estimate_passage`` + ``score_complexity`` and surface
+        the result inline (e.g. via the host client's ``show_widget`` /
+        artifact / fenced-HTML capability).
+
+        The template adapts to light / dark mode automatically via
+        ``prefers-color-scheme`` — no client-specific CSS variables.
+        """
+        return PASSAGE_WIDGET_INSTRUCTIONS
 
     return server

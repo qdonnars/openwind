@@ -52,7 +52,7 @@ class TestBuildServer:
         server = build_server(adapter=StubAdapter())
         assert isinstance(server, FastMCP)
 
-    async def test_lists_four_tools(self) -> None:
+    async def test_lists_all_tools(self) -> None:
         server = build_server(adapter=StubAdapter())
         tools = await server.list_tools()
         names = {t.name for t in tools}
@@ -61,6 +61,7 @@ class TestBuildServer:
             "get_marine_forecast",
             "estimate_passage",
             "score_complexity",
+            "read_me",
         }
 
 
@@ -141,3 +142,51 @@ class TestScoreComplexityTool:
             },
         )
         assert out["sea_level"] == 4
+
+
+class TestReadMeTool:
+    async def test_returns_template_with_required_placeholders(self) -> None:
+        # The text returned by `read_me` is contractual: any LLM client that
+        # implemented the widget against today's placeholders will keep
+        # working only if these keep showing up. Guard against accidental
+        # renames.
+        server = build_server(adapter=StubAdapter())
+        out = await _call(server, "read_me", {})
+        body = out["result"] if isinstance(out, dict) and "result" in out else out
+        assert isinstance(body, str)
+        for placeholder in (
+            "{{departure_time}}",
+            "{{departure_date_display}}",
+            "{{timezone}}",
+            "{{num_waypoints}}",
+            "{{total_distance}}",
+            "{{archetype_display}}",
+            "{{efficiency}}",
+            "{{duration_hours}}",
+            "{{duration_minutes}}",
+            "{{eta_time}}",
+            "{{complexity_score}}",
+            "{{complexity_bars}}",
+            "{{legs}}",
+            "{{openwind_url}}",
+        ):
+            assert placeholder in body, f"missing placeholder: {placeholder}"
+
+    async def test_template_is_client_agnostic(self) -> None:
+        # The widget must render in any MCP client, not just Claude. Two
+        # invariants enforce that:
+        #   1. no Claude-specific CSS variables (--color-text-primary, etc.)
+        #   2. a `prefers-color-scheme` block driving the dark palette.
+        server = build_server(adapter=StubAdapter())
+        out = await _call(server, "read_me", {})
+        body = out["result"] if isinstance(out, dict) and "result" in out else out
+        assert "var(--color-" not in body
+        assert "prefers-color-scheme: dark" in body
+
+    async def test_template_points_at_openwind_fr(self) -> None:
+        # Deep-link target is the prod web app. If the route ever moves we
+        # want this to fail loudly rather than silently shipping stale URLs.
+        server = build_server(adapter=StubAdapter())
+        out = await _call(server, "read_me", {})
+        body = out["result"] if isinstance(out, dict) and "result" in out else out
+        assert "https://openwind.fr/plan?" in body
