@@ -1,0 +1,2 @@
+# vendored copies populated by the sync workflow at deploy time
+vendor/
