@@ -76,7 +76,7 @@ LANDING_HTML = """<!doctype html>
 
   <h2>Connect from an MCP client</h2>
   <p>Add this URL to any client that accepts an HTTP MCP endpoint
-    (Claude Desktop, Claude.ai connector, Goose, Continue, Zed, …):</p>
+    (Claude Desktop, ChatGPT, Mistral Le Chat, Goose, Continue, Zed, …):</p>
   <pre><code>https://qdonnars-openwind-mcp.hf.space/mcp</code></pre>
 
   <h2>Try it</h2>
@@ -114,12 +114,19 @@ def main() -> None:
     # the Space root returns a human-readable landing page instead of 404.
     # Order matters: the exact-match ``/`` route is tried before the catch-all
     # ``Mount("/")`` so MCP traffic on ``/mcp`` is unaffected.
+    #
+    # Critically, FastMCP's session manager is started/stopped by the inner
+    # app's lifespan. A parent Starlette does NOT propagate child lifespans,
+    # so we must hand the inner lifespan to the parent — without this the MCP
+    # endpoint returns 500 because the streamable-http session manager never
+    # initialised.
     mcp_app = server.streamable_http_app()
     app = Starlette(
         routes=[
             Route("/", _index),
             Mount("/", app=mcp_app),
-        ]
+        ],
+        lifespan=mcp_app.router.lifespan_context,
     )
     # Run uvicorn explicitly (rather than ``server.run(transport=...)``) so we
     # can enable ``proxy_headers``/``forwarded_allow_ips``. HF terminates TLS
