@@ -34,15 +34,27 @@ _WIND_VARS = "wind_speed_10m,wind_direction_10m,wind_gusts_10m"
 _MARINE_VARS = "wave_height,wave_period,wave_direction,wind_wave_height,swell_wave_height"
 
 CACHE_TTL = timedelta(minutes=30)
+# Lat/lon rounding for cache key — 2dp ≈ 1.1 km, matches AROME native grid (~1.3 km).
+# Two waypoints in the same AROME cell share a cache entry.
+GRID_DECIMALS = 2
+# When fetching uncached, prefetch this many days from the start so that subsequent
+# calls with later `departure` windows in the same forecast issue still hit cache.
+FETCH_HORIZON_DAYS = 7
 
 
 @dataclass(frozen=True, slots=True)
 class _CacheKey:
     lat_round: float
     lon_round: float
-    start: datetime
-    end: datetime
     models: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _CacheEntry:
+    fetched_at: datetime
+    fetch_start: datetime
+    fetch_end: datetime
+    bundle: ForecastBundle
 
 
 class OpenMeteoAdapter:
@@ -51,9 +63,14 @@ class OpenMeteoAdapter:
     All inputs and outputs are in UTC. Caller is responsible for any local-timezone
     rendering downstream.
 
-    Cache: 30 min in-memory keyed on rounded lat/lon (4 decimals), the time range,
-    and the sorted set of models requested. Default model is AROME (per the
-    Mediterranean focus and high resolution capture of thermal/local winds).
+    Cache: 30 min in-memory keyed on rounded lat/lon (2 decimals, ~1.1 km, matches
+    AROME native grid) and the sorted set of models. The cache stores the widest
+    [start, end] ever requested for a given key and slices on read; subsequent
+    requests that fall inside a cached window are served without an HTTP call,
+    even if the requested time window differs from the original.
+
+    Default model is AROME (Mediterranean focus, high-resolution capture of thermal
+    and local winds).
     """
 
     def __init__(
@@ -64,7 +81,7 @@ class OpenMeteoAdapter:
     ) -> None:
         self._client = client
         self._timeout = timeout
-        self._cache: dict[_CacheKey, tuple[datetime, ForecastBundle]] = {}
+        self._cache: dict[_CacheKey, _CacheEntry] = {}
 
     async def fetch(
         self,
@@ -83,22 +100,35 @@ class OpenMeteoAdapter:
 
         models = models or [DEFAULT_MODEL]
         key = _CacheKey(
-            lat_round=round(lat, 4),
-            lon_round=round(lon, 4),
-            start=start_utc,
-            end=end_utc,
+            lat_round=round(lat, GRID_DECIMALS),
+            lon_round=round(lon, GRID_DECIMALS),
             models=tuple(sorted(models)),
         )
         now = datetime.now(UTC)
         cached = self._cache.get(key)
-        if cached is not None and (now - cached[0]) < CACHE_TTL:
-            return cached[1]
+        if (
+            cached is not None
+            and (now - cached.fetched_at) < CACHE_TTL
+            and cached.fetch_start <= start_utc
+            and cached.fetch_end >= end_utc
+        ):
+            return _slice_bundle(cached.bundle, start_utc, end_utc, now)
+
+        # Fetch a wide window so future calls with later `departure` can be served
+        # from cache. If a stale-but-narrower entry exists, widen to cover both.
+        fetch_start = start_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        fetch_end = max(end_utc, start_utc + timedelta(days=FETCH_HORIZON_DAYS))
+        if cached is not None:
+            fetch_start = min(fetch_start, cached.fetch_start)
+            fetch_end = max(fetch_end, cached.fetch_end)
 
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(timeout=self._timeout)
         try:
-            wind_tasks = [self._fetch_wind(client, lat, lon, start_utc, end_utc, m) for m in models]
-            sea_task = self._fetch_sea(client, lat, lon, start_utc, end_utc)
+            wind_tasks = [
+                self._fetch_wind(client, lat, lon, fetch_start, fetch_end, m) for m in models
+            ]
+            sea_task = self._fetch_sea(client, lat, lon, fetch_start, fetch_end)
             results = await asyncio.gather(*wind_tasks, sea_task)
         finally:
             if owns_client:
@@ -106,17 +136,22 @@ class OpenMeteoAdapter:
 
         wind_series_list: list[WindSeries] = list(results[:-1])
         sea_series: SeaSeries = results[-1]
-        bundle = ForecastBundle(
+        full_bundle = ForecastBundle(
             lat=lat,
             lon=lon,
-            start=start_utc,
-            end=end_utc,
+            start=fetch_start,
+            end=fetch_end,
             wind_by_model={w.model: w for w in wind_series_list},
             sea=sea_series,
             requested_at=now,
         )
-        self._cache[key] = (now, bundle)
-        return bundle
+        self._cache[key] = _CacheEntry(
+            fetched_at=now,
+            fetch_start=fetch_start,
+            fetch_end=fetch_end,
+            bundle=full_bundle,
+        )
+        return _slice_bundle(full_bundle, start_utc, end_utc, now)
 
     async def _fetch_wind(
         self,
@@ -160,6 +195,29 @@ class OpenMeteoAdapter:
         resp = await client.get(MARINE_URL, params=params)
         resp.raise_for_status()
         return _parse_sea(resp.json(), start, end)
+
+
+def _slice_bundle(
+    bundle: ForecastBundle, start: datetime, end: datetime, requested_at: datetime
+) -> ForecastBundle:
+    """Return a view of ``bundle`` restricted to [start, end]."""
+    sliced_winds = {
+        model: WindSeries(
+            model=series.model,
+            points=tuple(p for p in series.points if start <= p.time <= end),
+        )
+        for model, series in bundle.wind_by_model.items()
+    }
+    sliced_sea = SeaSeries(points=tuple(p for p in bundle.sea.points if start <= p.time <= end))
+    return ForecastBundle(
+        lat=bundle.lat,
+        lon=bundle.lon,
+        start=start,
+        end=end,
+        wind_by_model=sliced_winds,
+        sea=sliced_sea,
+        requested_at=requested_at,
+    )
 
 
 def _parse_wind(data: dict[str, Any], model: str, start: datetime, end: datetime) -> WindSeries:

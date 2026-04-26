@@ -82,8 +82,8 @@ LANDING_HTML = """<!doctype html>
   <h2>Try it</h2>
   <p>Once connected, ask your LLM something like:</p>
   <blockquote>
-    <em>Je pars demain matin de Marseille pour Porquerolles avec un Sun Odyssey 36.
-    Bonne idée&nbsp;? Tu as combien de temps de route et quelle complexité&nbsp;?</em>
+    <em>I'm leaving Marseille tomorrow morning for Porquerolles on a Sun Odyssey 36.
+    Good idea? How long is the passage and how tricky is it?</em>
   </blockquote>
 
   <h2>Source &amp; docs</h2>
