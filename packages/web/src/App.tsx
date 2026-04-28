@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { nowParisHourPrefix } from "./utils/format";
 import type { Spot, ModelForecast } from "./types";
 import { fetchAllModels } from "./api/openmeteo";
 import { useCustomSpots } from "./hooks/useCustomSpots";
@@ -51,7 +52,7 @@ function App() {
         setFetchedAt(Date.now());
         setIsLoading(false);
         // Auto-select current hour so wind arrows show by default
-        const nowHour = new Date().toISOString().slice(0, 13);
+        const nowHour = nowParisHourPrefix();
         const timeline = data[0]?.hourly.time ?? [];
         const match = timeline.find((t) => t.startsWith(nowHour)) ?? timeline.find((t) => t > nowHour) ?? null;
         setSelectedHour(match);
