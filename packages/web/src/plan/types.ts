@@ -1,0 +1,87 @@
+export interface PlanWaypoint {
+  lat: number;
+  lon: number;
+}
+
+export interface SegmentReport {
+  start: PlanWaypoint;
+  end: PlanWaypoint;
+  distance_nm: number;
+  bearing_deg: number;
+  start_time: string;
+  end_time: string;
+  tws_kn: number;
+  twd_deg: number;
+  twa_deg: number;
+  polar_speed_kn: number;
+  boat_speed_kn: number;
+  duration_h: number;
+  hs_m: number | null;
+  wave_derate_factor: number;
+}
+
+export interface PassageReport {
+  archetype: string;
+  departure_time: string;
+  arrival_time: string;
+  duration_h: number;
+  distance_nm: number;
+  efficiency: number;
+  model: string;
+  segments: SegmentReport[];
+  warnings: string[];
+}
+
+export interface ComplexityWarning {
+  kind: "wind" | "sea";
+  level: number;
+  message: string;
+  affected_segments: number[];
+}
+
+export interface ComplexityScore {
+  level: number;
+  label: string;
+  wind_level: number;
+  wind_label: string;
+  sea_level: number | null;
+  sea_label: string | null;
+  tws_max_kn: number;
+  hs_max_m: number | null;
+  rationale: string;
+  warnings?: ComplexityWarning[];
+}
+
+export interface PassageResponse {
+  passage: PassageReport;
+  complexity: ComplexityScore;
+  forecast_updated_at: string;
+}
+
+export interface Archetype {
+  slug: string;
+  name: string;
+  length_ft: number;
+  type: string;
+  category: string;
+  examples: string[];
+  performance_class: string;
+}
+
+// Complexity level 1-5 derived from per-segment TWS
+export function cxLevel(tws_kn: number): 1 | 2 | 3 | 4 | 5 {
+  if (tws_kn < 10) return 1;
+  if (tws_kn < 15) return 2;
+  if (tws_kn < 20) return 3;
+  if (tws_kn < 25) return 4;
+  return 5;
+}
+
+// Same values in both themes (tokens.css --ow-c-1..5)
+export const CX_COLORS: Record<number, string> = {
+  1: "#2dc97a",
+  2: "#8fcc30",
+  3: "#e8c432",
+  4: "#e87a18",
+  5: "#e84118",
+};
