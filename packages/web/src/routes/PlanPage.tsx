@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { parsePlanUrl, isParsedOk, buildPlanUrl } from "../plan/parseUrl";
-import { PlanMap } from "../plan/PlanMap";
+import { PlanMap, type PlanMapHandle } from "../plan/PlanMap";
 import { PlanSidebar } from "../plan/PlanSidebar";
 import { fetchPassage, fetchArchetypes } from "../api/passage";
 import { ThemeToggle } from "../design/theme";
+import { SpotSearch } from "../components/SpotSearch";
 import type { PassageReport, ComplexityScore, Archetype } from "../plan/types";
 
 function CopyLinkButton() {
@@ -40,6 +41,7 @@ function CopyLinkButton() {
 }
 
 export function PlanPage() {
+  const mapRef = useRef<PlanMapHandle>(null);
   const initialParsed = parsePlanUrl(window.location.search);
 
   // Editable local state (does not trigger re-fetch automatically)
@@ -144,10 +146,12 @@ export function PlanPage() {
         >
           ← Explorer
         </a>
-        <span className="flex-1 text-center text-sm font-semibold truncate hidden sm:block" style={{ color: "var(--ow-fg-0)" }}>
-          Plan de navigation
-        </span>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="flex-1 flex justify-center px-2">
+          <SpotSearch
+            onSelect={(spot) => mapRef.current?.recenter(spot.latitude, spot.longitude)}
+          />
+        </div>
+        <div className="flex items-center gap-1">
           <CopyLinkButton />
           <ThemeToggle />
         </div>
@@ -158,6 +162,7 @@ export function PlanPage() {
         {/* Map */}
         <div className="flex-1 min-h-0">
           <PlanMap
+            ref={mapRef}
             waypoints={waypoints}
             segments={passage?.segments}
             isStale={isStale}
