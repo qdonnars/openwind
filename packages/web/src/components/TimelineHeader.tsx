@@ -1,16 +1,9 @@
-import { formatHour, formatDayHeader, groupHoursByDay } from "../utils/format";
-import { getWindColor } from "../utils/colors";
+import { formatHour } from "../utils/format";
 import type { ModelForecast } from "../types";
 import type { TimezoneMode } from "../hooks/useTimezone";
 
-const TZ_LABELS: Record<TimezoneMode, string> = {
-  local: "LCL",
-  utc: "UTC",
-  boat: "BOAT",
-};
-
 const TZ_TITLES: Record<TimezoneMode, string> = {
-  local: "Browser local time — click to switch to UTC",
+  local: "Local time — click to switch to UTC",
   utc: "UTC — click to switch to Boat (Europe/Paris)",
   boat: "Boat time (Europe/Paris) — click to switch to Local",
 };
@@ -23,7 +16,7 @@ interface TimelineHeaderProps {
   nowHour: string;
   timezoneMode: TimezoneMode;
   onCycleTimezone: () => void;
-  visibleDay: string; // ISO date string "2025-04-26" of leftmost visible day
+  visibleDay: string; // ISO date "2025-04-26" of leftmost visible day
 }
 
 function wmoIcon(code: number | null): string {
@@ -42,10 +35,12 @@ function wmoIcon(code: number | null): string {
   return "";
 }
 
-function formatStickyDay(isoDate: string): string {
-  if (!isoDate) return "";
+function formatStickyDay(isoDate: string): [string, string] {
+  if (!isoDate) return ["", ""];
   const d = new Date(isoDate + "T12:00:00Z");
-  return d.toLocaleDateString("en-US", { weekday: "short", day: "numeric", timeZone: "UTC" });
+  const weekday = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }).toUpperCase();
+  const day = d.toLocaleDateString("en-US", { day: "numeric", timeZone: "UTC" });
+  return [weekday, day];
 }
 
 export function TimelineHeader({
@@ -58,21 +53,6 @@ export function TimelineHeader({
   onCycleTimezone,
   visibleDay,
 }: TimelineHeaderProps) {
-  const days = groupHoursByDay(times);
-
-  function avgSpeed(timeStr: string): number {
-    let sum = 0;
-    let count = 0;
-    for (const f of forecasts) {
-      const idx = f.hourly.time.indexOf(timeStr);
-      if (idx !== -1 && f.hourly.wind_speed_10m[idx] != null) {
-        sum += f.hourly.wind_speed_10m[idx]!;
-        count++;
-      }
-    }
-    return count > 0 ? sum / count : 0;
-  }
-
   function weatherCode(timeStr: string): number | null {
     for (const f of forecasts) {
       const idx = f.hourly.time.indexOf(timeStr);
@@ -83,82 +63,84 @@ export function TimelineHeader({
     return null;
   }
 
+  // Mark the first column of each new day for subtle separators
+  const dayStarts = new Set<string>();
+  let prevDay = "";
+  for (const t of times) {
+    const day = t.slice(0, 10);
+    if (day !== prevDay) { dayStarts.add(t); prevDay = day; }
+  }
+
+  const [weekday, dayNum] = formatStickyDay(visibleDay);
+
   return (
     <>
-      {/* Day headers — sticky left cell shows currently-visible day */}
+      {/* Row 1: weather icons — sticky left shows visible day */}
       <tr>
-        <th
-          className="sticky left-0 z-20 min-w-[56px] px-1 text-[10px] font-bold uppercase tracking-wide"
-          style={{ background: 'var(--ow-bg-1)', color: 'var(--ow-accent)' }}
-          scope="col"
+        <td
+          className="sticky left-0 z-20 min-w-[56px] px-2 border-r"
+          style={{ background: 'var(--ow-bg-1)', borderColor: 'var(--ow-line-2)' }}
         >
-          {formatStickyDay(visibleDay)}
-        </th>
-        {Array.from(days.entries()).map(([dateKey, indices]) => (
-          <th
-            key={dateKey}
-            colSpan={indices.length}
-            scope="colgroup"
-            className="ow-tbl-day-th text-[10px] lg:text-xs font-bold py-1.5 uppercase tracking-wide"
-          >
-            {formatDayHeader(times[indices[0]], timezoneMode)}
-          </th>
-        ))}
-      </tr>
-      {/* Weather icons */}
-      <tr>
-        <td className="sticky left-0 z-20 ow-tbl-bg min-w-[56px]" />
+          <div className="flex flex-col leading-none gap-[1px]">
+            <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--ow-accent)' }}>
+              {weekday}
+            </span>
+            <span className="text-[14px] font-bold tabular-nums" style={{ color: 'var(--ow-fg-0)' }}>
+              {dayNum}
+            </span>
+          </div>
+        </td>
         {times.map((t, i) => (
           <td
             key={i}
             className="text-center p-0 ow-tbl-bg cursor-pointer leading-none"
-            style={{ fontSize: "14px", lineHeight: "20px" }}
+            style={{
+              fontSize: "13px",
+              lineHeight: "20px",
+              borderLeft: dayStarts.has(t) && i > 0 ? '1px solid var(--ow-line-2)' : undefined,
+            }}
             onClick={() => onSelectHour(t)}
           >
             {wmoIcon(weatherCode(t))}
           </td>
         ))}
       </tr>
-      {/* Color bar */}
-      <tr>
-        <td className="sticky left-0 z-20 ow-tbl-bg min-w-[56px]" />
-        {times.map((t, i) => (
-          <td
-            key={i}
-            className="h-2 p-0 cursor-pointer transition-colors"
-            style={{ backgroundColor: getWindColor(avgSpeed(t)) }}
-            onClick={() => onSelectHour(t)}
-          />
-        ))}
-      </tr>
-      {/* Hour numbers + timezone toggle */}
+
+      {/* Row 2: hour numbers — sticky left shows "KN" unit (click to cycle timezone) */}
       <tr>
         <th
-          className="sticky left-0 z-20 ow-tbl-bg min-w-[56px] px-1"
+          className="sticky left-0 z-20 ow-tbl-bg min-w-[56px] px-2 border-r border-b"
+          style={{ borderColor: 'var(--ow-line-2)' }}
           scope="col"
         >
           <button
             onClick={onCycleTimezone}
             title={TZ_TITLES[timezoneMode]}
-            aria-label={`Timezone: ${timezoneMode}. Click to cycle.`}
-            className="text-[9px] lg:text-[10px] font-bold text-teal-400 hover:text-teal-200 active:scale-95 transition-all leading-none whitespace-nowrap"
+            aria-label={`Unit: KN. Timezone: ${timezoneMode}. Click to cycle.`}
+            className="text-[10px] lg:text-[11px] font-bold hover:opacity-70 active:scale-95 transition-all leading-none"
+            style={{ color: 'var(--ow-accent)' }}
           >
-            {TZ_LABELS[timezoneMode]}
+            KN
           </button>
         </th>
         {times.map((t, i) => {
           const isNow = t.startsWith(nowHour);
+          const isDayStart = dayStarts.has(t) && i > 0;
           return (
             <th
               key={i}
               scope="col"
-              className={`text-[10px] lg:text-xs font-semibold py-1 cursor-pointer transition-colors relative ${
+              className={`text-[10px] lg:text-xs font-semibold py-1 cursor-pointer transition-colors relative border-b ${
                 t === selectedHour
                   ? "text-white bg-teal-600"
                   : isNow
                   ? "text-teal-100 bg-teal-700/70 font-bold"
                   : "ow-hour-cell"
               }`}
+              style={{
+                borderColor: 'var(--ow-line-2)',
+                borderLeft: isDayStart ? '1px solid var(--ow-line-2)' : undefined,
+              }}
               onClick={() => onSelectHour(t)}
             >
               {formatHour(t, timezoneMode)}
