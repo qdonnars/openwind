@@ -91,6 +91,15 @@ function BeaufortLegend({ timezoneMode, onCycleTz }: { timezoneMode: TimezoneMod
         </div>
       ))}
       <div className="flex-1 min-w-2" />
+      <a
+        href="https://open-meteo.com/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="shrink-0 text-[10px] mr-2 mb-0.5 transition-colors"
+        style={{ color: 'var(--ow-fg-3)' }}
+      >
+        Open-Meteo (CC BY 4.0)
+      </a>
       <button
         onClick={onCycleTz}
         title={tzTitle}
