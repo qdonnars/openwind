@@ -47,14 +47,14 @@ export function WindCell({ speed, gusts, direction, selected, isNow, onSelect }:
             <svg
               width="11"
               height="11"
-              className="lg:w-[14px] lg:h-[14px] shrink-0"
+              className="lg:w-[26px] lg:h-[26px] shrink-0"
               viewBox="0 0 16 16"
               style={{ transform: `rotate(${direction + 180}deg)`, transition: "transform 0.3s ease" }}
             >
               <polygon points="8,1 13,15 8,10 3,15" fill="currentColor" />
             </svg>
           )}
-          <span className="text-[17px] lg:text-[21px] font-bold tabular-nums leading-none">
+          <span className="text-[17px] lg:text-[18px] font-bold tabular-nums leading-none">
             {Math.round(speed)}
           </span>
         </div>
