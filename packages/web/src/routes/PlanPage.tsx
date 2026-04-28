@@ -17,6 +17,18 @@ function nowRoundedLocal(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// Append local timezone offset to a naive "YYYY-MM-DDTHH:MM" string.
+// If already timezone-aware (ends with Z or ±HH:MM), return as-is.
+function toTzAware(iso: string): string {
+  if (/Z$|[+-]\d{2}:\d{2}$/.test(iso)) return iso;
+  const off = -new Date().getTimezoneOffset();
+  const sign = off >= 0 ? "+" : "-";
+  const abs = Math.abs(off);
+  const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+  const mm = String(abs % 60).padStart(2, "0");
+  return `${iso}:00${sign}${hh}:${mm}`;
+}
+
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
@@ -213,15 +225,18 @@ export function PlanPage() {
     fetchArchetypes().then(setArchetypes).catch(() => {});
   }, []);
 
-  function doFetch(wpts: [number, number][], arch: string) {
+  function doFetch(wpts: [number, number][], arch: string, dep: string) {
     setIsLoading(true);
     setApiError(null);
-    fetchPassage({ waypoints: wpts, departure, archetype: arch })
+    fetchPassage({ waypoints: wpts, departure: toTzAware(dep), archetype: arch })
       .then((res) => {
         setPassage(res.passage);
         setComplexity(res.complexity);
         setForecastUpdatedAt(res.forecast_updated_at);
         setIsStale(false);
+        // Update URL + cookie only on successful fetch
+        const url = buildPlanUrl(wpts, dep, arch);
+        window.history.replaceState(null, "", url);
         const ttl = 7 * 24 * 3600;
         document.cookie = `ow_last_trip=${encodeURIComponent(window.location.href)};max-age=${ttl};path=/;SameSite=Lax`;
       })
@@ -231,47 +246,41 @@ export function PlanPage() {
 
   useEffect(() => {
     if (!isParsedOk(initialParsed) || initialParsed.waypoints.length < 2) return;
-    doFetch(initialParsed.waypoints, initialParsed.archetype);
+    doFetch(initialParsed.waypoints, initialParsed.archetype, departure);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Functional updaters avoid stale closure when clicks happen fast
   function handleMapClick(lat: number, lon: number) {
-    const next: [number, number][] = [...waypoints, [lat, lon]];
-    setWaypoints(next);
-    if (next.length >= 2) {
-      window.history.replaceState(null, "", buildPlanUrl(next, departure, archetype));
-    }
+    setWaypoints((prev) => [...prev, [lat, lon]]);
   }
 
   function handleWptMove(idx: number, lat: number, lon: number) {
-    const next = waypoints.map((wp, i): [number, number] => (i === idx ? [lat, lon] : wp));
-    setWaypoints(next);
+    setWaypoints((prev) => prev.map((wp, i): [number, number] => (i === idx ? [lat, lon] : wp)));
     setIsStale(true);
-    window.history.replaceState(null, "", buildPlanUrl(next, departure, archetype));
   }
 
   function handleWptAdd(afterIdx: number, lat: number, lon: number) {
-    const next = [...waypoints];
-    next.splice(afterIdx + 1, 0, [lat, lon]);
-    setWaypoints(next);
+    setWaypoints((prev) => {
+      const next = [...prev];
+      next.splice(afterIdx + 1, 0, [lat, lon]);
+      return next;
+    });
     setIsStale(true);
-    window.history.replaceState(null, "", buildPlanUrl(next, departure, archetype));
   }
 
   function handleArchetypeChange(slug: string) {
     setArchetype(slug);
     setIsStale(true);
-    window.history.replaceState(null, "", buildPlanUrl(waypoints, departure, slug));
   }
 
   function handleDepartureChange(iso: string) {
     setDeparture(iso);
     setIsStale(true);
-    window.history.replaceState(null, "", buildPlanUrl(waypoints, iso, archetype));
   }
 
   function handleRefetch() {
-    doFetch(waypoints, archetype);
+    doFetch(waypoints, archetype, departure);
   }
 
   if (!isParsedOk(initialParsed)) {

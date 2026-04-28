@@ -276,30 +276,21 @@ export function PlanSidebar({
 
   return (
     <div className="p-4 space-y-4 animate-fade-in">
-      {/* Stale banner + Refetch */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onRefetch}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-          style={{
-            background: isStale ? "var(--ow-accent)" : "var(--ow-bg-2)",
-            color: isStale ? "#fff" : "var(--ow-fg-2)",
-            border: `1px solid ${isStale ? "transparent" : "var(--ow-line-2)"}`,
-          }}
-          title="Recalculer avec les paramètres actuels"
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M13.5 2.5A7 7 0 1 0 14.5 9"/>
-            <path d="M14 1v4h-4"/>
-          </svg>
-          Recalculer
-        </button>
-        {isStale && (
-          <span className="text-[11px] font-medium" style={{ color: "var(--ow-warn)" }}>
-            ⚠ Données obsolètes
-          </span>
-        )}
-      </div>
+      {/* Recalculate — grows when stale */}
+      <button
+        onClick={onRefetch}
+        className={`w-full flex items-center justify-center gap-2 rounded-xl font-bold transition-all ${isStale ? "py-3 text-base" : "py-1.5 text-xs"}`}
+        style={{
+          background: isStale ? "var(--ow-accent)" : "var(--ow-bg-2)",
+          color: isStale ? "#fff" : "var(--ow-fg-2)",
+          border: `1px solid ${isStale ? "transparent" : "var(--ow-line-2)"}`,
+        }}
+      >
+        <svg width={isStale ? 16 : 12} height={isStale ? 16 : 12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M13.5 2.5A7 7 0 1 0 14.5 9"/><path d="M14 1v4h-4"/>
+        </svg>
+        Recalculer
+      </button>
 
       {/* Departure — editable */}
       <div>
