@@ -38,6 +38,7 @@ function App() {
   const [forecasts, setForecasts] = useState<ModelForecast[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedHour, setSelectedHour] = useState<string | null>(null);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
 
 
   useEffect(() => {
@@ -47,6 +48,7 @@ function App() {
     fetchAllModels(spot.latitude, spot.longitude).then((data) => {
       if (!cancelled) {
         setForecasts(data);
+        setFetchedAt(Date.now());
         setIsLoading(false);
         // Auto-select current hour so wind arrows show by default
         const nowHour = new Date().toISOString().slice(0, 13);
@@ -110,18 +112,29 @@ function App() {
           ) : (
             <EmptyState />
           )}
-          <footer className="hidden sm:block text-center text-[11px] py-1 shrink-0" style={{ color: 'var(--ow-fg-2)' }}>
-            Data by{" "}
-            <a
-              href="https://open-meteo.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline transition-colors"
-              style={{ color: 'var(--ow-fg-1)' }}
-            >
-              Open-Meteo.com
-            </a>{" "}
-            (CC BY 4.0)
+          <footer className="hidden sm:flex items-center justify-center gap-3 text-[11px] py-1 shrink-0" style={{ color: 'var(--ow-fg-2)' }}>
+            <span>
+              Data by{" "}
+              <a
+                href="https://open-meteo.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline transition-colors"
+                style={{ color: 'var(--ow-fg-1)' }}
+              >
+                Open-Meteo.com
+              </a>{" "}
+              (CC BY 4.0)
+            </span>
+            {fetchedAt != null && (
+              <>
+                <span aria-hidden>·</span>
+                <span>
+                  Updated at{" "}
+                  {new Date(fetchedAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </>
+            )}
           </footer>
         </div>
       </div>
