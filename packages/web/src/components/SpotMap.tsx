@@ -5,39 +5,106 @@ import type { Spot, ModelForecast } from "../types";
 import { QUICK_SPOTS } from "../spots";
 import { useTheme } from "../design/theme";
 
-function createArrowSvg(
-  degrees: number,
-  speed: number,
-  color: string,
-  label: string,
-  length: number
-): string {
-  const rad = ((degrees + 180) * Math.PI) / 180;
-  const tipX = 150 + Math.sin(rad) * length;
-  const tipY = 150 - Math.cos(rad) * length;
+// Spot-map wind arrows are drawn into a single 300×300 SVG anchored at the spot
+// (centre = 150,150). Each forecast contributes one arrow + one label.
+//
+// Labels naturally sit just past each arrow tip, in the arrow's direction. When
+// two models predict similar directions their tips (and labels) collide. We run
+// a small force-based relaxation pass: each pair of overlapping labels pushes
+// the other away until none overlap (or we hit max iterations). Labels that
+// drift away from their tip get a thin leader line back to it.
+type ArrowItem = {
+  rad: number;
+  tipX: number;
+  tipY: number;
+  // label centre (relaxed)
+  lblX: number;
+  lblY: number;
+  // natural label centre (before relaxation) — used to decide if a leader line is needed
+  natLblX: number;
+  natLblY: number;
+  speed: number;
+  modelName: string;
+  color: string;
+};
+
+const SPOT_CX = 150;
+const SPOT_CY = 150;
+// Approximate label half-width and half-height (speed text 18px + model text 13px stacked).
+const LABEL_HW = 32;
+const LABEL_HH = 22;
+// Don't let labels slide back over the spot marker itself.
+const MIN_FROM_SPOT = 60;
+
+function relaxLabels(items: ArrowItem[]): void {
+  const ITERATIONS = 40;
+  for (let iter = 0; iter < ITERATIONS; iter++) {
+    let moved = false;
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const a = items[i];
+        const b = items[j];
+        const dx = b.lblX - a.lblX;
+        const dy = b.lblY - a.lblY;
+        // AABB overlap on each axis
+        const overlapX = LABEL_HW * 2 - Math.abs(dx);
+        const overlapY = LABEL_HH * 2 - Math.abs(dy);
+        if (overlapX > 0 && overlapY > 0) {
+          // push along the smaller-overlap axis (minimum-translation vector)
+          if (overlapX < overlapY) {
+            const push = overlapX * 0.5 * Math.sign(dx || 1);
+            a.lblX -= push;
+            b.lblX += push;
+          } else {
+            const push = overlapY * 0.5 * Math.sign(dy || 1);
+            a.lblY -= push;
+            b.lblY += push;
+          }
+          moved = true;
+        }
+      }
+    }
+    // After each pass, project labels out of the spot-marker keep-out radius.
+    for (const it of items) {
+      const dx = it.lblX - SPOT_CX;
+      const dy = it.lblY - SPOT_CY;
+      const dist = Math.hypot(dx, dy);
+      if (dist < MIN_FROM_SPOT && dist > 0.001) {
+        const scale = MIN_FROM_SPOT / dist;
+        it.lblX = SPOT_CX + dx * scale;
+        it.lblY = SPOT_CY + dy * scale;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+function arrowMarkup(it: ArrowItem): string {
   const headLen = 16;
   const headAng = 0.4;
-  const lx = tipX - headLen * Math.sin(rad - headAng);
-  const ly = tipY + headLen * Math.cos(rad - headAng);
-  const rx = tipX - headLen * Math.sin(rad + headAng);
-  const ry = tipY + headLen * Math.cos(rad + headAng);
-  const lblX = tipX + Math.sin(rad) * 26;
-  const lblY = tipY - Math.cos(rad) * 26;
-  // Contrasting shadow so arrows are readable on both light and dark maps
-  const shadow = color === "#ffffff"
+  const lx = it.tipX - headLen * Math.sin(it.rad - headAng);
+  const ly = it.tipY + headLen * Math.cos(it.rad - headAng);
+  const rx = it.tipX - headLen * Math.sin(it.rad + headAng);
+  const ry = it.tipY + headLen * Math.cos(it.rad + headAng);
+  const dropColor = it.color === "#ffffff" ? "#000" : "#fff";
+  return `<line x1="${SPOT_CX}" y1="${SPOT_CY}" x2="${it.tipX}" y2="${it.tipY}" stroke="${it.color}" stroke-width="5" stroke-linecap="round" style="filter:drop-shadow(0 0 2px ${dropColor})"/>
+    <polygon points="${it.tipX},${it.tipY} ${lx},${ly} ${rx},${ry}" fill="${it.color}"/>`;
+}
+
+function leaderMarkup(it: ArrowItem): string {
+  // Only draw a leader if the label has been displaced from its natural position.
+  const drift = Math.hypot(it.lblX - it.natLblX, it.lblY - it.natLblY);
+  if (drift < 6) return "";
+  return `<line x1="${it.tipX}" y1="${it.tipY}" x2="${it.lblX}" y2="${it.lblY}" stroke="${it.color}" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.55"/>`;
+}
+
+function labelMarkup(it: ArrowItem): string {
+  const shadow = it.color === "#ffffff"
     ? "0 0 3px #000,0 0 6px #000"
     : "0 0 3px #fff,0 0 5px #fff";
-
-  return `<svg width="300" height="300" viewBox="0 0 300 300" style="overflow:visible;position:absolute;top:0;left:0">
-    <line x1="150" y1="150" x2="${tipX}" y2="${tipY}" stroke="${color}" stroke-width="5" stroke-linecap="round" style="filter:drop-shadow(0 0 2px ${color === "#ffffff" ? "#000" : "#fff"})"/>
-    <polygon points="${tipX},${tipY} ${lx},${ly} ${rx},${ry}" fill="${color}"/>
-    <text x="${lblX}" y="${lblY}" text-anchor="middle" dominant-baseline="middle"
-      font-size="18" font-weight="700" fill="${color}"
-      style="text-shadow:${shadow}">${Math.round(speed)}</text>
-    <text x="${lblX}" y="${lblY + 20}" text-anchor="middle" dominant-baseline="middle"
-      font-size="13" fill="#fff"
-      style="text-shadow:0 0 3px #000,0 0 5px #000">${label}</text>
-  </svg>`;
+  return `<text x="${it.lblX}" y="${it.lblY}" text-anchor="middle" dominant-baseline="middle" font-size="18" font-weight="700" fill="${it.color}" style="text-shadow:${shadow}">${Math.round(it.speed)}</text>
+    <text x="${it.lblX}" y="${it.lblY + 20}" text-anchor="middle" dominant-baseline="middle" font-size="13" fill="#fff" style="text-shadow:0 0 3px #000,0 0 5px #000">${it.modelName}</text>`;
 }
 
 async function reverseGeocode(lat: number, lon: number): Promise<string> {
@@ -341,7 +408,7 @@ export function SpotMap({
 
     if (!selectedHour || forecasts.length === 0) return;
 
-    let svgContent = "";
+    const items: ArrowItem[] = [];
     for (const forecast of forecasts) {
       const timeIdx = forecast.hourly.time.indexOf(selectedHour);
       if (timeIdx === -1) continue;
@@ -349,14 +416,33 @@ export function SpotMap({
       const spd = forecast.hourly.wind_speed_10m[timeIdx];
       if (dir == null || spd == null) continue;
       const color = resolvedTheme === "light" ? "#64748b" : "#ffffff";
+      const rad = ((dir + 180) * Math.PI) / 180;
       const length = Math.min(72 + spd * 4.8, 240);
-      svgContent += createArrowSvg(dir, spd, color, forecast.modelName, length);
+      const tipX = SPOT_CX + Math.sin(rad) * length;
+      const tipY = SPOT_CY - Math.cos(rad) * length;
+      const natLblX = tipX + Math.sin(rad) * 26;
+      const natLblY = tipY - Math.cos(rad) * 26;
+      items.push({
+        rad, tipX, tipY,
+        lblX: natLblX, lblY: natLblY,
+        natLblX, natLblY,
+        speed: spd,
+        modelName: forecast.modelName,
+        color,
+      });
     }
 
-    if (!svgContent) return;
+    if (items.length === 0) return;
+    relaxLabels(items);
+
+    // Render order: arrows (back) → leader lines → labels (front, on top of arrows)
+    let svgContent = "";
+    for (const it of items) svgContent += arrowMarkup(it);
+    for (const it of items) svgContent += leaderMarkup(it);
+    for (const it of items) svgContent += labelMarkup(it);
 
     const icon = L.divIcon({
-      html: `<div style="position:relative;width:300px;height:300px;pointer-events:none">${svgContent}</div>`,
+      html: `<svg width="300" height="300" viewBox="0 0 300 300" style="overflow:visible;pointer-events:none">${svgContent}</svg>`,
       className: "",
       iconSize: [300, 300],
       iconAnchor: [150, 150],
