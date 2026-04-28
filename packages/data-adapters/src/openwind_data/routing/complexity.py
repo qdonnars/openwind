@@ -14,6 +14,7 @@ V1 design choices:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from openwind_data.routing.passage import PassageReport
 
@@ -50,6 +51,24 @@ def _classify(value: float, bands: tuple[tuple[float, int, str], ...]) -> tuple[
     raise AssertionError("bands must end with +inf")  # pragma: no cover
 
 
+def _lower_bound(level: int, bands: tuple[tuple[float, int, str], ...]) -> float:
+    """Return the inclusive lower bound of value that maps to `level`."""
+    prev: float = 0.0
+    for upper, lv, _ in bands:
+        if lv == level:
+            return prev
+        prev = upper
+    return 0.0  # pragma: no cover
+
+
+@dataclass(frozen=True, slots=True)
+class ComplexityWarning:
+    kind: Literal["wind", "sea"]
+    level: int  # 1..5 — same scale as the axis that triggered it
+    message: str
+    affected_segments: tuple[int, ...]  # indices into PassageReport.segments
+
+
 @dataclass(frozen=True, slots=True)
 class ComplexityScore:
     level: int  # 1..5
@@ -61,6 +80,7 @@ class ComplexityScore:
     tws_max_kn: float
     hs_max_m: float | None
     rationale: str
+    warnings: tuple[ComplexityWarning, ...] = ()
 
 
 def score_complexity(
@@ -95,6 +115,29 @@ def score_complexity(
             f"vent max {tws_max:.0f} kn ({wind_label}), mer max Hs={max_hs_m:.1f} m ({sea_label})"
         )
 
+    warnings: list[ComplexityWarning] = []
+    if wind_level >= 3:
+        threshold = _lower_bound(wind_level, _WIND_BANDS)
+        affected = tuple(i for i, s in enumerate(passage.segments) if s.tws_kn >= threshold)
+        warnings.append(ComplexityWarning(
+            kind="wind",
+            level=wind_level,
+            message=f"Vent {wind_label} : TWS max {tws_max:.0f} kn sur {len(affected)} segment(s)",
+            affected_segments=affected,
+        ))
+    if sea_level is not None and sea_level >= 3 and max_hs_m is not None:
+        threshold = _lower_bound(sea_level, _SEA_BANDS)
+        affected_sea = tuple(
+            i for i, s in enumerate(passage.segments)
+            if s.hs_m is not None and s.hs_m >= threshold
+        )
+        warnings.append(ComplexityWarning(
+            kind="sea",
+            level=sea_level,
+            message=f"Mer {sea_label} : Hs max {max_hs_m:.1f} m sur {len(affected_sea)} segment(s)",
+            affected_segments=affected_sea,
+        ))
+
     return ComplexityScore(
         level=level,
         label=_LEVEL_LABELS[level],
@@ -105,4 +148,5 @@ def score_complexity(
         tws_max_kn=tws_max,
         hs_max_m=max_hs_m,
         rationale=rationale,
+        warnings=tuple(warnings),
     )
