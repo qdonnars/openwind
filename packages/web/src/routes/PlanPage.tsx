@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { parsePlanUrl, isParsedOk } from "../plan/parseUrl";
+import { parsePlanUrl, isParsedOk, buildPlanUrl } from "../plan/parseUrl";
 import { PlanMap } from "../plan/PlanMap";
 import { PlanSidebar } from "../plan/PlanSidebar";
 import { fetchPassage, fetchArchetypes } from "../api/passage";
@@ -14,7 +14,6 @@ function CopyLinkButton() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // fallback for older browsers
       const el = document.createElement("textarea");
       el.value = window.location.href;
       document.body.appendChild(el);
@@ -41,38 +40,69 @@ function CopyLinkButton() {
 }
 
 export function PlanPage() {
-  const parsed = parsePlanUrl(window.location.search);
+  const initialParsed = parsePlanUrl(window.location.search);
+
+  // Editable local state (does not trigger re-fetch automatically)
+  const [waypoints, setWaypoints] = useState<[number, number][]>(
+    isParsedOk(initialParsed) ? initialParsed.waypoints : []
+  );
+  const [archetype, setArchetype] = useState(
+    isParsedOk(initialParsed) ? initialParsed.archetype : ""
+  );
+  // departure is not editable in V1 — kept as constant from URL
+  const departure = isParsedOk(initialParsed) ? initialParsed.departure : "";
+
   const [passage, setPassage] = useState<PassageReport | null>(null);
   const [complexity, setComplexity] = useState<ComplexityScore | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [archetypes, setArchetypes] = useState<Archetype[]>([]);
   const [forecastUpdatedAt, setForecastUpdatedAt] = useState<string | null>(null);
+  const [isStale, setIsStale] = useState(false);
 
   useEffect(() => {
     fetchArchetypes().then(setArchetypes).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (!isParsedOk(parsed)) return;
+  function doFetch(wpts: [number, number][], arch: string) {
     setIsLoading(true);
     setApiError(null);
-    fetchPassage({
-      waypoints: parsed.waypoints,
-      departure: parsed.departure,
-      archetype: parsed.archetype,
-    })
+    fetchPassage({ waypoints: wpts, departure, archetype: arch })
       .then((res) => {
         setPassage(res.passage);
         setComplexity(res.complexity);
         setForecastUpdatedAt(res.forecast_updated_at);
+        setIsStale(false);
       })
       .catch((e: Error) => setApiError(e.message))
       .finally(() => setIsLoading(false));
+  }
+
+  // Initial fetch
+  useEffect(() => {
+    if (!isParsedOk(initialParsed)) return;
+    doFetch(initialParsed.waypoints, initialParsed.archetype);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!isParsedOk(parsed)) {
+  function handleWptMove(idx: number, lat: number, lon: number) {
+    const next = waypoints.map((wp, i): [number, number] => (i === idx ? [lat, lon] : wp));
+    setWaypoints(next);
+    setIsStale(true);
+    window.history.replaceState(null, "", buildPlanUrl(next, departure, archetype));
+  }
+
+  function handleArchetypeChange(slug: string) {
+    setArchetype(slug);
+    setIsStale(true);
+    window.history.replaceState(null, "", buildPlanUrl(waypoints, departure, slug));
+  }
+
+  function handleRefetch() {
+    doFetch(waypoints, archetype);
+  }
+
+  if (!isParsedOk(initialParsed)) {
     return (
       <div
         className="h-screen flex flex-col items-center justify-center px-6"
@@ -81,7 +111,7 @@ export function PlanPage() {
         <div className="max-w-sm text-center space-y-4">
           <p className="text-4xl">⚓</p>
           <h1 className="text-xl font-bold">URL invalide</h1>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--ow-fg-1)" }}>{parsed.error}</p>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--ow-fg-1)" }}>{initialParsed.error}</p>
           <a
             href="/"
             className="inline-block mt-4 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
@@ -93,9 +123,6 @@ export function PlanPage() {
       </div>
     );
   }
-
-  const archetypeName =
-    archetypes.find((a) => a.slug === parsed.archetype)?.name ?? parsed.archetype;
 
   return (
     <div
@@ -128,8 +155,10 @@ export function PlanPage() {
         {/* Map */}
         <div className="flex-1 min-h-0">
           <PlanMap
-            waypoints={parsed.waypoints}
+            waypoints={waypoints}
             segments={passage?.segments}
+            isStale={isStale}
+            onWptMove={handleWptMove}
           />
         </div>
 
@@ -143,7 +172,11 @@ export function PlanPage() {
             complexity={complexity}
             isLoading={isLoading}
             error={apiError}
-            archetypeName={archetypeName}
+            archetypes={archetypes}
+            currentArchetypeSlug={archetype}
+            onArchetypeChange={handleArchetypeChange}
+            isStale={isStale}
+            onRefetch={handleRefetch}
             forecastUpdatedAt={forecastUpdatedAt}
           />
         </div>

@@ -1,4 +1,5 @@
-import type { PassageReport, ComplexityScore, SegmentReport } from "./types";
+import { useState } from "react";
+import type { PassageReport, ComplexityScore, SegmentReport, Archetype } from "./types";
 import { cxLevel, CX_COLORS } from "./types";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -34,10 +35,7 @@ function ComplexityBadge({ level, label }: { level: number; label: string }) {
       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-bold"
       style={{ background: CX_COLORS[level] + "22", color: CX_COLORS[level], border: `1px solid ${CX_COLORS[level]}55` }}
     >
-      <span
-        className="w-2.5 h-2.5 rounded-full"
-        style={{ background: CX_COLORS[level] }}
-      />
+      <span className="w-2.5 h-2.5 rounded-full" style={{ background: CX_COLORS[level] }} />
       {level}/5 — {label}
     </div>
   );
@@ -81,6 +79,67 @@ function SegmentLegend() {
   );
 }
 
+// ── ArchetypeSelector ─────────────────────────────────────────────────────────
+
+function ArchetypeSelector({
+  currentSlug,
+  archetypes,
+  onChange,
+}: {
+  currentSlug: string;
+  archetypes: Archetype[];
+  onChange: (slug: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = archetypes.find((a) => a.slug === currentSlug);
+  const label = current?.name ?? currentSlug;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-sm transition-colors"
+        style={{ color: "var(--ow-fg-1)" }}
+        title="Changer le type de bateau"
+      >
+        {label}
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style={{ opacity: 0.5 }}>
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+        </svg>
+      </button>
+
+      {open && (
+        <>
+          {/* backdrop */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div
+            className="absolute left-0 top-7 z-20 min-w-[220px] rounded-xl shadow-xl border overflow-hidden"
+            style={{ background: "var(--ow-bg-1)", borderColor: "var(--ow-line-2)", boxShadow: "var(--ow-shadow-pop)" }}
+          >
+            {archetypes.map((a) => (
+              <button
+                key={a.slug}
+                onClick={() => { onChange(a.slug); setOpen(false); }}
+                className="w-full text-left px-4 py-3 text-sm transition-colors"
+                style={{
+                  background: a.slug === currentSlug ? "var(--ow-accent-soft)" : "transparent",
+                  color: a.slug === currentSlug ? "var(--ow-accent)" : "var(--ow-fg-0)",
+                  borderBottom: "1px solid var(--ow-line)",
+                }}
+              >
+                <div className="font-semibold">{a.name}</div>
+                <div className="text-[11px] mt-0.5" style={{ color: "var(--ow-fg-2)" }}>
+                  {a.length_ft} ft · {a.type} · {a.examples[0]}
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── PlanSidebar ───────────────────────────────────────────────────────────────
 
 interface PlanSidebarProps {
@@ -88,7 +147,11 @@ interface PlanSidebarProps {
   complexity: ComplexityScore | null;
   isLoading: boolean;
   error: string | null;
-  archetypeName: string;
+  archetypes: Archetype[];
+  currentArchetypeSlug: string;
+  onArchetypeChange: (slug: string) => void;
+  isStale: boolean;
+  onRefetch: () => void;
   forecastUpdatedAt: string | null;
 }
 
@@ -97,7 +160,11 @@ export function PlanSidebar({
   complexity,
   isLoading,
   error,
-  archetypeName,
+  archetypes,
+  currentArchetypeSlug,
+  onArchetypeChange,
+  isStale,
+  onRefetch,
   forecastUpdatedAt,
 }: PlanSidebarProps) {
   if (isLoading) {
@@ -131,6 +198,31 @@ export function PlanSidebar({
 
   return (
     <div className="p-4 space-y-4 animate-fade-in">
+      {/* Stale banner + Refetch */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onRefetch}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+          style={{
+            background: isStale ? "var(--ow-accent)" : "var(--ow-bg-2)",
+            color: isStale ? "#fff" : "var(--ow-fg-2)",
+            border: `1px solid ${isStale ? "transparent" : "var(--ow-line-2)"}`,
+          }}
+          title="Recalculer avec les paramètres actuels"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13.5 2.5A7 7 0 1 0 14.5 9"/>
+            <path d="M14 1v4h-4"/>
+          </svg>
+          Recalculer
+        </button>
+        {isStale && (
+          <span className="text-[11px] font-medium" style={{ color: "var(--ow-warn)" }}>
+            ⚠ Données obsolètes
+          </span>
+        )}
+      </div>
+
       {/* Departure */}
       <div>
         <p className="text-[10px] uppercase tracking-widest mb-0.5 font-semibold" style={{ color: "var(--ow-fg-2)" }}>Départ</p>
@@ -139,10 +231,12 @@ export function PlanSidebar({
         </p>
       </div>
 
-      {/* Archetype */}
-      <p className="text-sm" style={{ color: "var(--ow-fg-1)" }}>
-        {archetypeName || passage.archetype}
-      </p>
+      {/* Archetype dropdown */}
+      <ArchetypeSelector
+        currentSlug={currentArchetypeSlug}
+        archetypes={archetypes}
+        onChange={onArchetypeChange}
+      />
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">

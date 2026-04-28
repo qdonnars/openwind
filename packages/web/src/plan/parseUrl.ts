@@ -37,3 +37,12 @@ export function parsePlanUrl(search: string): ParseResult {
 export function isParsedOk(r: ParseResult): r is ParsedPlanParams {
   return !("error" in r);
 }
+
+export function buildPlanUrl(
+  waypoints: [number, number][],
+  departure: string,
+  archetype: string
+): string {
+  const wpts = waypoints.map(([lat, lon]) => `${lat.toFixed(5)},${lon.toFixed(5)}`).join(";");
+  return `/plan?wpts=${wpts}&departure=${encodeURIComponent(departure)}&archetype=${encodeURIComponent(archetype)}`;
+}
