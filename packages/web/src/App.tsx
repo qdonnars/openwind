@@ -99,9 +99,7 @@ function App() {
             style={{ background: "var(--ow-accent)", color: "#fff" }}
             title="Planifier un passage"
           >
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M2 12 L8 2 L14 12" /><path d="M5 8 L11 8" />
-            </svg>
+            <img src="/compass.png" alt="" width="22" height="22" className="select-none" draggable={false} />
           </a>
         </div>
 
