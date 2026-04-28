@@ -9,12 +9,11 @@ export type ParseResult = ParsedPlanParams | { error: string };
 export function parsePlanUrl(search: string): ParseResult {
   const p = new URLSearchParams(search);
   const wpts = p.get("wpts");
-  const departure = p.get("departure");
-  const archetype = p.get("archetype");
+  const departure = p.get("departure") ?? "";
+  const archetype = p.get("archetype") ?? "";
 
-  if (!wpts) return { error: "Paramètre wpts manquant dans l'URL" };
-  if (!departure) return { error: "Paramètre departure manquant dans l'URL" };
-  if (!archetype) return { error: "Paramètre archetype manquant dans l'URL" };
+  // No wpts at all → fresh empty plan (valid, not an error)
+  if (!wpts) return { waypoints: [], departure, archetype };
 
   try {
     const parts = wpts.split(";").filter(Boolean);
