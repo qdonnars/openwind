@@ -159,6 +159,60 @@ body {
   animation: emptyPulse 3s ease-in-out infinite;
 }
 
+/* Plan waypoint marker + hover delete badge */
+.ow-wpt {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  font-family: system-ui, sans-serif;
+}
+.ow-wpt-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+}
+.ow-wpt-x {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(20, 20, 22, 0.92);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  pointer-events: auto;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ow-wpt:hover .ow-wpt-x {
+  opacity: 1;
+}
+.ow-wpt-x:hover {
+  background: #e84118;
+}
+@media (hover: none) {
+  .ow-wpt-x { opacity: 1; }
+}
+
 /* Leaflet attribution smaller on mobile */
 .leaflet-control-attribution {
   font-size: 9px !important;

@@ -274,6 +274,11 @@ export function PlanPage() {
     setIsStale(true);
   }
 
+  function handleWptDelete(idx: number) {
+    setWaypoints((prev) => prev.filter((_, i) => i !== idx));
+    setIsStale(true);
+  }
+
   function handleArchetypeChange(slug: string) {
     setArchetype(slug);
     setIsStale(true);
@@ -349,16 +354,17 @@ export function PlanPage() {
             isStale={isStale}
             onWptMove={handleWptMove}
             onWptAdd={waypoints.length >= 2 ? handleWptAdd : undefined}
-            onMapClick={waypoints.length < 2 ? handleMapClick : undefined}
+            onWptDelete={handleWptDelete}
+            onMapClick={handleMapClick}
           />
-          {/* Hint overlay when adding initial waypoints */}
+          {/* Hint overlay while building the route */}
           {waypoints.length < 2 && (
             <div className="absolute inset-x-4 bottom-4 z-[400] flex justify-center pointer-events-none">
               <div
                 className="px-4 py-2 rounded-xl text-sm font-medium"
                 style={{ background: "var(--ow-surface-glass)", backdropFilter: "blur(8px)", border: "1px solid var(--ow-line-2)", color: "var(--ow-fg-1)" }}
               >
-                {waypoints.length === 0 ? "Cliquez pour placer le départ" : "Cliquez pour placer l'arrivée"}
+                {waypoints.length === 0 ? "Cliquez pour placer le départ" : "Cliquez pour tracer votre route"}
               </div>
             </div>
           )}

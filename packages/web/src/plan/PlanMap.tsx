@@ -15,20 +15,16 @@ interface PlanMapProps {
   isStale?: boolean;
   onWptMove: (idx: number, lat: number, lon: number) => void;
   onWptAdd?: (afterIdx: number, lat: number, lon: number) => void;
+  onWptDelete?: (idx: number) => void;
   onMapClick?: (lat: number, lon: number) => void;
 }
 
-function waypointIcon(label: string, bg: string): L.DivIcon {
+function waypointIcon(label: string, bg: string, deletable: boolean): L.DivIcon {
+  const xBtn = deletable
+    ? `<button type="button" class="ow-wpt-x" aria-label="Supprimer ce point">×</button>`
+    : "";
   return L.divIcon({
-    html: `<div style="
-      width:28px;height:28px;border-radius:50%;
-      background:${bg};border:2px solid rgba(255,255,255,0.9);
-      display:flex;align-items:center;justify-content:center;
-      font-size:11px;font-weight:700;color:#fff;
-      box-shadow:0 1px 4px rgba(0,0,0,0.5);
-      cursor:grab;
-      font-family:system-ui,sans-serif;
-      ">${label}</div>`,
+    html: `<div class="ow-wpt"><div class="ow-wpt-circle" style="background:${bg}">${label}</div>${xBtn}</div>`,
     className: "",
     iconSize: [28, 28],
     iconAnchor: [14, 14],
@@ -36,7 +32,7 @@ function waypointIcon(label: string, bg: string): L.DivIcon {
 }
 
 export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
-  { waypoints, segments, isStale, onWptMove, onWptAdd, onMapClick }: PlanMapProps,
+  { waypoints, segments, isStale, onWptMove, onWptAdd, onWptDelete, onMapClick }: PlanMapProps,
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,10 +44,12 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
   const livePositionsRef = useRef<[number, number][]>(waypoints);
   const isDraggingRef = useRef(false);
   const onWptAddRef = useRef(onWptAdd);
+  const onWptDeleteRef = useRef(onWptDelete);
   const onMapClickRef = useRef(onMapClick);
   const { resolvedTheme } = useTheme();
 
   useEffect(() => { onWptAddRef.current = onWptAdd; }, [onWptAdd]);
+  useEffect(() => { onWptDeleteRef.current = onWptDelete; }, [onWptDelete]);
   useEffect(() => { onMapClickRef.current = onMapClick; }, [onMapClick]);
 
   useImperativeHandle(ref, () => ({
@@ -143,13 +141,30 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
 
     waypoints.forEach(([lat, lon], i) => {
       const isFirst = i === 0;
-      const isLast = i === waypoints.length - 1;
+      const isLast = i === waypoints.length - 1 && waypoints.length > 1;
       const label = isFirst ? "▶" : isLast ? "■" : String(i);
       const bg = isFirst ? "#2dd4bf" : isLast ? "#e84118" : "#6b7280";
       const marker = L.marker([lat, lon], {
-        icon: waypointIcon(label, bg),
+        icon: waypointIcon(label, bg, !!onWptDelete),
         draggable: true,
       }).addTo(map);
+
+      // Stop marker clicks from bubbling to the map (would re-add a wpt).
+      const el = marker.getElement();
+      if (el) L.DomEvent.disableClickPropagation(el);
+
+      // Wire delete-X button (rendered inside the divIcon)
+      const xBtn = el?.querySelector<HTMLButtonElement>(".ow-wpt-x");
+      if (xBtn) {
+        L.DomEvent.disableClickPropagation(xBtn);
+        L.DomEvent.on(xBtn, "mousedown touchstart pointerdown", (ev) => {
+          L.DomEvent.stop(ev as Event);
+        });
+        L.DomEvent.on(xBtn, "click", (ev) => {
+          L.DomEvent.stop(ev as Event);
+          onWptDeleteRef.current?.(i);
+        });
+      }
 
       marker.on("dragstart", () => {
         isDraggingRef.current = true;
