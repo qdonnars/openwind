@@ -8,6 +8,8 @@ import { cxLevel, CX_COLORS } from "./types";
 interface PlanMapProps {
   waypoints: [number, number][];
   segments?: SegmentReport[];
+  isStale?: boolean;
+  onWptMove: (idx: number, lat: number, lon: number) => void;
 }
 
 function waypointIcon(label: string, bg: string): L.DivIcon {
@@ -18,6 +20,7 @@ function waypointIcon(label: string, bg: string): L.DivIcon {
       display:flex;align-items:center;justify-content:center;
       font-size:11px;font-weight:700;color:#fff;
       box-shadow:0 1px 4px rgba(0,0,0,0.5);
+      cursor:grab;
       font-family:system-ui,sans-serif;
       ">${label}</div>`,
     className: "",
@@ -26,13 +29,19 @@ function waypointIcon(label: string, bg: string): L.DivIcon {
   });
 }
 
-export function PlanMap({ waypoints, segments }: PlanMapProps) {
+export function PlanMap({ waypoints, segments, isStale, onWptMove }: PlanMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const polylinesRef = useRef<L.Polyline[]>([]);
   const markersRef = useRef<L.Marker[]>([]);
+  const dragLineRef = useRef<L.Polyline | null>(null);
+  const livePositionsRef = useRef<[number, number][]>(waypoints);
   const { resolvedTheme } = useTheme();
+
+  useEffect(() => {
+    livePositionsRef.current = waypoints;
+  }, [waypoints]);
 
   // Switch tiles on theme change
   useEffect(() => {
@@ -75,7 +84,7 @@ export function PlanMap({ waypoints, segments }: PlanMapProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Draw waypoint markers (stable — waypoints don't change)
+  // Draw draggable waypoint markers
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -88,12 +97,44 @@ export function PlanMap({ waypoints, segments }: PlanMapProps) {
       const isLast = i === waypoints.length - 1;
       const label = isFirst ? "▶" : isLast ? "■" : String(i);
       const bg = isFirst ? "#2dd4bf" : isLast ? "#e84118" : "#6b7280";
-      const marker = L.marker([lat, lon], { icon: waypointIcon(label, bg) }).addTo(map);
+      const marker = L.marker([lat, lon], {
+        icon: waypointIcon(label, bg),
+        draggable: true,
+      }).addTo(map);
+
+      marker.on("drag", () => {
+        const pos = marker.getLatLng();
+        const positions = [...livePositionsRef.current];
+        positions[i] = [pos.lat, pos.lng];
+        livePositionsRef.current = positions;
+        const lls = positions.map(([la, lo]) => L.latLng(la, lo));
+        if (!dragLineRef.current) {
+          dragLineRef.current = L.polyline(lls, {
+            color: "#6b7280",
+            weight: 3,
+            dashArray: "6 4",
+            opacity: 0.85,
+          }).addTo(map);
+        } else {
+          dragLineRef.current.setLatLngs(lls);
+        }
+      });
+
+      marker.on("dragend", () => {
+        if (dragLineRef.current) {
+          dragLineRef.current.remove();
+          dragLineRef.current = null;
+        }
+        const pos = marker.getLatLng();
+        onWptMove(i, pos.lat, pos.lng);
+      });
+
       markersRef.current.push(marker);
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waypoints]);
 
-  // Draw polyline — gray while loading, colored per segment once data arrives
+  // Draw polyline — gray while loading/stale, colored per segment when fresh
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -101,8 +142,7 @@ export function PlanMap({ waypoints, segments }: PlanMapProps) {
     for (const p of polylinesRef.current) p.remove();
     polylinesRef.current = [];
 
-    if (!segments) {
-      // Loading state: single dashed gray line
+    if (!segments || isStale) {
       const line = L.polyline(waypoints.map(([lat, lon]) => L.latLng(lat, lon)), {
         color: "#6b7280",
         weight: 3,
@@ -113,7 +153,6 @@ export function PlanMap({ waypoints, segments }: PlanMapProps) {
       return;
     }
 
-    // Colored per segment
     for (const seg of segments) {
       const color = CX_COLORS[cxLevel(seg.tws_kn)];
       const line = L.polyline(
@@ -122,7 +161,7 @@ export function PlanMap({ waypoints, segments }: PlanMapProps) {
       ).addTo(map);
       polylinesRef.current.push(line);
     }
-  }, [waypoints, segments]);
+  }, [waypoints, segments, isStale]);
 
   return <div ref={containerRef} className="w-full h-full" />;
 }
