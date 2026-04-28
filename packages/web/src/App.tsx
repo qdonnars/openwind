@@ -99,7 +99,7 @@ function App() {
             style={{ background: "var(--ow-accent)", color: "#fff" }}
             title="Planifier un passage"
           >
-            <img src="/compass.png" alt="" width="44" height="44" className="select-none" draggable={false} />
+            <img src="/compass.png" alt="" width="88" height="88" className="select-none" draggable={false} />
           </a>
         </div>
 
