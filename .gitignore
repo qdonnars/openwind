@@ -27,7 +27,7 @@ dist-ssr
 .claude/
 
 # Internal scoping/decision docs (not part of the public repo)
-plan/
+/plan/
 
 # Test artifacts
 test-results/
