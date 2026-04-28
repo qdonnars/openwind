@@ -100,7 +100,7 @@ function App() {
 
         {/* Wind table — bottom panel */}
         <div
-          className="shrink-0 max-h-[45vh] md:max-h-[40vh] overflow-y-auto"
+          className="shrink-0 max-h-[38vh] md:max-h-[40vh] overflow-y-auto"
           style={{ background: 'var(--ow-bg-0)', borderTop: '1px solid var(--ow-line)' }}
         >
           {spot ? (
