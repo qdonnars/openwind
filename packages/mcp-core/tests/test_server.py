@@ -70,16 +70,29 @@ class TestBuildServer:
         server = build_server(adapter=StubAdapter())
         assert isinstance(server, FastMCP)
 
-    async def test_lists_three_tools(self) -> None:
-        # The collapsed surface — anything that drifts here is a regression.
+    async def test_lists_four_tools(self) -> None:
+        # The V1 surface: 3 functional tools + read_me for methodology Q&A.
         server = build_server(adapter=StubAdapter())
         tools = await server.list_tools()
         names = {t.name for t in tools}
         assert names == {
+            "read_me",
             "list_boat_archetypes",
             "get_marine_forecast",
             "plan_passage",
         }
+
+
+class TestReadMe:
+    async def test_returns_methodology_string(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        out = await _call(server, "read_me", {})
+        text = out["result"] if isinstance(out, dict) and "result" in out else out
+        assert isinstance(text, str)
+        assert len(text) > 500  # substantive content
+        # Mentions key methodology keywords
+        for keyword in ["polar", "VMG", "efficiency", "AROME"]:
+            assert keyword in text, f"missing keyword: {keyword}"
 
 
 class TestListArchetypes:
@@ -194,6 +207,103 @@ class TestPlanPassage:
         server = build_server(adapter=StubAdapter())
         out = await _call(server, "plan_passage", _BASE_PLAN_ARGS)
         assert out["passage"]["model"] == "meteofrance_arome_france"
+
+
+_SWEEP_ARGS: dict = {
+    **_BASE_PLAN_ARGS,
+    "latest_departure": datetime(2026, 5, 1, 9, 0, tzinfo=UTC).isoformat(),
+    "sweep_interval_hours": 3,
+}
+
+
+class TestPlanPassageSweep:
+    async def test_sweep_returns_multi_window_mode(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        out = await _call(server, "plan_passage", _SWEEP_ARGS)
+        assert out["mode"] == "multi_window"
+        assert "sweep" in out
+        assert "windows" in out
+
+    async def test_sweep_window_count_matches_interval(self) -> None:
+        # departure 06:00, latest 09:00, interval 3h → 2 windows: 06:00, 09:00
+        server = build_server(adapter=StubAdapter())
+        out = await _call(server, "plan_passage", _SWEEP_ARGS)
+        assert out["sweep"]["window_count"] == 2
+        assert len(out["windows"]) == 2
+
+    async def test_sweep_window_shape(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        out = await _call(server, "plan_passage", _SWEEP_ARGS)
+        w = out["windows"][0]
+        assert {"departure", "arrival", "duration_h", "distance_nm", "complexity",
+                "conditions_summary", "warnings", "openwind_url"} <= w.keys()
+        assert 1 <= w["complexity"]["level"] <= 5
+        cs = w["conditions_summary"]
+        assert {"tws_min_kn", "tws_max_kn", "predominant_sail_angle", "hs_max_m"} <= cs.keys()
+        assert cs["predominant_sail_angle"] in ("pres", "travers", "largue", "portant")
+
+    async def test_html_never_rendered_in_sweep(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        out = await _call(server, "plan_passage", {**_SWEEP_ARGS, "render": True})
+        assert "html" not in out
+        for w in out["windows"]:
+            assert "html" not in w
+
+    async def test_each_window_has_openwind_url(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        out = await _call(server, "plan_passage", _SWEEP_ARGS)
+        for w in out["windows"]:
+            assert w["openwind_url"].startswith("https://openwind.fr/plan?")
+            assert "wpts=" in w["openwind_url"]
+
+    async def test_sweep_departures_ordered_and_spaced(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        args = {**_BASE_PLAN_ARGS,
+                "latest_departure": datetime(2026, 5, 1, 8, 0, tzinfo=UTC).isoformat(),
+                "sweep_interval_hours": 1}
+        out = await _call(server, "plan_passage", args)
+        windows = out["windows"]
+        assert len(windows) == 3  # 06:00, 07:00, 08:00
+        deps = [datetime.fromisoformat(w["departure"]) for w in windows]
+        for i in range(1, len(deps)):
+            delta_h = (deps[i] - deps[i - 1]).total_seconds() / 3600
+            assert abs(delta_h - 1.0) < 1e-9
+
+    async def test_single_mode_backward_compatible(self) -> None:
+        server = build_server(adapter=StubAdapter())
+        out = await _call(server, "plan_passage", _BASE_PLAN_ARGS)
+        assert {"passage", "complexity", "html", "openwind_url"} <= out.keys()
+        assert "mode" not in out
+
+    async def test_target_eta_filters_windows(self) -> None:
+        # With constant 12 kn from north, passage ~8h → arrival ~14:00 from 06:00
+        # Requesting latest=12:00 at interval 3h → windows at 06:00, 09:00, 12:00
+        # target_eta near 14:00 should keep 06:00 window (arrival closest to 14h)
+        server = build_server(adapter=StubAdapter())
+        args = {
+            **_BASE_PLAN_ARGS,
+            "latest_departure": datetime(2026, 5, 1, 12, 0, tzinfo=UTC).isoformat(),
+            "sweep_interval_hours": 3,
+            "target_eta": datetime(2026, 5, 1, 14, 0, tzinfo=UTC).isoformat(),
+        }
+        out = await _call(server, "plan_passage", args)
+        assert "windows" in out
+        # At least one window was evaluated
+        assert len(out["windows"]) >= 1
+
+    async def test_sweep_cap_exceeded_raises(self) -> None:
+        import pytest
+        server = build_server(adapter=StubAdapter())
+        args = {
+            **_BASE_PLAN_ARGS,
+            "latest_departure": datetime(2026, 5, 20, 0, 0, tzinfo=UTC).isoformat(),
+            "sweep_interval_hours": 1,
+        }
+        try:
+            await _call(server, "plan_passage", args)
+            assert False, "expected an exception for oversized sweep"
+        except Exception as exc:
+            assert "336" in str(exc) or "cap" in str(exc).lower() or "windows" in str(exc).lower()
 
 
 class TestGetMarineForecast:

@@ -49,15 +49,14 @@ That's it. No account. No API key. No credit card.
 
 ## What the LLM sees
 
-Five MCP tools, all async, all keyless:
+Four MCP tools, all async, all keyless:
 
 | Tool                      | What it does                                                              |
 |---------------------------|---------------------------------------------------------------------------|
 | `list_boat_archetypes`    | Five descriptive archetypes; the LLM maps "Sun Odyssey 36" → `cruiser_30ft` itself. |
 | `get_marine_forecast`     | Wind + sea around a point/window, multi-model.                            |
-| `estimate_passage`        | Per-segment timing along a polyline of waypoints.                         |
-| `score_complexity`        | 1–5 difficulty score from wind (and optional max wave height).            |
-| `read_me`                 | Hands the client a self-contained HTML widget for inline rendering.       |
+| `plan_passage`            | End-to-end: per-leg timing + 1‑5 complexity + HTML widget + deep-link, in one call. Optional sweep mode for multi-window departures. |
+| `read_me`                 | Returns OpenWind's calculation methodology — call when the user asks how things are computed. |
 
 The widget switches palette via `prefers-color-scheme` — looks right in light
 and dark hosts, no Claude-specific CSS variables, no vendor lock-in.
@@ -102,6 +101,46 @@ Wind, sea (`Hs` max), per-leg ETA, 1–5 complexity. Tides and currents ignored
 on the Med (negligible). No automatic routing optimisation — the LLM and the
 human stay in the loop. Roadmap and scope decisions live in
 [`plan/`](plan/) (local).
+
+## Calculation method
+
+Defaults below are what the MCP server uses unless overridden by tool parameters.
+Implementation: [`packages/data-adapters/src/openwind_data/routing/passage.py`](packages/data-adapters/src/openwind_data/routing/passage.py).
+
+### Polar speed model
+
+- 5 archetypes (`cruiser_30ft`, `cruiser_40ft`, `cruiser_50ft`, `racer_cruiser`, `catamaran_40ft`), each with an ORC-style polar in [`packages/data-adapters/src/openwind_data/routing/polars/`](packages/data-adapters/src/openwind_data/routing/polars/).
+- Lookup is **bilinear interpolation** in (TWS, TWA), clamped at grid edges.
+- TWA is symmetric — `[0°, 180°]` only, no port/starboard distinction.
+
+### Boat speed adjustments
+
+- **Efficiency factor (default 0.75)** — ORC polars are theoretical maxima. Real cruising loses ~25% (sail trim, comfort margins, helmsman, untracked currents). Override per call: `0.85` racing, `0.75` cruising, `0.65` loaded family cruising, `0.55` heavy seas / fouled hull.
+- **VMG / tacking correction** — when the route's TWA is below the boat's optimal upwind angle (typically ~42-48°), the simulator assumes the sailor tacks. Effective speed toward destination is `polar(optimal_TWA) × cos(optimal_TWA − route_TWA)`. At dead upwind this reduces to `polar(opt) × cos(opt) ≈ polar / √2`; at TWA=20° with opt=45° the reduction is only `cos(25°) ≈ 0.91`.
+- **Wave derate (opt-in)** — `max(0.5, 1 − 0.05 × Hs^1.75 × cos²(TWA/2))`. Disabled by default — sea state feeds the warning bar rather than slowing the boat.
+- **Minimum boat speed** — 0.5 kn floor, prevents division blow-up in extreme stalls.
+
+### Timing
+
+- **Single-pass approximation** — a 6 kn heuristic estimates segment mid-times, then real polar speeds are computed at each mid-time's actual wind. No convergence iteration. Bias is bounded by the Mediterranean's multi-hour wind correlation length.
+- Routes are split into ~10 nm sub-segments by default for per-segment weather sampling. Drop to 5 nm for tight coastal work; raise to 20 nm for long offshore legs.
+
+### Multi-window sweep mode
+
+`plan_passage` accepts an optional `latest_departure` to sweep N hourly departure windows over the same route. Weather is fetched once (cache prewarm), simulations are in-memory. Hard cap: 14 d × 24 h = 336 windows. Returns a list of windows; the LLM (not the server) picks the best option qualitatively.
+
+### Mediterranean defaults
+
+- **Tides ignored** — < 40 cm in the Med, negligible vs. forecast uncertainty.
+- **Currents ignored** — Liguro-Provençal current too weak / variable for V1.
+- **Wind model** — AROME 1.3 km (≤48 h horizon, captures thermals and local winds). Auto-falls back to ICON-EU (≤5 d) → GFS (≤16 d) when the passage extends past AROME.
+- **Wave model** — Open-Meteo Marine (significant Hs, period, direction).
+
+### What's not modelled (V1)
+
+- No automatic routing optimisation — the LLM and human stay in the loop on departure choice.
+- No coastal acceleration zones (capes, peninsulas) — caller adds intermediate waypoints.
+- No port/starboard polar asymmetry, no spinnaker-specific curves, no hull condition modelling beyond the `efficiency` knob.
 
 ## Credits
 

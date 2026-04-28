@@ -35,7 +35,7 @@ from openwind_data.adapters.openmeteo import (
     DEFAULT_MODEL,
     OpenMeteoAdapter,
 )
-from openwind_data.routing.archetypes import get_polar, lookup_polar
+from openwind_data.routing.archetypes import BoatPolar, get_polar, lookup_polar
 from openwind_data.routing.geometry import (
     Point,
     midpoint,
@@ -49,6 +49,9 @@ MIN_BOAT_SPEED_KN = 0.5  # floor to avoid division blow-up in extreme stalls
 
 STRONG_WIND_THRESHOLD_KN = 25.0
 LIGHT_WIND_THRESHOLD_KN = 4.0
+
+PREWARM_MIN_SPEED_KN = 2.0  # conservative floor to upper-bound passage duration for cache prewarm
+MAX_SWEEP_WINDOWS = 336  # 14 days x 24h hard cap
 
 # Wave derate — see README "References" section for sources.
 WAVE_DERATE_K = 0.05
@@ -67,6 +70,53 @@ def wave_derate(hs_m: float, twa_deg: float) -> float:
         raise ValueError("hs_m must be >= 0")
     angular_factor = math.cos(math.radians(twa_deg / 2)) ** 2
     return max(WAVE_DERATE_FLOOR, 1.0 - WAVE_DERATE_K * hs_m**WAVE_DERATE_P * angular_factor)
+
+
+def best_vmg_upwind(polar: BoatPolar, tws_kn: float) -> tuple[float, float]:
+    """Return (optimal_twa_deg, polar_speed_kn) that maximises VMG upwind.
+
+    Sweeps TWA in [30, 90] deg to find the angle maximising polar(twa) * cos(twa).
+    Returns the optimal TWA and the polar speed at that angle (not the VMG value
+    itself), so the caller can compute the tacking-geometry correction:
+      effective_speed = polar_speed * cos(optimal_twa - segment_twa)
+    """
+    best_twa, best_speed, best_vmg = 45.0, 0.0, 0.0
+    for twa_int in range(30, 91):
+        twa = float(twa_int)
+        sp = lookup_polar(polar, tws_kn, twa)
+        vmg = sp * math.cos(math.radians(twa))
+        if vmg > best_vmg:
+            best_vmg = vmg
+            best_twa = twa
+            best_speed = sp
+    return best_twa, best_speed
+
+
+def _categorize_twa(twa_deg: float) -> str:
+    if twa_deg < 45.0:
+        return "pres"
+    elif twa_deg < 90.0:
+        return "travers"
+    elif twa_deg < 135.0:
+        return "largue"
+    else:
+        return "portant"
+
+
+def _build_conditions_summary(report: PassageReport) -> dict:
+    tws = [s.tws_kn for s in report.segments]
+    counts: dict[str, int] = {}
+    for s in report.segments:
+        cat = _categorize_twa(s.twa_deg)
+        counts[cat] = counts.get(cat, 0) + 1
+    predominant = max(counts, key=lambda k: counts[k])
+    hs = [s.hs_m for s in report.segments if s.hs_m is not None]
+    return {
+        "tws_min_kn": round(min(tws), 1),
+        "tws_max_kn": round(max(tws), 1),
+        "predominant_sail_angle": predominant,
+        "hs_max_m": round(max(hs), 2) if hs else None,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,13 +298,21 @@ async def _estimate_with_model(
         wp = _closest_wind_point(wind_series.points, mid_time)
         twa = normalize_twa(twd=wp.direction_deg, course=seg.bearing_deg)
         polar_speed = lookup_polar(polar, wp.speed_kn, twa)
+        opt_twa, opt_polar_speed = best_vmg_upwind(polar, wp.speed_kn)
+        if twa < opt_twa:
+            # Sailor tacks at optimal VMG angle; effective speed toward destination:
+            #   v_eff = polar(opt) * cos(opt - twa)
+            # At twa=0 reduces to VMG_pure_upwind; at twa->opt transitions smoothly.
+            effective_polar = opt_polar_speed * math.cos(math.radians(opt_twa - twa))
+        else:
+            effective_polar = polar_speed
         hs_m: float | None = None
         derate = 1.0
         if use_wave_correction:
             hs_m = _closest_sea_hs(bundle.sea.points, mid_time)
             if hs_m is not None:
                 derate = wave_derate(hs_m, twa)
-        boat_speed = max(polar_speed * efficiency * derate, MIN_BOAT_SPEED_KN)
+        boat_speed = max(effective_polar * efficiency * derate, MIN_BOAT_SPEED_KN)
         seg_duration = timedelta(hours=seg.distance_nm / boat_speed)
         seg_start = departure_utc + cumulative_actual
         seg_end = seg_start + seg_duration
@@ -299,3 +357,109 @@ async def _estimate_with_model(
         segments=tuple(reports),
         warnings=tuple(warnings),
     )
+
+
+async def estimate_passage_windows(
+    waypoints: list[Point],
+    earliest_departure: datetime,
+    latest_departure: datetime,
+    boat_archetype: str,
+    *,
+    sweep_interval_hours: int = 1,
+    efficiency: float = 0.75,
+    segment_length_nm: float = 10.0,
+    adapter: MarineDataAdapter | None = None,
+    model: str = AUTO_MODEL,
+    use_wave_correction: bool = False,
+) -> list[PassageReport]:
+    """Simulate multiple departure windows for a fixed route.
+
+    Fetches weather data once (prewarm) then sweeps over departure times from
+    ``earliest_departure`` to ``latest_departure`` every ``sweep_interval_hours``,
+    returning one ``PassageReport`` per window. All simulations after the first
+    are cache hits — API cost is identical to a single ``estimate_passage`` call.
+
+    Args:
+        waypoints: ordered route waypoints (>=2 points).
+        earliest_departure: start of sweep window (timezone-aware).
+        latest_departure: end of sweep window (timezone-aware, inclusive).
+        boat_archetype: one of the registry names (see ``list_archetypes()``).
+        sweep_interval_hours: spacing between departure windows (default 1h).
+        efficiency: multiplier on polar speeds (see ``estimate_passage``).
+        segment_length_nm: sub-segment length for weather sampling.
+        adapter: any ``MarineDataAdapter`` (defaults to a fresh ``OpenMeteoAdapter``).
+        model: wind model; ``"auto"`` tries AROME → ICON → GFS in order.
+        use_wave_correction: if True, apply wave derate to each segment.
+
+    Raises:
+        ValueError: if datetimes are naive, earliest > latest, interval < 1, or
+            the sweep would exceed ``MAX_SWEEP_WINDOWS`` windows.
+        ForecastHorizonError: if no model covers the full sweep horizon.
+    """
+    if earliest_departure.tzinfo is None or latest_departure.tzinfo is None:
+        raise ValueError("earliest_departure and latest_departure must be timezone-aware")
+    if earliest_departure > latest_departure:
+        raise ValueError("earliest_departure must be <= latest_departure")
+    if sweep_interval_hours < 1:
+        raise ValueError("sweep_interval_hours must be >= 1")
+
+    earliest_utc = earliest_departure.astimezone(UTC)
+    latest_utc = latest_departure.astimezone(UTC)
+
+    n_windows = int((latest_utc - earliest_utc).total_seconds() / 3600 / sweep_interval_hours) + 1
+    if n_windows > MAX_SWEEP_WINDOWS:
+        raise ValueError(
+            f"sweep would produce {n_windows} windows, exceeding the {MAX_SWEEP_WINDOWS} cap "
+            f"(14 d x 24 h). Reduce the sweep range or increase sweep_interval_hours."
+        )
+
+    segments = segment_route(waypoints, segment_length_nm)
+    seg_mid_points = [midpoint(s.start, s.end) for s in segments]
+    route_nm = sum(s.distance_nm for s in segments)
+
+    own_adapter = adapter is None
+    fetch_adapter: MarineDataAdapter = adapter or OpenMeteoAdapter()
+    try:
+        # Simulate the first window to resolve the model (needed before prewarm).
+        first = await estimate_passage(
+            waypoints,
+            earliest_utc,
+            boat_archetype,
+            efficiency=efficiency,
+            segment_length_nm=segment_length_nm,
+            adapter=fetch_adapter,
+            model=model,
+            use_wave_correction=use_wave_correction,
+        )
+        resolved_model = first.model
+        reports: list[PassageReport] = [first]
+
+        # Prewarm cache for the entire sweep horizon so all remaining calls are hits.
+        prewarm_end = latest_utc + timedelta(hours=route_nm / PREWARM_MIN_SPEED_KN) + WIND_FETCH_WINDOW
+        await asyncio.gather(
+            *[
+                fetch_adapter.fetch(pt.lat, pt.lon, earliest_utc, prewarm_end, models=[resolved_model])
+                for pt in seg_mid_points
+            ]
+        )
+
+        # Sweep remaining departure windows sequentially (all cache hits, no I/O).
+        current = earliest_utc + timedelta(hours=sweep_interval_hours)
+        while current <= latest_utc:
+            report = await estimate_passage(
+                waypoints,
+                current,
+                boat_archetype,
+                efficiency=efficiency,
+                segment_length_nm=segment_length_nm,
+                adapter=fetch_adapter,
+                model=resolved_model,
+                use_wave_correction=use_wave_correction,
+            )
+            reports.append(report)
+            current += timedelta(hours=sweep_interval_hours)
+    finally:
+        if own_adapter and hasattr(fetch_adapter, "aclose"):
+            await fetch_adapter.aclose()  # pragma: no cover
+
+    return reports
