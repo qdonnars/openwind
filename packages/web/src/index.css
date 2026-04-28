@@ -213,6 +213,55 @@ body {
   .ow-wpt-x { opacity: 1; }
 }
 
+/* Departure slider */
+.ow-departure-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 22px;
+}
+.ow-departure-slider:focus { outline: none; }
+.ow-departure-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ow-bg-2);
+  border: 1px solid var(--ow-line-2);
+}
+.ow-departure-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ow-bg-2);
+  border: 1px solid var(--ow-line-2);
+}
+.ow-departure-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ow-accent);
+  border: 2px solid var(--ow-bg-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  margin-top: -7px;
+  cursor: pointer;
+}
+.ow-departure-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ow-accent);
+  border: 2px solid var(--ow-bg-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+.ow-departure-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ow-accent) 35%, transparent);
+}
+.ow-departure-slider:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ow-accent) 35%, transparent);
+}
+
 /* Leaflet attribution smaller on mobile */
 .leaflet-control-attribution {
   font-size: 9px !important;

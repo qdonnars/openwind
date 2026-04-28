@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTheme } from "../design/theme";
 import type { PassageReport, ComplexityScore, SegmentReport, Archetype } from "./types";
 import { aggregateLegs } from "./aggregateLegs";
@@ -14,6 +14,115 @@ function fmtDuration(h: number): string {
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+// Format a Date as "YYYY-MM-DDTHH:MM" (local, naive — the format datetime-local expects).
+function toLocalIso(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ── DepartureSlider ──────────────────────────────────────────────────────────
+
+const SLIDER_MAX_HOURS = 21 * 24; // 3 weeks
+
+function DepartureSlider({
+  value,
+  onChange,
+  resolvedTheme,
+}: {
+  value: string;
+  onChange: (iso: string) => void;
+  resolvedTheme: "light" | "dark";
+}) {
+  const [showManual, setShowManual] = useState(false);
+
+  // Anchor "now" once per mount so the slider's left edge stays fixed during interaction.
+  const anchor = useMemo(() => {
+    const d = new Date();
+    d.setMinutes(0, 0, 0);
+    return d;
+  }, []);
+
+  const valueDate = useMemo(() => new Date(value), [value]);
+  const valueHours = Math.max(
+    0,
+    Math.min(SLIDER_MAX_HOURS, Math.round((valueDate.getTime() - anchor.getTime()) / 3_600_000)),
+  );
+
+  function setHours(h: number) {
+    const d = new Date(anchor.getTime() + h * 3_600_000);
+    onChange(toLocalIso(d));
+  }
+
+  // Display labels
+  const dateLabel = valueDate.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  const timeLabel = valueDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const dayDelta = Math.floor((valueDate.getTime() - anchor.getTime()) / 86_400_000);
+  const offsetLabel =
+    dayDelta <= 0 ? "Aujourd'hui" :
+    dayDelta === 1 ? "Demain" :
+    `Dans ${dayDelta} jours`;
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: "var(--ow-fg-2)" }}>
+          Départ
+        </span>
+        <button
+          type="button"
+          onClick={() => setShowManual((v) => !v)}
+          className="text-[10px] underline"
+          style={{ color: "var(--ow-fg-2)" }}
+        >
+          {showManual ? "Slider" : "Ajuster"}
+        </button>
+      </div>
+
+      <div className="text-sm font-semibold mb-2" style={{ color: "var(--ow-fg-0)" }}>
+        <span className="capitalize">{dateLabel}</span>
+        <span className="mx-1.5" style={{ color: "var(--ow-fg-2)" }}>·</span>
+        <span className="tabular-nums" style={{ fontFamily: "var(--ow-font-mono)" }}>{timeLabel}</span>
+        <span className="ml-2 text-[11px] font-normal" style={{ color: "var(--ow-fg-2)" }}>{offsetLabel}</span>
+      </div>
+
+      {showManual ? (
+        <input
+          type="datetime-local"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums"
+          style={{
+            background: "var(--ow-bg-2)",
+            color: "var(--ow-fg-0)",
+            border: "1px solid var(--ow-line-2)",
+            fontFamily: "var(--ow-font-mono)",
+            colorScheme: resolvedTheme === "light" ? "light" : "dark",
+          }}
+        />
+      ) : (
+        <>
+          <input
+            type="range"
+            min={0}
+            max={SLIDER_MAX_HOURS}
+            step={1}
+            value={valueHours}
+            onChange={(e) => setHours(Number(e.target.value))}
+            className="ow-departure-slider w-full"
+            aria-label="Date de départ"
+          />
+          <div className="flex justify-between text-[10px] mt-1" style={{ color: "var(--ow-fg-2)" }}>
+            <span>Maintenant</span>
+            <span>+1 sem.</span>
+            <span>+2 sem.</span>
+            <span>+3 sem.</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 
@@ -226,22 +335,7 @@ export function PlanSidebar({
         </p>
 
         {/* Departure */}
-        <div>
-          <p className="text-[10px] uppercase tracking-widest mb-1 font-semibold" style={{ color: "var(--ow-fg-2)" }}>Départ</p>
-          <input
-            type="datetime-local"
-            value={departure}
-            onChange={(e) => onDepartureChange(e.target.value)}
-            className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums"
-            style={{
-              background: "var(--ow-bg-2)",
-              color: "var(--ow-fg-0)",
-              border: "1px solid var(--ow-line-2)",
-              fontFamily: "var(--ow-font-mono)",
-              colorScheme: resolvedTheme === "light" ? "light" : "dark",
-            }}
-          />
-        </div>
+        <DepartureSlider value={departure} onChange={onDepartureChange} resolvedTheme={resolvedTheme} />
 
         {/* Archetype */}
         <ArchetypeSelector
@@ -292,22 +386,7 @@ export function PlanSidebar({
       </button>
 
       {/* Departure — editable */}
-      <div>
-        <p className="text-[10px] uppercase tracking-widest mb-1 font-semibold" style={{ color: "var(--ow-fg-2)" }}>Départ</p>
-        <input
-          type="datetime-local"
-          value={departure}
-          onChange={(e) => onDepartureChange(e.target.value)}
-          className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums"
-          style={{
-            background: "var(--ow-bg-2)",
-            color: "var(--ow-fg-0)",
-            border: "1px solid var(--ow-line-2)",
-            fontFamily: "var(--ow-font-mono)",
-            colorScheme: resolvedTheme === "light" ? "light" : "dark",
-          }}
-        />
-      </div>
+      <DepartureSlider value={departure} onChange={onDepartureChange} resolvedTheme={resolvedTheme} />
 
       {/* Archetype dropdown */}
       <ArchetypeSelector
