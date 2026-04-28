@@ -348,7 +348,7 @@ export function SpotMap({
       const dir = forecast.hourly.wind_direction_10m[timeIdx];
       const spd = forecast.hourly.wind_speed_10m[timeIdx];
       if (dir == null || spd == null) continue;
-      const color = resolvedTheme === "light" ? "#0d2030" : "#ffffff";
+      const color = resolvedTheme === "light" ? "#64748b" : "#ffffff";
       const length = Math.min(36 + spd * 2.4, 120);
       svgContent += createArrowSvg(dir, spd, color, forecast.modelName, length);
     }

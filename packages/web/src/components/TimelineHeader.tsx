@@ -2,11 +2,6 @@ import { formatHour } from "../utils/format";
 import type { ModelForecast } from "../types";
 import type { TimezoneMode } from "../hooks/useTimezone";
 
-const TZ_TITLES: Record<TimezoneMode, string> = {
-  local: "Local time — click to switch to UTC",
-  utc: "UTC — click to switch to Boat (Europe/Paris)",
-  boat: "Boat time (Europe/Paris) — click to switch to Local",
-};
 
 interface TimelineHeaderProps {
   times: string[];
@@ -15,7 +10,6 @@ interface TimelineHeaderProps {
   forecasts: ModelForecast[];
   nowHour: string;
   timezoneMode: TimezoneMode;
-  onCycleTimezone: () => void;
   visibleDay: string; // ISO date "2025-04-26" of leftmost visible day
 }
 
@@ -50,7 +44,6 @@ export function TimelineHeader({
   forecasts,
   nowHour,
   timezoneMode,
-  onCycleTimezone,
   visibleDay,
 }: TimelineHeaderProps) {
   function weatherCode(timeStr: string): number | null {
@@ -75,13 +68,14 @@ export function TimelineHeader({
 
   return (
     <>
-      {/* Row 1: weather icons — sticky left shows visible day */}
+      {/* Row 1: weather icons — sticky left spans both rows, shows day */}
       <tr>
         <td
-          className="sticky left-0 z-20 min-w-[56px] px-2 border-r"
+          rowSpan={2}
+          className="sticky left-0 z-20 min-w-[56px] px-2 border-r border-b"
           style={{ background: 'var(--ow-bg-1)', borderColor: 'var(--ow-line-2)' }}
         >
-          <div className="flex flex-col items-center justify-center h-full leading-none gap-[1px]">
+          <div className="flex flex-col items-center justify-center h-full leading-none gap-[2px]">
             <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--ow-accent)' }}>
               {weekday}
             </span>
@@ -106,23 +100,8 @@ export function TimelineHeader({
         ))}
       </tr>
 
-      {/* Row 2: hour numbers — sticky left shows "KN" unit (click to cycle timezone) */}
+      {/* Row 2: hour numbers — no sticky left (spanned by row above) */}
       <tr>
-        <th
-          className="sticky left-0 z-20 ow-tbl-bg min-w-[56px] px-2 border-r border-b"
-          style={{ borderColor: 'var(--ow-line-2)' }}
-          scope="col"
-        >
-          <button
-            onClick={onCycleTimezone}
-            title={TZ_TITLES[timezoneMode]}
-            aria-label={`Unit: KN. Timezone: ${timezoneMode}. Click to cycle.`}
-            className="text-[10px] lg:text-[11px] font-bold hover:opacity-70 active:scale-95 transition-all leading-none"
-            style={{ color: 'var(--ow-accent)' }}
-          >
-            KN
-          </button>
-        </th>
         {times.map((t, i) => {
           const isNow = t.startsWith(nowHour);
           const isDayStart = dayStarts.has(t) && i > 0;

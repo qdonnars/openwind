@@ -43,7 +43,6 @@ interface WindTableProps {
   isLoading: boolean;
   selectedHour: string | null;
   onSelectHour: (time: string) => void;
-  spotName?: string;
 }
 
 function getMasterTimeline(forecasts: ModelForecast[]): string[] {
@@ -108,12 +107,11 @@ export function WindTable({
   isLoading,
   selectedHour,
   onSelectHour,
-  spotName,
 }: WindTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolledEnd, setScrolledEnd] = useState(false);
   const [visibleDay, setVisibleDay] = useState("");
-  const [timezoneMode, cycleTimezone] = useTimezone();
+  const [timezoneMode] = useTimezone();
 
   const masterTimeline = useMemo(() => {
     const resolution = autoResolution(forecasts);
@@ -172,23 +170,6 @@ export function WindTable({
 
   return (
     <div className="animate-fade-in">
-      {/* Spot name bar */}
-      <div
-        className="flex items-center px-3 py-1.5 border-b"
-        style={{ background: 'var(--ow-surface-glass)', borderColor: 'var(--ow-line)' }}
-      >
-        {spotName ? (
-          <div className="flex items-center gap-2 min-w-0">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--ow-accent)' }} className="shrink-0">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-              <circle cx="12" cy="10" r="3" />
-            </svg>
-            <span className="text-sm font-semibold truncate" style={{ color: 'var(--ow-fg-0)' }}>{spotName}</span>
-          </div>
-        ) : (
-          <div />
-        )}
-      </div>
       <div className={`scroll-container ${scrolledEnd ? "scrolled-end" : ""}`}>
         <div ref={scrollRef} className="overflow-x-auto wind-table-scroll">
           <table className="border-collapse" role="table">
@@ -200,7 +181,6 @@ export function WindTable({
                 forecasts={forecasts}
                 nowHour={nowHour}
                 timezoneMode={timezoneMode}
-                onCycleTimezone={cycleTimezone}
                 visibleDay={visibleDay}
               />
             </thead>
@@ -214,13 +194,16 @@ export function WindTable({
                       style={{ background: 'var(--ow-bg-1)', borderColor: 'var(--ow-line-2)' }}
                       role="rowheader"
                     >
-                      <span
-                        className="text-[11px] lg:text-[12px] font-bold tracking-wide"
-                        style={{ color: 'var(--ow-fg-0)' }}
-                        title={MODEL_DESCRIPTIONS[forecast.modelName] ?? forecast.modelName}
-                      >
-                        {MODEL_LABELS[forecast.modelName] ?? forecast.modelName}
-                      </span>
+                      <div className="flex flex-col items-center leading-none gap-[2px]">
+                        <span
+                          className="text-[11px] lg:text-[12px] font-bold tracking-wide"
+                          style={{ color: 'var(--ow-fg-0)' }}
+                          title={MODEL_DESCRIPTIONS[forecast.modelName] ?? forecast.modelName}
+                        >
+                          {MODEL_LABELS[forecast.modelName] ?? forecast.modelName}
+                        </span>
+                        <span className="text-[8px] font-medium" style={{ color: 'var(--ow-fg-2)' }}>kn</span>
+                      </div>
                     </td>
                     {masterTimeline.map((t, i) => {
                       const idx = timeIndex.get(t);
