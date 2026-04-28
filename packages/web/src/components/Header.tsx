@@ -35,7 +35,7 @@ export function Header({
       <div className="flex items-center gap-3 max-w-screen-2xl mx-auto">
         <div className="flex items-center gap-2 shrink-0">
           <WindIcon />
-          <h1 className="text-xl font-extrabold tracking-tight">
+          <h1 className="hidden sm:block text-xl font-extrabold tracking-tight">
             <span style={{ color: 'var(--ow-fg-0)' }}>Open</span>
             <span style={{ color: 'var(--ow-accent)' }}>Wind</span>
           </h1>
