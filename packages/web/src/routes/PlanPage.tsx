@@ -10,6 +10,13 @@ import { cxLevel, CX_COLORS } from "../plan/types";
 
 // ── local helpers (mobile components) ────────────────────────────────────────
 
+function nowRoundedLocal(): string {
+  const d = new Date();
+  d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
@@ -188,9 +195,11 @@ export function PlanPage() {
   const [archetype, setArchetype] = useState(
     isParsedOk(initialParsed) ? initialParsed.archetype : ""
   );
-  const [departure, setDeparture] = useState(
-    isParsedOk(initialParsed) ? initialParsed.departure : ""
-  );
+  const [departure, setDeparture] = useState(() => {
+    const raw = isParsedOk(initialParsed) ? initialParsed.departure : "";
+    if (!raw || new Date(raw) < new Date()) return nowRoundedLocal();
+    return raw;
+  });
 
   const [passage, setPassage] = useState<PassageReport | null>(null);
   const [complexity, setComplexity] = useState<ComplexityScore | null>(null);

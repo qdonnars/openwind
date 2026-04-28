@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTheme } from "../design/theme";
 import type { PassageReport, ComplexityScore, SegmentReport, Archetype } from "./types";
 import { cxLevel, CX_COLORS } from "./types";
 
@@ -164,6 +165,7 @@ export function PlanSidebar({
   onRefetch,
   forecastUpdatedAt,
 }: PlanSidebarProps) {
+  const { resolvedTheme } = useTheme();
   if (isLoading) {
     return (
       <div className="p-4 space-y-4 animate-fade-in">
@@ -233,7 +235,7 @@ export function PlanSidebar({
             color: "var(--ow-fg-0)",
             border: "1px solid var(--ow-line-2)",
             fontFamily: "var(--ow-font-mono)",
-            colorScheme: "dark",
+            colorScheme: resolvedTheme === "light" ? "light" : "dark",
           }}
         />
       </div>
