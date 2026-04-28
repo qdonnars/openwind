@@ -1,9 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useTheme } from "../design/theme";
 import type { SegmentReport } from "./types";
 import { cxLevel, CX_COLORS } from "./types";
+
+export interface PlanMapHandle {
+  recenter: (lat: number, lon: number) => void;
+}
 
 interface PlanMapProps {
   waypoints: [number, number][];
@@ -29,7 +33,10 @@ function waypointIcon(label: string, bg: string): L.DivIcon {
   });
 }
 
-export function PlanMap({ waypoints, segments, isStale, onWptMove }: PlanMapProps) {
+export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
+  { waypoints, segments, isStale, onWptMove }: PlanMapProps,
+  ref
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
@@ -38,6 +45,12 @@ export function PlanMap({ waypoints, segments, isStale, onWptMove }: PlanMapProp
   const dragLineRef = useRef<L.Polyline | null>(null);
   const livePositionsRef = useRef<[number, number][]>(waypoints);
   const { resolvedTheme } = useTheme();
+
+  useImperativeHandle(ref, () => ({
+    recenter(lat, lon) {
+      mapRef.current?.setView([lat, lon], 12, { animate: true });
+    },
+  }));
 
   useEffect(() => {
     livePositionsRef.current = waypoints;
@@ -164,4 +177,4 @@ export function PlanMap({ waypoints, segments, isStale, onWptMove }: PlanMapProp
   }, [waypoints, segments, isStale]);
 
   return <div ref={containerRef} className="w-full h-full" />;
-}
+});
