@@ -7,6 +7,7 @@ import { ThemeToggle } from "../design/theme";
 import { SpotSearch } from "../components/SpotSearch";
 import type { PassageReport, ComplexityScore, Archetype } from "../plan/types";
 import { cxLevel, CX_COLORS } from "../plan/types";
+import { aggregateLegs } from "../plan/aggregateLegs";
 
 // ── local helpers (mobile components) ────────────────────────────────────────
 
@@ -36,9 +37,6 @@ function fmtDuration(h: number) {
   const hrs = Math.floor(h);
   const mins = Math.round((h - hrs) * 60);
   return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
-}
-function compassDir(deg: number) {
-  return ["N", "NE", "E", "SE", "S", "SO", "O", "NO"][Math.round(deg / 45) % 8];
 }
 
 function RefetchIcon() {
@@ -77,6 +75,7 @@ function PlanHeroStats({ passage, complexity }: { passage: PassageReport; comple
 function CompactDrawer({
   passage,
   complexity,
+  waypoints,
   isLoading,
   error,
   isStale,
@@ -84,6 +83,7 @@ function CompactDrawer({
 }: {
   passage: PassageReport | null;
   complexity: ComplexityScore | null;
+  waypoints: [number, number][];
   isLoading: boolean;
   error: string | null;
   isStale: boolean;
@@ -105,6 +105,8 @@ function CompactDrawer({
   }
   if (!passage || !complexity) return null;
 
+  const legs = aggregateLegs(passage.segments, waypoints);
+
   return (
     <div>
       {/* Sticky header */}
@@ -113,7 +115,7 @@ function CompactDrawer({
         style={{ background: "var(--ow-bg-1)", borderColor: "var(--ow-line)" }}
       >
         <span className="text-xs font-semibold flex-1" style={{ color: "var(--ow-fg-1)" }}>
-          {passage.segments.length} segments · {passage.distance_nm.toFixed(1)} nm
+          {legs.length} tronçon{legs.length > 1 ? "s" : ""} · {passage.distance_nm.toFixed(1)} nm
         </span>
         {isStale && (
           <span className="text-[10px] font-medium shrink-0" style={{ color: "var(--ow-warn)" }}>⚠ Obsolète</span>
@@ -132,10 +134,13 @@ function CompactDrawer({
         </button>
       </div>
 
-      {/* Segment rows */}
+      {/* Leg rows */}
       <div>
-        {passage.segments.map((seg, i) => {
-          const cx = cxLevel(seg.tws_kn);
+        {legs.map((leg, i) => {
+          const cx = cxLevel((leg.tws_min + leg.tws_max) / 2);
+          const windLabel = Math.round(leg.tws_min) === Math.round(leg.tws_max)
+            ? `${Math.round(leg.tws_min)} kn`
+            : `${Math.round(leg.tws_min)}–${Math.round(leg.tws_max)} kn`;
           return (
             <div
               key={i}
@@ -149,10 +154,10 @@ function CompactDrawer({
                 {i + 1}
               </span>
               <span className="flex-1 tabular-nums" style={{ color: "var(--ow-fg-1)", fontFamily: "var(--ow-font-mono)" }}>
-                {seg.distance_nm.toFixed(1)} nm · {seg.tws_kn.toFixed(0)} kn · {compassDir(seg.twd_deg)}
+                {leg.point_of_sail} · {windLabel} · {leg.boat_speed_kn.toFixed(1)} kn
               </span>
               <span className="tabular-nums shrink-0" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
-                {fmtTime(seg.end_time)}
+                {fmtTime(leg.end_time)}
               </span>
             </div>
           );
@@ -384,6 +389,7 @@ export function PlanPage() {
             onRefetch={handleRefetch}
             forecastUpdatedAt={forecastUpdatedAt}
             waypointCount={waypoints.length}
+            waypoints={waypoints}
           />
         </div>
       </div>
@@ -396,6 +402,7 @@ export function PlanPage() {
         <CompactDrawer
           passage={passage}
           complexity={complexity}
+          waypoints={waypoints}
           isLoading={isLoading}
           error={apiError}
           isStale={isStale}
