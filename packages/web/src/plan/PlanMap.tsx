@@ -89,13 +89,13 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
 
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
-    // Initial view: fit bounds if ≥2 waypoints, else Mediterranean default
+    // Initial view: fit bounds if ≥2 waypoints, else Marseille/Riviera area
     if (waypoints.length >= 2) {
       map.fitBounds(L.latLngBounds(waypoints.map(([lat, lon]) => L.latLng(lat, lon))), { padding: [40, 40] });
     } else if (waypoints.length === 1) {
       map.setView([waypoints[0][0], waypoints[0][1]], 10);
     } else {
-      map.setView([42.5, 9.0], 6);
+      map.setView([43.1, 5.9], 8);
     }
 
     mapRef.current = map;
@@ -124,6 +124,14 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
     if (!container) return;
     container.style.cursor = onMapClick ? "crosshair" : "";
   }, [onMapClick]);
+
+  // Gray out markers when stale (no full redraw)
+  useEffect(() => {
+    for (const m of markersRef.current) {
+      const el = m.getElement()?.querySelector("div") as HTMLElement | null;
+      if (el) el.style.opacity = isStale ? "0.45" : "1";
+    }
+  }, [isStale]);
 
   // Draw draggable waypoint markers
   useEffect(() => {
