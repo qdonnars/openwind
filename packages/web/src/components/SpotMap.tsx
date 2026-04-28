@@ -15,27 +15,27 @@ function createArrowSvg(
   const rad = ((degrees + 180) * Math.PI) / 180;
   const tipX = 150 + Math.sin(rad) * length;
   const tipY = 150 - Math.cos(rad) * length;
-  const headLen = 8;
+  const headLen = 16;
   const headAng = 0.4;
   const lx = tipX - headLen * Math.sin(rad - headAng);
   const ly = tipY + headLen * Math.cos(rad - headAng);
   const rx = tipX - headLen * Math.sin(rad + headAng);
   const ry = tipY + headLen * Math.cos(rad + headAng);
-  const lblX = tipX + Math.sin(rad) * 14;
-  const lblY = tipY - Math.cos(rad) * 14;
+  const lblX = tipX + Math.sin(rad) * 26;
+  const lblY = tipY - Math.cos(rad) * 26;
   // Contrasting shadow so arrows are readable on both light and dark maps
   const shadow = color === "#ffffff"
     ? "0 0 3px #000,0 0 6px #000"
     : "0 0 3px #fff,0 0 5px #fff";
 
   return `<svg width="300" height="300" viewBox="0 0 300 300" style="overflow:visible;position:absolute;top:0;left:0">
-    <line x1="150" y1="150" x2="${tipX}" y2="${tipY}" stroke="${color}" stroke-width="2.5" stroke-linecap="round" style="filter:drop-shadow(0 0 2px ${color === "#ffffff" ? "#000" : "#fff"})"/>
+    <line x1="150" y1="150" x2="${tipX}" y2="${tipY}" stroke="${color}" stroke-width="5" stroke-linecap="round" style="filter:drop-shadow(0 0 2px ${color === "#ffffff" ? "#000" : "#fff"})"/>
     <polygon points="${tipX},${tipY} ${lx},${ly} ${rx},${ry}" fill="${color}"/>
     <text x="${lblX}" y="${lblY}" text-anchor="middle" dominant-baseline="middle"
-      font-size="9" font-weight="700" fill="${color}"
+      font-size="18" font-weight="700" fill="${color}"
       style="text-shadow:${shadow}">${Math.round(speed)}</text>
-    <text x="${lblX}" y="${lblY + 11}" text-anchor="middle" dominant-baseline="middle"
-      font-size="7" fill="#fff"
+    <text x="${lblX}" y="${lblY + 20}" text-anchor="middle" dominant-baseline="middle"
+      font-size="13" fill="#fff"
       style="text-shadow:0 0 3px #000,0 0 5px #000">${label}</text>
   </svg>`;
 }
@@ -349,7 +349,7 @@ export function SpotMap({
       const spd = forecast.hourly.wind_speed_10m[timeIdx];
       if (dir == null || spd == null) continue;
       const color = resolvedTheme === "light" ? "#64748b" : "#ffffff";
-      const length = Math.min(36 + spd * 2.4, 120);
+      const length = Math.min(72 + spd * 4.8, 240);
       svgContent += createArrowSvg(dir, spd, color, forecast.modelName, length);
     }
 
