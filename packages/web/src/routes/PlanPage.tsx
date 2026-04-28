@@ -188,7 +188,9 @@ export function PlanPage() {
   const [archetype, setArchetype] = useState(
     isParsedOk(initialParsed) ? initialParsed.archetype : ""
   );
-  const departure = isParsedOk(initialParsed) ? initialParsed.departure : "";
+  const [departure, setDeparture] = useState(
+    isParsedOk(initialParsed) ? initialParsed.departure : ""
+  );
 
   const [passage, setPassage] = useState<PassageReport | null>(null);
   const [complexity, setComplexity] = useState<ComplexityScore | null>(null);
@@ -231,10 +233,24 @@ export function PlanPage() {
     window.history.replaceState(null, "", buildPlanUrl(next, departure, archetype));
   }
 
+  function handleWptAdd(afterIdx: number, lat: number, lon: number) {
+    const next = [...waypoints];
+    next.splice(afterIdx + 1, 0, [lat, lon]);
+    setWaypoints(next);
+    setIsStale(true);
+    window.history.replaceState(null, "", buildPlanUrl(next, departure, archetype));
+  }
+
   function handleArchetypeChange(slug: string) {
     setArchetype(slug);
     setIsStale(true);
     window.history.replaceState(null, "", buildPlanUrl(waypoints, departure, slug));
+  }
+
+  function handleDepartureChange(iso: string) {
+    setDeparture(iso);
+    setIsStale(true);
+    window.history.replaceState(null, "", buildPlanUrl(waypoints, iso, archetype));
   }
 
   function handleRefetch() {
@@ -301,6 +317,7 @@ export function PlanPage() {
             segments={passage?.segments}
             isStale={isStale}
             onWptMove={handleWptMove}
+            onWptAdd={handleWptAdd}
           />
           {/* Hero stats overlay — mobile only, floats above compact drawer */}
           {passage && complexity && (
@@ -323,6 +340,8 @@ export function PlanPage() {
             archetypes={archetypes}
             currentArchetypeSlug={archetype}
             onArchetypeChange={handleArchetypeChange}
+            departure={departure}
+            onDepartureChange={handleDepartureChange}
             isStale={isStale}
             onRefetch={handleRefetch}
             forecastUpdatedAt={forecastUpdatedAt}
