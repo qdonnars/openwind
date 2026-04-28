@@ -73,6 +73,9 @@ export function PlanPage() {
         setComplexity(res.complexity);
         setForecastUpdatedAt(res.forecast_updated_at);
         setIsStale(false);
+        // Persist canonical URL so Explore can show a "Plan" shortcut
+        const ttl = 7 * 24 * 3600;
+        document.cookie = `ow_last_trip=${encodeURIComponent(window.location.href)};max-age=${ttl};path=/;SameSite=Lax`;
       })
       .catch((e: Error) => setApiError(e.message))
       .finally(() => setIsLoading(false));
