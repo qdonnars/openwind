@@ -49,6 +49,8 @@ MIN_BOAT_SPEED_KN = 0.5  # floor to avoid division blow-up in extreme stalls
 
 STRONG_WIND_THRESHOLD_KN = 25.0
 LIGHT_WIND_THRESHOLD_KN = 4.0
+MODERATE_SEA_HS_M = 1.5  # >= 1.5m: "mer formee" warning
+ROUGH_SEA_HS_M = 2.5     # >= 2.5m: "forte mer" warning
 
 PREWARM_MIN_SPEED_KN = 2.0  # conservative floor to upper-bound passage duration for cache prewarm
 MAX_SWEEP_WINDOWS = 336  # 14 days x 24h hard cap
@@ -306,12 +308,12 @@ async def _estimate_with_model(
             effective_polar = opt_polar_speed * math.cos(math.radians(opt_twa - twa))
         else:
             effective_polar = polar_speed
-        hs_m: float | None = None
+        # Always surface Hs from the bundle so callers see sea state, even if
+        # wave correction is off. Derate only applies when explicitly requested.
+        hs_m = _closest_sea_hs(bundle.sea.points, mid_time)
         derate = 1.0
-        if use_wave_correction:
-            hs_m = _closest_sea_hs(bundle.sea.points, mid_time)
-            if hs_m is not None:
-                derate = wave_derate(hs_m, twa)
+        if use_wave_correction and hs_m is not None:
+            derate = wave_derate(hs_m, twa)
         boat_speed = max(effective_polar * efficiency * derate, MIN_BOAT_SPEED_KN)
         seg_duration = timedelta(hours=seg.distance_nm / boat_speed)
         seg_start = departure_utc + cumulative_actual
@@ -343,6 +345,13 @@ async def _estimate_with_model(
         warnings.append(f"vent fort: TWS max {max_tws:.0f} kn (≥{STRONG_WIND_THRESHOLD_KN:.0f})")
     if min_boat_speed < LIGHT_WIND_THRESHOLD_KN:
         warnings.append(f"vent faible: vitesse mini {min_boat_speed:.1f} kn — passage très lent")
+    hs_values = [s.hs_m for s in reports if s.hs_m is not None]
+    if hs_values:
+        hs_max = max(hs_values)
+        if hs_max >= ROUGH_SEA_HS_M:
+            warnings.append(f"forte mer: Hs max {hs_max:.1f} m (≥{ROUGH_SEA_HS_M:.1f})")
+        elif hs_max >= MODERATE_SEA_HS_M:
+            warnings.append(f"mer formée: Hs max {hs_max:.1f} m (≥{MODERATE_SEA_HS_M:.1f})")
 
     arrival = departure_utc + cumulative_actual
     total_distance = sum(s.distance_nm for s in segments)
