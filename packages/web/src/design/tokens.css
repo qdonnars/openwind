@@ -90,10 +90,10 @@
   --ow-fg-2: #6b7280;
   --ow-fg-3: #9ca3af;
 
-  /* Accent unchanged — cyan works on both themes */
-  --ow-accent: #2dd4bf;
-  --ow-accent-soft: rgba(45, 212, 191, 0.12);
-  --ow-accent-line: rgba(45, 212, 191, 0.25);
+  /* Darker teal for light theme — #2dd4bf has 1.7:1 contrast on white, unusable */
+  --ow-accent: #0f766e;
+  --ow-accent-soft: rgba(15, 118, 110, 0.12);
+  --ow-accent-line: rgba(15, 118, 110, 0.25);
 
   --ow-line: rgba(0, 0, 0, 0.08);
   --ow-line-2: rgba(0, 0, 0, 0.14);
