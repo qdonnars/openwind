@@ -1,4 +1,4 @@
-import { getWindColor, getTextColor } from "../utils/colors";
+import { getBeaufortLevel } from "../utils/colors";
 
 interface WindCellProps {
   speed: number | null;
@@ -25,8 +25,9 @@ export function WindCell({ speed, gusts, direction, selected, isNow, onSelect }:
     );
   }
 
-  const bg = getWindColor(speed);
-  const color = getTextColor(speed);
+  const level = getBeaufortLevel(speed);
+  const bg = `var(--ow-w-${level})`;
+  const color = `var(--ow-cell-text-${level})`;
 
   const gustClose = gusts != null && gusts <= speed + 5;
   const gustOpacity = gustClose ? "opacity-70" : "opacity-90";

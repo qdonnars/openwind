@@ -56,7 +56,18 @@
   --ow-w-6: #e84118;         /* fort — rouge-orange */
   --ow-w-7: #c41408;         /* très fort — rouge */
   --ow-w-8: #8b1460;         /* tempête — magenta foncé */
-  --ow-cell-ink: #0B1D14;    /* texte sur cellules claires (B0-B3) */
+  --ow-cell-ink: #0B1D14;    /* texte sur cellules claires */
+
+  /* Text colors per Beaufort level */
+  --ow-cell-text-0: #e8eaf0;
+  --ow-cell-text-1: #e8eaf0;
+  --ow-cell-text-2: #0B1D14;
+  --ow-cell-text-3: #0B1D14;
+  --ow-cell-text-4: #0B1D14;
+  --ow-cell-text-5: #0B1D14;
+  --ow-cell-text-6: #fff5f5;
+  --ow-cell-text-7: #fff5f5;
+  --ow-cell-text-8: #fff5f5;
 
   /* Complexity colors — 5 paliers */
   --ow-c-1: #2dc97a;
@@ -119,17 +130,28 @@
   --ow-font-mono: 'JetBrains Mono', 'Fira Mono', monospace;
   --ow-font-display: 'Inter', system-ui, sans-serif;
 
-  /* Beaufort wind colors — identical palette (couleurs météo ne changent pas) */
-  --ow-w-0: #1e2d40;
-  --ow-w-1: #0e7c4a;
-  --ow-w-2: #12a35e;
-  --ow-w-3: #2dc97a;
+  /* Beaufort palette allégée pour light theme — B0-B2 pastel, B3+ identique */
+  --ow-w-0: #c8dce8;         /* calme — bleu-gris pâle */
+  --ow-w-1: #a3d4b8;         /* petite brise — vert sauge clair */
+  --ow-w-2: #5cbd92;         /* jolie brise — menthe moyenne */
+  --ow-w-3: #2dc97a;         /* bonne brise — vert vif */
   --ow-w-4: #e8c432;
   --ow-w-5: #e87a18;
   --ow-w-6: #e84118;
   --ow-w-7: #c41408;
   --ow-w-8: #8b1460;
   --ow-cell-ink: #0B1D14;
+
+  /* Text colors per Beaufort level — dark text on lighter cells */
+  --ow-cell-text-0: #1e2d40;
+  --ow-cell-text-1: #0e3d25;
+  --ow-cell-text-2: #0B1D14;
+  --ow-cell-text-3: #0B1D14;
+  --ow-cell-text-4: #0B1D14;
+  --ow-cell-text-5: #0B1D14;
+  --ow-cell-text-6: #fff5f5;
+  --ow-cell-text-7: #fff5f5;
+  --ow-cell-text-8: #fff5f5;
 
   /* Complexity colors — identical */
   --ow-c-1: #2dc97a;
