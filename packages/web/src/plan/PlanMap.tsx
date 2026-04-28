@@ -15,6 +15,7 @@ interface PlanMapProps {
   isStale?: boolean;
   onWptMove: (idx: number, lat: number, lon: number) => void;
   onWptAdd?: (afterIdx: number, lat: number, lon: number) => void;
+  onMapClick?: (lat: number, lon: number) => void;
 }
 
 function waypointIcon(label: string, bg: string): L.DivIcon {
@@ -35,7 +36,7 @@ function waypointIcon(label: string, bg: string): L.DivIcon {
 }
 
 export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
-  { waypoints, segments, isStale, onWptMove, onWptAdd }: PlanMapProps,
+  { waypoints, segments, isStale, onWptMove, onWptAdd, onMapClick }: PlanMapProps,
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -47,9 +48,11 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
   const livePositionsRef = useRef<[number, number][]>(waypoints);
   const isDraggingRef = useRef(false);
   const onWptAddRef = useRef(onWptAdd);
+  const onMapClickRef = useRef(onMapClick);
   const { resolvedTheme } = useTheme();
 
   useEffect(() => { onWptAddRef.current = onWptAdd; }, [onWptAdd]);
+  useEffect(() => { onMapClickRef.current = onMapClick; }, [onMapClick]);
 
   useImperativeHandle(ref, () => ({
     recenter(lat, lon) {
@@ -72,7 +75,6 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const bounds = L.latLngBounds(waypoints.map(([lat, lon]) => L.latLng(lat, lon)));
     const map = L.map(containerRef.current, { zoomControl: false, attributionControl: false });
 
     const variant = resolvedTheme === "light" ? "light_all" : "dark_all";
@@ -87,8 +89,22 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
 
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
-    map.fitBounds(bounds, { padding: [40, 40] });
+    // Initial view: fit bounds if ≥2 waypoints, else Mediterranean default
+    if (waypoints.length >= 2) {
+      map.fitBounds(L.latLngBounds(waypoints.map(([lat, lon]) => L.latLng(lat, lon))), { padding: [40, 40] });
+    } else if (waypoints.length === 1) {
+      map.setView([waypoints[0][0], waypoints[0][1]], 10);
+    } else {
+      map.setView([42.5, 9.0], 6);
+    }
+
     mapRef.current = map;
+
+    // Map click — for adding initial waypoints (guarded by onMapClickRef)
+    map.on("click", (e: L.LeafletMouseEvent) => {
+      if (isDraggingRef.current || !onMapClickRef.current) return;
+      onMapClickRef.current(e.latlng.lat, e.latlng.lng);
+    });
 
     const ro = new ResizeObserver(() => map.invalidateSize());
     ro.observe(containerRef.current!);
@@ -101,6 +117,13 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Update cursor when onMapClick is active
+  useEffect(() => {
+    const container = mapRef.current?.getContainer();
+    if (!container) return;
+    container.style.cursor = onMapClick ? "crosshair" : "";
+  }, [onMapClick]);
 
   // Draw draggable waypoint markers
   useEffect(() => {
@@ -149,7 +172,6 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
         }
         const pos = marker.getLatLng();
         onWptMove(i, pos.lat, pos.lng);
-        // Short cooldown so polyline click handlers don't fire after drag release
         setTimeout(() => { isDraggingRef.current = false; }, 150);
       });
 
@@ -159,13 +181,14 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
   }, [waypoints]);
 
   // Draw polyline — gray while loading/stale, colored per segment when fresh
-  // Clicking a line inserts a new waypoint at that position
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
     for (const p of polylinesRef.current) p.remove();
     polylinesRef.current = [];
+
+    if (waypoints.length < 2) return;
 
     if (!segments || isStale) {
       const line = L.polyline(waypoints.map(([lat, lon]) => L.latLng(lat, lon)), {
@@ -177,7 +200,6 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
       line.on("click", (e: L.LeafletMouseEvent) => {
         if (isDraggingRef.current || !onWptAddRef.current) return;
         L.DomEvent.stopPropagation(e);
-        // Find closest segment by midpoint distance
         const click = e.latlng;
         let bestIdx = 0;
         let bestDist = Infinity;

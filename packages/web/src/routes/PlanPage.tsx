@@ -230,10 +230,18 @@ export function PlanPage() {
   }
 
   useEffect(() => {
-    if (!isParsedOk(initialParsed)) return;
+    if (!isParsedOk(initialParsed) || initialParsed.waypoints.length < 2) return;
     doFetch(initialParsed.waypoints, initialParsed.archetype);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function handleMapClick(lat: number, lon: number) {
+    const next: [number, number][] = [...waypoints, [lat, lon]];
+    setWaypoints(next);
+    if (next.length >= 2) {
+      window.history.replaceState(null, "", buildPlanUrl(next, departure, archetype));
+    }
+  }
 
   function handleWptMove(idx: number, lat: number, lon: number) {
     const next = waypoints.map((wp, i): [number, number] => (i === idx ? [lat, lon] : wp));
@@ -326,8 +334,20 @@ export function PlanPage() {
             segments={passage?.segments}
             isStale={isStale}
             onWptMove={handleWptMove}
-            onWptAdd={handleWptAdd}
+            onWptAdd={waypoints.length >= 2 ? handleWptAdd : undefined}
+            onMapClick={waypoints.length < 2 ? handleMapClick : undefined}
           />
+          {/* Hint overlay when adding initial waypoints */}
+          {waypoints.length < 2 && (
+            <div className="absolute inset-x-4 bottom-4 z-[400] flex justify-center pointer-events-none">
+              <div
+                className="px-4 py-2 rounded-xl text-sm font-medium"
+                style={{ background: "var(--ow-surface-glass)", backdropFilter: "blur(8px)", border: "1px solid var(--ow-line-2)", color: "var(--ow-fg-1)" }}
+              >
+                {waypoints.length === 0 ? "Cliquez pour placer le départ" : "Cliquez pour placer l'arrivée"}
+              </div>
+            </div>
+          )}
           {/* Hero stats overlay — mobile only, floats above compact drawer */}
           {passage && complexity && (
             <div className="lg:hidden absolute bottom-2 left-2 right-2 z-[400] pointer-events-none">
@@ -354,6 +374,7 @@ export function PlanPage() {
             isStale={isStale}
             onRefetch={handleRefetch}
             forecastUpdatedAt={forecastUpdatedAt}
+            waypointCount={waypoints.length}
           />
         </div>
       </div>

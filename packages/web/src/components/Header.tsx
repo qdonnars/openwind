@@ -2,45 +2,6 @@ import type { Spot } from "../types";
 import { SpotSearch } from "./SpotSearch";
 import { ThemeToggle } from "../design/theme";
 
-function getLastTrip(): string | null {
-  const match = document.cookie.split(";").find((c) => c.trim().startsWith("ow_last_trip="));
-  if (!match) return null;
-  try {
-    return decodeURIComponent(match.split("=").slice(1).join("=").trim());
-  } catch {
-    return null;
-  }
-}
-
-function PlanTab() {
-  const lastTrip = getLastTrip();
-  if (lastTrip) {
-    return (
-      <a
-        href={lastTrip}
-        className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
-        style={{ color: "var(--ow-accent)", background: "var(--ow-accent-soft)", border: "1px solid var(--ow-accent-line)" }}
-      >
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M2 12 L8 2 L14 12" /><path d="M5 8 L11 8" />
-        </svg>
-        Plan
-      </a>
-    );
-  }
-  return (
-    <span
-      className="shrink-0 hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-default select-none"
-      style={{ color: "var(--ow-fg-3)", border: "1px solid var(--ow-line)" }}
-      title="Pas encore de plan. Génère-en un via Claude Desktop ou un assistant MCP."
-    >
-      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M2 12 L8 2 L14 12" /><path d="M5 8 L11 8" />
-      </svg>
-      Plan
-    </span>
-  );
-}
 
 interface HeaderProps {
   onSelectSpot: (spot: Spot) => void;
@@ -80,7 +41,6 @@ export function Header({
             <span style={{ color: 'var(--ow-accent)' }}>Wind</span>
           </h1>
         </div>
-        <PlanTab />
         <div className="flex-1 flex justify-center">
           <SpotSearch onSelect={onSelectSpot} />
         </div>

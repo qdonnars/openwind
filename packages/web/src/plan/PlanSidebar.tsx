@@ -149,6 +149,7 @@ interface PlanSidebarProps {
   isStale: boolean;
   onRefetch: () => void;
   forecastUpdatedAt: string | null;
+  waypointCount: number;
 }
 
 export function PlanSidebar({
@@ -164,8 +165,11 @@ export function PlanSidebar({
   isStale,
   onRefetch,
   forecastUpdatedAt,
+  waypointCount,
 }: PlanSidebarProps) {
   const { resolvedTheme } = useTheme();
+  const canCalculate = waypointCount >= 2;
+
   if (isLoading) {
     return (
       <div className="p-4 space-y-4 animate-fade-in">
@@ -191,7 +195,82 @@ export function PlanSidebar({
     );
   }
 
-  if (!passage || !complexity) return null;
+  if (!passage || !complexity) {
+    return (
+      <div className="p-4 space-y-4 animate-fade-in">
+        {/* Waypoint progress */}
+        <div className="flex items-center gap-3">
+          {[0, 1].map((i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <span
+                className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold"
+                style={{
+                  background: waypointCount > i ? (i === 0 ? "#2dd4bf" : "#e84118") : "var(--ow-bg-2)",
+                  color: waypointCount > i ? "#fff" : "var(--ow-fg-3)",
+                  border: `2px solid ${waypointCount > i ? "transparent" : "var(--ow-line-2)"}`,
+                }}
+              >
+                {i === 0 ? "▶" : "■"}
+              </span>
+              <span className="text-xs" style={{ color: waypointCount > i ? "var(--ow-fg-1)" : "var(--ow-fg-3)" }}>
+                {i === 0 ? "Départ" : "Arrivée"}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Instruction */}
+        <p className="text-sm leading-relaxed" style={{ color: "var(--ow-fg-2)" }}>
+          {waypointCount === 0
+            ? "Cliquez sur la carte pour placer votre point de départ."
+            : "Cliquez sur la carte pour placer votre point d'arrivée."}
+        </p>
+
+        {/* Departure */}
+        <div>
+          <p className="text-[10px] uppercase tracking-widest mb-1 font-semibold" style={{ color: "var(--ow-fg-2)" }}>Départ</p>
+          <input
+            type="datetime-local"
+            value={departure}
+            onChange={(e) => onDepartureChange(e.target.value)}
+            className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums"
+            style={{
+              background: "var(--ow-bg-2)",
+              color: "var(--ow-fg-0)",
+              border: "1px solid var(--ow-line-2)",
+              fontFamily: "var(--ow-font-mono)",
+              colorScheme: resolvedTheme === "light" ? "light" : "dark",
+            }}
+          />
+        </div>
+
+        {/* Archetype */}
+        <ArchetypeSelector
+          currentSlug={currentArchetypeSlug}
+          archetypes={archetypes}
+          onChange={onArchetypeChange}
+        />
+
+        {/* Calculate button */}
+        <button
+          onClick={onRefetch}
+          disabled={!canCalculate}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
+          style={{
+            background: canCalculate ? "var(--ow-accent)" : "var(--ow-bg-2)",
+            color: canCalculate ? "#fff" : "var(--ow-fg-3)",
+            border: `1px solid ${canCalculate ? "transparent" : "var(--ow-line-2)"}`,
+            cursor: canCalculate ? "pointer" : "not-allowed",
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13.5 2.5A7 7 0 1 0 14.5 9"/><path d="M14 1v4h-4"/>
+          </svg>
+          {canCalculate ? "Calculer le passage" : `${waypointCount}/2 waypoints`}
+        </button>
+      </div>
+    );
+  }
 
   const hasWarnings = (complexity.warnings?.length ?? 0) > 0 || passage.warnings.length > 0;
 
