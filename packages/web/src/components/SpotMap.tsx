@@ -184,7 +184,7 @@ export function SpotMap({
       if (editSpot) {
         pressTimerRef.current = setTimeout(() => {
           setPendingEditRef.current(editSpot);
-        }, 800);
+        }, 400);
         return;
       }
 
@@ -199,7 +199,7 @@ export function SpotMap({
         const latlng = map.containerPointToLatLng(point);
         const name = await reverseGeocode(latlng.lat, latlng.lng);
         setPendingRef.current({ lat: latlng.lat, lng: latlng.lng, name });
-      }, 800);
+      }, 400);
     };
 
     const handlePointerUp = () => {
