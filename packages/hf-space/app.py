@@ -17,13 +17,24 @@ website, not via the HF catalog. Re-evaluate if traffic plateaus.
 
 from __future__ import annotations
 
+import dataclasses
 import os
+from datetime import UTC, datetime
+from typing import Any
 
 import uvicorn
 from mcp.server.transport_security import TransportSecuritySettings
+from openwind_data.adapters.base import ForecastHorizonError
+from openwind_data.routing.archetypes import list_archetypes_metadata
+from openwind_data.routing.complexity import score_complexity
+from openwind_data.routing.geometry import Point
+from openwind_data.routing.passage import estimate_passage
 from openwind_mcp_core import build_server
 from starlette.applications import Starlette
-from starlette.responses import HTMLResponse
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
 
 PORT = 7860
@@ -220,8 +231,72 @@ LANDING_HTML = """<!doctype html>
 """
 
 
+def _to_json(obj: Any) -> Any:
+    """Recursively convert dataclasses and datetimes to JSON-serializable types."""
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        return {f.name: _to_json(getattr(obj, f.name)) for f in dataclasses.fields(obj)}
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, (tuple, list)):
+        return [_to_json(v) for v in obj]
+    return obj
+
+
 async def _index(_request) -> HTMLResponse:
     return HTMLResponse(LANDING_HTML)
+
+
+async def _api_archetypes(_request: Request) -> JSONResponse:
+    return JSONResponse(list_archetypes_metadata())
+
+
+async def _api_passage(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid JSON body"}, status_code=422)
+
+    missing = [k for k in ("waypoints", "departure", "archetype") if body.get(k) is None]
+    if missing:
+        return JSONResponse({"error": f"missing fields: {missing}"}, status_code=422)
+
+    try:
+        departure = datetime.fromisoformat(body["departure"])
+    except (ValueError, TypeError) as exc:
+        return JSONResponse({"error": f"invalid departure: {exc}"}, status_code=422)
+
+    try:
+        waypoints = [Point(lat=float(w[0]), lon=float(w[1])) for w in body["waypoints"]]
+    except (TypeError, IndexError, ValueError) as exc:
+        return JSONResponse({"error": f"invalid waypoints: {exc}"}, status_code=422)
+
+    if len(waypoints) < 2:
+        return JSONResponse({"error": "at least 2 waypoints required"}, status_code=422)
+
+    efficiency: float = body.get("efficiency", 0.75)
+    try:
+        efficiency = float(efficiency)
+    except (TypeError, ValueError) as exc:
+        return JSONResponse({"error": f"invalid efficiency: {exc}"}, status_code=422)
+
+    try:
+        passage = await estimate_passage(
+            waypoints, departure, body["archetype"], efficiency=efficiency, model="auto"
+        )
+    except KeyError as exc:
+        return JSONResponse({"error": f"unknown archetype: {exc}"}, status_code=422)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=422)
+    except ForecastHorizonError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=422)
+
+    complexity = score_complexity(passage)
+
+    return JSONResponse({
+        "passage": _to_json(passage),
+        "complexity": _to_json(complexity),
+        "forecast_updated_at": datetime.now(UTC).isoformat(),
+    })
 
 
 def main() -> None:
@@ -244,7 +319,17 @@ def main() -> None:
     app = Starlette(
         routes=[
             Route("/", _index),
+            Route("/api/v1/archetypes", _api_archetypes, methods=["GET"]),
+            Route("/api/v1/passage", _api_passage, methods=["POST"]),
             Mount("/", app=mcp_app),
+        ],
+        middleware=[
+            Middleware(
+                CORSMiddleware,
+                allow_origins=["*"],
+                allow_methods=["GET", "POST", "OPTIONS"],
+                allow_headers=["Content-Type"],
+            )
         ],
         lifespan=mcp_app.router.lifespan_context,
     )

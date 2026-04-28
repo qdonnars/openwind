@@ -71,6 +71,23 @@ def list_archetypes() -> list[BoatPolar]:
     return [reg[n] for n in _ARCHETYPE_NAMES]
 
 
+def list_archetypes_metadata() -> list[dict]:
+    """Return archetype metadata (no polars) suitable for REST API responses."""
+    reg = _registry()
+    return [
+        {
+            "slug": n,
+            "name": reg[n].name,
+            "length_ft": reg[n].length_ft,
+            "type": reg[n].type,
+            "category": reg[n].category,
+            "examples": list(reg[n].examples),
+            "performance_class": reg[n].performance_class,
+        }
+        for n in _ARCHETYPE_NAMES
+    ]
+
+
 def get_polar(name: str) -> BoatPolar:
     """Fetch one archetype by name. Raises KeyError if unknown."""
     reg = _registry()
