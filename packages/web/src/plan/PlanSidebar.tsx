@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTheme } from "../design/theme";
 import type { PassageReport, ComplexityScore, SegmentReport, Archetype } from "./types";
+import { aggregateLegs } from "./aggregateLegs";
 import { cxLevel, CX_COLORS } from "./types";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -16,10 +17,6 @@ function fmtTime(iso: string): string {
 }
 
 
-function compassDir(deg: number): string {
-  const dirs = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
-  return dirs[Math.round(deg / 45) % 8];
-}
 
 // ── ComplexityBadge ───────────────────────────────────────────────────────────
 
@@ -150,6 +147,7 @@ interface PlanSidebarProps {
   onRefetch: () => void;
   forecastUpdatedAt: string | null;
   waypointCount: number;
+  waypoints: [number, number][];
 }
 
 export function PlanSidebar({
@@ -166,6 +164,7 @@ export function PlanSidebar({
   onRefetch,
   forecastUpdatedAt,
   waypointCount,
+  waypoints,
 }: PlanSidebarProps) {
   const { resolvedTheme } = useTheme();
   const canCalculate = waypointCount >= 2;
@@ -364,39 +363,47 @@ export function PlanSidebar({
         </div>
       )}
 
-      {/* Legs */}
-      <div>
-        <div className="flex items-center gap-2 mb-1 px-1 text-[9px]" style={{ color: "var(--ow-fg-3)" }}>
-          <span className="w-5 shrink-0" />
-          <span className="flex-1 grid grid-cols-4 gap-1">
-            <span className="text-right">Dist</span>
-            <span className="text-right">TWS</span>
-            <span className="text-right">Dir</span>
-            <span className="text-right">Vit</span>
-          </span>
-        </div>
-        <div className="space-y-1">
-          {passage.segments.map((seg, i) => {
-            const cx = cxLevel(seg.tws_kn);
-            return (
-              <div key={i} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ background: "var(--ow-bg-2)" }}>
-                <span
-                  className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]"
-                  style={{ background: CX_COLORS[cx], color: "#fff" }}
-                >
-                  {i + 1}
-                </span>
-                <div className="flex-1 grid grid-cols-4 gap-1 tabular-nums" style={{ fontFamily: "var(--ow-font-mono)" }}>
-                  <span className="text-right" style={{ color: "var(--ow-fg-1)" }}>{seg.distance_nm.toFixed(1)} nm</span>
-                  <span className="text-right" style={{ color: "var(--ow-fg-0)" }}>{seg.tws_kn.toFixed(0)} kn</span>
-                  <span className="text-right" style={{ color: "var(--ow-fg-1)" }}>{compassDir(seg.twd_deg)}</span>
-                  <span className="text-right" style={{ color: "var(--ow-fg-0)" }}>{seg.boat_speed_kn.toFixed(1)} kn</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/* Legs — one row per user waypoint segment */}
+      {(() => {
+        const legs = aggregateLegs(passage.segments, waypoints);
+        return (
+          <div>
+            <div className="flex items-center gap-2 mb-1 px-1 text-[9px]" style={{ color: "var(--ow-fg-3)" }}>
+              <span className="w-5 shrink-0" />
+              <span className="flex-1 grid grid-cols-4 gap-1">
+                <span>Heure</span>
+                <span>Allure</span>
+                <span>Vent</span>
+                <span className="text-right">Vitesse</span>
+              </span>
+            </div>
+            <div className="space-y-1">
+              {legs.map((leg, i) => {
+                const cx = cxLevel((leg.tws_min + leg.tws_max) / 2);
+                const windLabel = Math.round(leg.tws_min) === Math.round(leg.tws_max)
+                  ? `${Math.round(leg.tws_min)} kn`
+                  : `${Math.round(leg.tws_min)}–${Math.round(leg.tws_max)} kn`;
+                return (
+                  <div key={i} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ background: "var(--ow-bg-2)" }}>
+                    <span
+                      className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]"
+                      style={{ background: CX_COLORS[cx], color: "#fff" }}
+                    >
+                      {i + 1}
+                    </span>
+                    <div className="flex-1 grid grid-cols-4 gap-1 tabular-nums" style={{ fontFamily: "var(--ow-font-mono)" }}>
+                      <span style={{ color: "var(--ow-fg-1)" }}>{fmtTime(leg.end_time)}</span>
+                      <span style={{ color: "var(--ow-fg-0)" }}>{leg.point_of_sail}</span>
+                      <span style={{ color: "var(--ow-fg-1)" }}>{windLabel}</span>
+                      <span className="text-right" style={{ color: "var(--ow-fg-0)" }}>{leg.boat_speed_kn.toFixed(1)} kn</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Footer */}
       {forecastUpdatedAt && (
