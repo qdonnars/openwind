@@ -3,7 +3,6 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { Spot, ModelForecast } from "../types";
 import { QUICK_SPOTS } from "../spots";
-import { getWindColor } from "../utils/colors";
 import { useTheme } from "../design/theme";
 
 function createArrowSvg(
@@ -13,7 +12,6 @@ function createArrowSvg(
   label: string,
   length: number
 ): string {
-  const bg = getWindColor(speed);
   const rad = ((degrees + 180) * Math.PI) / 180;
   const tipX = 150 + Math.sin(rad) * length;
   const tipY = 150 - Math.cos(rad) * length;
@@ -25,16 +23,20 @@ function createArrowSvg(
   const ry = tipY + headLen * Math.cos(rad + headAng);
   const lblX = tipX + Math.sin(rad) * 14;
   const lblY = tipY - Math.cos(rad) * 14;
+  // Contrasting shadow so arrows are readable on both light and dark maps
+  const shadow = color === "#ffffff"
+    ? "0 0 3px #000,0 0 6px #000"
+    : "0 0 3px #fff,0 0 5px #fff";
 
   return `<svg width="300" height="300" viewBox="0 0 300 300" style="overflow:visible;position:absolute;top:0;left:0">
-    <line x1="150" y1="150" x2="${tipX}" y2="${tipY}" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="150" y1="150" x2="${tipX}" y2="${tipY}" stroke="${color}" stroke-width="2.5" stroke-linecap="round" style="filter:drop-shadow(0 0 2px ${color === "#ffffff" ? "#000" : "#fff"})"/>
     <polygon points="${tipX},${tipY} ${lx},${ly} ${rx},${ry}" fill="${color}"/>
     <text x="${lblX}" y="${lblY}" text-anchor="middle" dominant-baseline="middle"
-      font-size="9" font-weight="700" fill="#fff"
-      style="text-shadow:0 0 3px #000,0 0 6px #000">${Math.round(speed)}</text>
+      font-size="9" font-weight="700" fill="${color}"
+      style="text-shadow:${shadow}">${Math.round(speed)}</text>
     <text x="${lblX}" y="${lblY + 11}" text-anchor="middle" dominant-baseline="middle"
-      font-size="7" fill="${bg}"
-      style="text-shadow:0 0 3px #000">${label}</text>
+      font-size="7" fill="#fff"
+      style="text-shadow:0 0 3px #000,0 0 5px #000">${label}</text>
   </svg>`;
 }
 
@@ -346,7 +348,7 @@ export function SpotMap({
       const dir = forecast.hourly.wind_direction_10m[timeIdx];
       const spd = forecast.hourly.wind_speed_10m[timeIdx];
       if (dir == null || spd == null) continue;
-      const color = "#ffffff";
+      const color = resolvedTheme === "light" ? "#0d2030" : "#ffffff";
       const length = Math.min(36 + spd * 2.4, 120);
       svgContent += createArrowSvg(dir, spd, color, forecast.modelName, length);
     }
@@ -365,7 +367,7 @@ export function SpotMap({
       interactive: false,
       pane: "windArrows",
     }).addTo(map);
-  }, [selectedHour, forecasts, current]);
+  }, [selectedHour, forecasts, current, resolvedTheme]);
 
   return (
     <div className="w-full h-full relative">

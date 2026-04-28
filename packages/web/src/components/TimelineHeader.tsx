@@ -81,7 +81,7 @@ export function TimelineHeader({
           className="sticky left-0 z-20 min-w-[56px] px-2 border-r"
           style={{ background: 'var(--ow-bg-1)', borderColor: 'var(--ow-line-2)' }}
         >
-          <div className="flex flex-col items-center leading-none gap-[1px]">
+          <div className="flex flex-col items-center justify-center h-full leading-none gap-[1px]">
             <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--ow-accent)' }}>
               {weekday}
             </span>
