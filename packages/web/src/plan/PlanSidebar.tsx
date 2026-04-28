@@ -14,13 +14,6 @@ function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function fmtDeparture(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString("fr-FR", {
-    weekday: "short", day: "numeric", month: "short",
-    hour: "2-digit", minute: "2-digit",
-  });
-}
 
 function compassDir(deg: number): string {
   const dirs = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
@@ -150,6 +143,8 @@ interface PlanSidebarProps {
   archetypes: Archetype[];
   currentArchetypeSlug: string;
   onArchetypeChange: (slug: string) => void;
+  departure: string;
+  onDepartureChange: (iso: string) => void;
   isStale: boolean;
   onRefetch: () => void;
   forecastUpdatedAt: string | null;
@@ -163,6 +158,8 @@ export function PlanSidebar({
   archetypes,
   currentArchetypeSlug,
   onArchetypeChange,
+  departure,
+  onDepartureChange,
   isStale,
   onRefetch,
   forecastUpdatedAt,
@@ -223,12 +220,22 @@ export function PlanSidebar({
         )}
       </div>
 
-      {/* Departure */}
+      {/* Departure — editable */}
       <div>
-        <p className="text-[10px] uppercase tracking-widest mb-0.5 font-semibold" style={{ color: "var(--ow-fg-2)" }}>Départ</p>
-        <p className="text-xl font-bold tabular-nums" style={{ fontFamily: "var(--ow-font-mono)", color: "var(--ow-fg-0)" }}>
-          {fmtDeparture(passage.departure_time)}
-        </p>
+        <p className="text-[10px] uppercase tracking-widest mb-1 font-semibold" style={{ color: "var(--ow-fg-2)" }}>Départ</p>
+        <input
+          type="datetime-local"
+          value={departure}
+          onChange={(e) => onDepartureChange(e.target.value)}
+          className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums"
+          style={{
+            background: "var(--ow-bg-2)",
+            color: "var(--ow-fg-0)",
+            border: "1px solid var(--ow-line-2)",
+            fontFamily: "var(--ow-font-mono)",
+            colorScheme: "dark",
+          }}
+        />
       </div>
 
       {/* Archetype dropdown */}
@@ -287,9 +294,15 @@ export function PlanSidebar({
 
       {/* Legs */}
       <div>
-        <p className="text-[10px] uppercase tracking-widest mb-2 font-semibold" style={{ color: "var(--ow-fg-2)" }}>
-          Segments ({passage.segments.length})
-        </p>
+        <div className="flex items-center gap-2 mb-1 px-1 text-[9px]" style={{ color: "var(--ow-fg-3)" }}>
+          <span className="w-5 shrink-0" />
+          <span className="flex-1 grid grid-cols-4 gap-1">
+            <span className="text-right">Dist</span>
+            <span className="text-right">TWS</span>
+            <span className="text-right">Dir</span>
+            <span className="text-right">Vit</span>
+          </span>
+        </div>
         <div className="space-y-1">
           {passage.segments.map((seg, i) => {
             const cx = cxLevel(seg.tws_kn);
@@ -301,26 +314,15 @@ export function PlanSidebar({
                 >
                   {i + 1}
                 </span>
-                <div className="flex-1 grid grid-cols-5 gap-1 tabular-nums" style={{ fontFamily: "var(--ow-font-mono)" }}>
+                <div className="flex-1 grid grid-cols-4 gap-1 tabular-nums" style={{ fontFamily: "var(--ow-font-mono)" }}>
                   <span className="text-right" style={{ color: "var(--ow-fg-1)" }}>{seg.distance_nm.toFixed(1)} nm</span>
                   <span className="text-right" style={{ color: "var(--ow-fg-0)" }}>{seg.tws_kn.toFixed(0)} kn</span>
                   <span className="text-right" style={{ color: "var(--ow-fg-1)" }}>{compassDir(seg.twd_deg)}</span>
                   <span className="text-right" style={{ color: "var(--ow-fg-0)" }}>{seg.boat_speed_kn.toFixed(1)} kn</span>
-                  <span className="text-right" style={{ color: "var(--ow-fg-2)" }}>{fmtTime(seg.end_time)}</span>
                 </div>
               </div>
             );
           })}
-        </div>
-        <div className="flex justify-between text-[9px] mt-1 px-1" style={{ color: "var(--ow-fg-3)" }}>
-          <span />
-          <span className="grid grid-cols-5 gap-1 w-[calc(100%-28px)]">
-            <span className="text-right">Dist</span>
-            <span className="text-right">TWS</span>
-            <span className="text-right">Dir</span>
-            <span className="text-right">Vit</span>
-            <span className="text-right">ETA</span>
-          </span>
         </div>
       </div>
 

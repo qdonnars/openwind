@@ -14,6 +14,7 @@ interface PlanMapProps {
   segments?: SegmentReport[];
   isStale?: boolean;
   onWptMove: (idx: number, lat: number, lon: number) => void;
+  onWptAdd?: (afterIdx: number, lat: number, lon: number) => void;
 }
 
 function waypointIcon(label: string, bg: string): L.DivIcon {
@@ -34,7 +35,7 @@ function waypointIcon(label: string, bg: string): L.DivIcon {
 }
 
 export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
-  { waypoints, segments, isStale, onWptMove }: PlanMapProps,
+  { waypoints, segments, isStale, onWptMove, onWptAdd }: PlanMapProps,
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,7 +45,11 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
   const markersRef = useRef<L.Marker[]>([]);
   const dragLineRef = useRef<L.Polyline | null>(null);
   const livePositionsRef = useRef<[number, number][]>(waypoints);
+  const isDraggingRef = useRef(false);
+  const onWptAddRef = useRef(onWptAdd);
   const { resolvedTheme } = useTheme();
+
+  useEffect(() => { onWptAddRef.current = onWptAdd; }, [onWptAdd]);
 
   useImperativeHandle(ref, () => ({
     recenter(lat, lon) {
@@ -115,6 +120,10 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
         draggable: true,
       }).addTo(map);
 
+      marker.on("dragstart", () => {
+        isDraggingRef.current = true;
+      });
+
       marker.on("drag", () => {
         const pos = marker.getLatLng();
         const positions = [...livePositionsRef.current];
@@ -140,6 +149,8 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
         }
         const pos = marker.getLatLng();
         onWptMove(i, pos.lat, pos.lng);
+        // Short cooldown so polyline click handlers don't fire after drag release
+        setTimeout(() => { isDraggingRef.current = false; }, 150);
       });
 
       markersRef.current.push(marker);
@@ -148,6 +159,7 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
   }, [waypoints]);
 
   // Draw polyline — gray while loading/stale, colored per segment when fresh
+  // Clicking a line inserts a new waypoint at that position
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -158,22 +170,44 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
     if (!segments || isStale) {
       const line = L.polyline(waypoints.map(([lat, lon]) => L.latLng(lat, lon)), {
         color: "#6b7280",
-        weight: 3,
+        weight: 5,
         dashArray: "6 4",
         opacity: 0.7,
       }).addTo(map);
+      line.on("click", (e: L.LeafletMouseEvent) => {
+        if (isDraggingRef.current || !onWptAddRef.current) return;
+        L.DomEvent.stopPropagation(e);
+        // Find closest segment by midpoint distance
+        const click = e.latlng;
+        let bestIdx = 0;
+        let bestDist = Infinity;
+        for (let i = 0; i < waypoints.length - 1; i++) {
+          const mid = L.latLng(
+            (waypoints[i][0] + waypoints[i + 1][0]) / 2,
+            (waypoints[i][1] + waypoints[i + 1][1]) / 2,
+          );
+          const d = click.distanceTo(mid);
+          if (d < bestDist) { bestDist = d; bestIdx = i; }
+        }
+        onWptAddRef.current(bestIdx, click.lat, click.lng);
+      });
       polylinesRef.current = [line];
       return;
     }
 
-    for (const seg of segments) {
+    segments.forEach((seg, i) => {
       const color = CX_COLORS[cxLevel(seg.tws_kn)];
       const line = L.polyline(
         [L.latLng(seg.start.lat, seg.start.lon), L.latLng(seg.end.lat, seg.end.lon)],
-        { color, weight: 4, opacity: 0.9 }
+        { color, weight: 6, opacity: 0.9 }
       ).addTo(map);
+      line.on("click", (e: L.LeafletMouseEvent) => {
+        if (isDraggingRef.current || !onWptAddRef.current) return;
+        L.DomEvent.stopPropagation(e);
+        onWptAddRef.current(i, e.latlng.lat, e.latlng.lng);
+      });
       polylinesRef.current.push(line);
-    }
+    });
   }, [waypoints, segments, isStale]);
 
   return <div ref={containerRef} className="w-full h-full" />;
