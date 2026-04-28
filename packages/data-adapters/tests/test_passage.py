@@ -405,6 +405,7 @@ class TestModelFallback:
             short_horizon_models=(
                 "meteofrance_arome_france",
                 "icon_eu",
+                "ecmwf_ifs025",
                 "gfs_seamless",
             )
         )

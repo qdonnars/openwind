@@ -10,6 +10,7 @@ import httpx
 
 from openwind_data.adapters.base import (
     ForecastBundle,
+    ForecastHorizonError,
     SeaPoint,
     SeaSeries,
     WindPoint,
@@ -21,15 +22,24 @@ MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
 
 DEFAULT_MODEL = "meteofrance_arome_france"
 
-# Ordered fallback when caller passes model="auto": from highest-resolution /
-# shortest-horizon to lowest / longest. AROME captures Med thermals at 1.3 km
-# but only ~48 h; ICON-EU covers ~5 d; GFS covers ~16 d.
+# Ordered fallback when caller passes model="auto": horizon-increasing, with
+# the highest-resolution model at each tier. AROME 1.3 km captures Med thermals
+# (~48 h); ICON-EU 7 km Europe (~5 d); ECMWF IFS 25 km global (~10 d); GFS 25 km
+# global (~16 d, last resort — least skilful in the Med).
 AUTO_MODEL = "auto"
 AUTO_FALLBACK_CHAIN: tuple[str, ...] = (
     "meteofrance_arome_france",
     "icon_eu",
+    "ecmwf_ifs025",
     "gfs_seamless",
 )
+
+# Open-Meteo's forecast endpoint caps both ``start_date`` and ``end_date`` to
+# roughly today + 16 d (model-agnostic — the cap is on the API, not the model).
+# We cap one day below that to leave margin for clock skew and same-day TZ
+# crossings. Beyond this, we surface ``ForecastHorizonError`` directly without
+# burning an HTTP round-trip — no model in the chain can serve the request.
+API_MAX_FUTURE_DAYS = 14
 
 _WIND_VARS = "wind_speed_10m,wind_direction_10m,wind_gusts_10m"
 _MARINE_VARS = "wave_height,wave_period,wave_direction,wind_wave_height,swell_wave_height"
@@ -132,6 +142,13 @@ class OpenMeteoAdapter:
             models=tuple(sorted(models)),
         )
         now = datetime.now(UTC)
+        # Open-Meteo's start_date/end_date both must fall within ~today+15. If the
+        # caller wants data past that cap, no model in the chain can help — fail
+        # fast with ForecastHorizonError so the auto-fallback exhausts cleanly
+        # and the API layer returns 422 instead of bubbling an httpx 400 → 500.
+        api_max_end = now + timedelta(days=API_MAX_FUTURE_DAYS)
+        if start_utc > api_max_end:
+            raise ForecastHorizonError(models[0], start_utc)
         cached = self._cache.get(key)
         if (
             cached is not None
@@ -143,11 +160,15 @@ class OpenMeteoAdapter:
 
         # Fetch a wide window so future calls with later `departure` can be served
         # from cache. If a stale-but-narrower entry exists, widen to cover both.
+        # Always cap at api_max_end so the prefetch never exceeds Open-Meteo's
+        # date-range limit (the +7 d widening would otherwise trip the cap as
+        # soon as start_utc is within 7 d of api_max_end).
         fetch_start = start_utc.replace(hour=0, minute=0, second=0, microsecond=0)
         fetch_end = max(end_utc, start_utc + timedelta(days=FETCH_HORIZON_DAYS))
         if cached is not None:
             fetch_start = min(fetch_start, cached.bundle.start)
             fetch_end = max(fetch_end, cached.bundle.end)
+        fetch_end = min(fetch_end, api_max_end)
 
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(timeout=self._timeout)
@@ -198,7 +219,7 @@ class OpenMeteoAdapter:
         }
         await self._pace_http()
         resp = await client.get(FORECAST_URL, params=params)
-        resp.raise_for_status()
+        _raise_for_status_with_horizon(resp, model, start)
         return _parse_wind(resp.json(), model, start, end)
 
     async def _fetch_sea(
@@ -219,8 +240,30 @@ class OpenMeteoAdapter:
         }
         await self._pace_http()
         resp = await client.get(MARINE_URL, params=params)
-        resp.raise_for_status()
+        _raise_for_status_with_horizon(resp, "open-meteo-marine", start)
         return _parse_sea(resp.json(), start, end)
+
+
+def _raise_for_status_with_horizon(
+    resp: httpx.Response, model: str, requested_time: datetime
+) -> None:
+    """Defense-in-depth: if Open-Meteo rejects the date range with a 400,
+    translate to ``ForecastHorizonError`` so the auto-fallback chain reacts
+    instead of surfacing a raw ``HTTPStatusError`` (which would 500 the API).
+    Other 400s (malformed params, etc.) keep their native exception so real
+    bugs stay visible.
+    """
+    if resp.status_code == 400:
+        try:
+            payload = resp.json()
+        except ValueError:
+            payload = {}
+        reason = str(payload.get("reason", ""))
+        if "out of allowed range" in reason and (
+            "start_date" in reason or "end_date" in reason
+        ):
+            raise ForecastHorizonError(model, requested_time)
+    resp.raise_for_status()
 
 
 def _slice_bundle(bundle: ForecastBundle, start: datetime, end: datetime) -> ForecastBundle:
