@@ -205,7 +205,7 @@ export function PlanPage() {
     isParsedOk(initialParsed) ? initialParsed.waypoints : []
   );
   const [archetype, setArchetype] = useState(
-    isParsedOk(initialParsed) ? initialParsed.archetype : ""
+    isParsedOk(initialParsed) && initialParsed.archetype ? initialParsed.archetype : "cruiser_30ft"
   );
   const [departure, setDeparture] = useState(() => {
     const raw = isParsedOk(initialParsed) ? initialParsed.departure : "";
