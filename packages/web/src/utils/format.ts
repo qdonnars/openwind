@@ -45,8 +45,10 @@ export function formatHour(iso: string, mode: TimezoneMode = "local"): string {
     const totalUTCMin = (parisHour * 60 + parisMin - offsetMin + 1440) % 1440;
     return String(Math.floor(totalUTCMin / 60));
   }
-  // local: interpret the string as local time (existing behaviour)
-  return String(new Date(iso).getHours());
+  // local: iso is Paris time without offset — convert Paris→UTC→browser-local
+  const offsetMin = parisTzOffsetMin(iso);
+  const realUtcMs = new Date(iso + "Z").getTime() - offsetMin * 60000;
+  return String(new Date(realUtcMs).getHours());
 }
 
 /**
@@ -62,7 +64,9 @@ export function formatDayHeader(iso: string, mode: TimezoneMode = "local"): stri
     const d = new Date(Date.UTC(year, month - 1, day));
     return `${DAYS_EN[d.getUTCDay()]} ${day}`;
   }
-  const d = new Date(iso);
+  const offsetMin = parisTzOffsetMin(iso);
+  const realUtcMs = new Date(iso + "Z").getTime() - offsetMin * 60000;
+  const d = new Date(realUtcMs);
   return `${DAYS_EN[d.getDay()]} ${d.getDate()}`;
 }
 
