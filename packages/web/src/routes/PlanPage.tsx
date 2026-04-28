@@ -320,13 +320,6 @@ export function PlanPage() {
         className="shrink-0 h-12 flex items-center px-3 gap-2 border-b"
         style={{ background: "var(--ow-bg-1)", borderColor: "var(--ow-line)" }}
       >
-        <a
-          href="/"
-          className="shrink-0 flex items-center gap-1 text-sm font-medium"
-          style={{ color: "var(--ow-fg-1)" }}
-        >
-          ←
-        </a>
         <div className="flex-1 flex justify-center px-1">
           <SpotSearch
             onSelect={(spot) => mapRef.current?.recenter(spot.latitude, spot.longitude)}
@@ -351,6 +344,19 @@ export function PlanPage() {
             onWptAdd={waypoints.length >= 2 ? handleWptAdd : undefined}
             onMapClick={waypoints.length < 2 ? handleMapClick : undefined}
           />
+          {/* Back-to-explore FAB — mirrors the compass FAB on the home map */}
+          <a
+            href="/"
+            className="absolute top-3 left-3 z-[400] w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95"
+            style={{ background: "var(--ow-accent)", color: "#fff" }}
+            title="Retour à l'exploration"
+          >
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2" />
+              <path d="M9.6 4.6A2 2 0 1 1 11 8H2" />
+              <path d="M12.6 19.4A2 2 0 1 0 14 16H2" />
+            </svg>
+          </a>
           {/* Hint overlay when adding initial waypoints */}
           {waypoints.length < 2 && (
             <div className="absolute inset-x-4 bottom-4 z-[400] flex justify-center pointer-events-none">
