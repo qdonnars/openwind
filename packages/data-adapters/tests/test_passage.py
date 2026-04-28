@@ -19,6 +19,8 @@ from openwind_data.routing.geometry import Point
 from openwind_data.routing.passage import (
     LIGHT_WIND_THRESHOLD_KN,
     MAX_SWEEP_WINDOWS,
+    MODERATE_SEA_HS_M,
+    ROUGH_SEA_HS_M,
     STRONG_WIND_THRESHOLD_KN,
     best_vmg_upwind,
     estimate_passage,
@@ -265,8 +267,10 @@ class TestWaveDerate:
 
 
 class TestEstimatePassageWaveCorrection:
-    async def test_disabled_by_default_ignores_sea(self) -> None:
-        adapter = StubAdapter(tws_kn=12.0, twd_deg=180.0, hs_m=3.0)  # head seas-ish
+    async def test_disabled_by_default_keeps_speed_but_surfaces_hs(self) -> None:
+        # Hs is now always surfaced so callers see sea state. The flag only
+        # gates the boat-speed derate.
+        adapter = StubAdapter(tws_kn=12.0, twd_deg=180.0, hs_m=3.0)
         report = await estimate_passage(
             [Point(43.0, 5.0), Point(43.0, 5.5)],
             DEPARTURE,
@@ -275,8 +279,8 @@ class TestEstimatePassageWaveCorrection:
             segment_length_nm=20.0,
         )
         for s in report.segments:
-            assert s.wave_derate_factor == 1.0
-            assert s.hs_m is None
+            assert s.wave_derate_factor == 1.0  # no derate applied
+            assert s.hs_m == pytest.approx(3.0)  # but Hs is visible
 
     async def test_enabled_slows_in_head_seas(self) -> None:
         # TWD=90 (wind from east), course east → TWA=0 (head seas).
@@ -431,18 +435,18 @@ class TestBestVmgUpwind:
     def test_all_archetypes_return_positive(self) -> None:
         from openwind_data.routing.archetypes import list_archetypes
         for archetype in list_archetypes():
-            opt_twa, opt_speed = best_vmg_upwind(archetype, 10.0)
+            _, opt_speed = best_vmg_upwind(archetype, 10.0)
             assert opt_speed > 0.0, f"{archetype.name} returned zero speed"
 
     def test_light_wind_still_positive(self) -> None:
         polar = get_polar("cruiser_30ft")
-        opt_twa, opt_speed = best_vmg_upwind(polar, 3.0)
+        _, opt_speed = best_vmg_upwind(polar, 3.0)
         assert opt_speed > 0.0
 
 
 class TestVmgUpwindCorrection:
     async def test_upwind_correction_gives_correct_vmg(self) -> None:
-        # Dead upwind (TWA=0°): effective speed = polar(opt_twa) × cos(opt_twa).
+        # Dead upwind (TWA=0 deg): effective speed = polar(opt_twa) * cos(opt_twa).
         # This is the real VMG toward destination when tacking — always less than
         # polar(opt_twa) itself, and less than the clamped polar at 0° (which
         # lookup_polar returns as the first-column value, an inaccurate shortcut).
@@ -614,3 +618,85 @@ class TestEstimatePassageWindows:
             assert isinstance(r, PassageReport)
             assert r.duration_h > 0
             assert r.distance_nm > 0
+
+
+class TestSeaStateAlwaysSurfaced:
+    """Hs must be populated on every segment when sea data is available,
+    regardless of use_wave_correction. The flag only gates the speed derate."""
+
+    async def test_hs_populated_when_correction_disabled(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=0.6)
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
+            use_wave_correction=False,
+        )
+        for seg in report.segments:
+            assert seg.hs_m == pytest.approx(0.6)
+            assert seg.wave_derate_factor == 1.0  # no derate applied
+
+    async def test_hs_populated_when_correction_enabled(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=0.6)
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
+            use_wave_correction=True,
+        )
+        for seg in report.segments:
+            assert seg.hs_m == pytest.approx(0.6)
+
+    async def test_hs_none_when_no_sea_data(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=None)
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
+        )
+        for seg in report.segments:
+            assert seg.hs_m is None
+
+
+class TestSeaStateWarnings:
+    async def test_calm_sea_no_warning(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=0.5)
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES], DEPARTURE, "cruiser_40ft",
+            adapter=adapter, segment_length_nm=20.0,
+        )
+        assert not any("mer formée" in w or "forte mer" in w for w in report.warnings)
+
+    async def test_moderate_sea_warning(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=MODERATE_SEA_HS_M + 0.2)
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES], DEPARTURE, "cruiser_40ft",
+            adapter=adapter, segment_length_nm=20.0,
+        )
+        assert any("mer formée" in w for w in report.warnings)
+        # Should not also trigger forte mer at 1.7m
+        assert not any("forte mer" in w for w in report.warnings)
+
+    async def test_rough_sea_warning(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=ROUGH_SEA_HS_M + 0.5)
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES], DEPARTURE, "cruiser_40ft",
+            adapter=adapter, segment_length_nm=20.0,
+        )
+        assert any("forte mer" in w for w in report.warnings)
+        # Forte mer takes precedence; mer formée should not also fire
+        assert not any("mer formée" in w for w in report.warnings)
+
+    async def test_no_sea_data_no_warning(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=None)
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES], DEPARTURE, "cruiser_40ft",
+            adapter=adapter, segment_length_nm=20.0,
+        )
+        assert not any("mer" in w.lower() for w in report.warnings)
