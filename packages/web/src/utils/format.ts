@@ -70,6 +70,22 @@ export function formatDayHeader(iso: string, mode: TimezoneMode = "local"): stri
   return `${DAYS_EN[d.getDay()]} ${d.getDate()}`;
 }
 
+/** Return "YYYY-MM-DDTHH" for the current moment in Europe/Paris time.
+ * The heatmap timeline is keyed in Paris time, so nowHour must match. */
+export function nowParisHourPrefix(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find(p => p.type === t)?.value ?? "";
+  const h = get("hour");
+  return `${get("year")}-${get("month")}-${get("day")}T${h === "24" ? "00" : h}`;
+}
+
 export function groupHoursByDay(times: string[]): Map<string, number[]> {
   const map = new Map<string, number[]>();
   times.forEach((t, i) => {

@@ -3,6 +3,7 @@ import type { ModelForecast } from "../types";
 import { TimelineHeader } from "./TimelineHeader";
 import { WindCell } from "./WindCell";
 import { useTimezone, type TimezoneMode } from "../hooks/useTimezone";
+import { nowParisHourPrefix } from "../utils/format";
 
 const MODEL_STEP: Record<string, number> = {
   AROME: 1,
@@ -141,7 +142,7 @@ export function WindTable({
     );
   }, [forecasts]);
 
-  const nowHour = new Date().toISOString().slice(0, 13);
+  const nowHour = nowParisHourPrefix();
 
   const updateVisibleDay = useCallback(() => {
     const el = scrollRef.current;
