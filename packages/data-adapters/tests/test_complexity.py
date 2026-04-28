@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from openwind_data.routing.complexity import score_complexity
+from openwind_data.routing.complexity import score_complexity, ComplexityWarning
 from openwind_data.routing.geometry import Point
 from openwind_data.routing.passage import PassageReport, SegmentReport
 
@@ -96,6 +96,43 @@ class TestWithSea:
     def test_negative_hs_rejected(self) -> None:
         with pytest.raises(ValueError, match="max_hs_m"):
             score_complexity(_make_passage([5.0]), max_hs_m=-0.1)
+
+
+class TestWarnings:
+    def test_no_warnings_below_level_3(self) -> None:
+        s = score_complexity(_make_passage([12.0]))
+        assert s.warnings == ()
+
+    def test_wind_warning_at_level_3(self) -> None:
+        s = score_complexity(_make_passage([18.0]))
+        assert len(s.warnings) == 1
+        w = s.warnings[0]
+        assert w.kind == "wind"
+        assert w.level == 3
+        assert isinstance(w, ComplexityWarning)
+        assert 0 in w.affected_segments
+
+    def test_wind_warning_identifies_hot_segments(self) -> None:
+        # Segments 0 and 2 calm, segment 1 hits level 5 (>=25 kn)
+        s = score_complexity(_make_passage([8.0, 26.0, 8.0]))
+        assert len(s.warnings) == 1
+        assert s.warnings[0].affected_segments == (1,)
+
+    def test_sea_warning_at_level_4(self) -> None:
+        s = score_complexity(_make_passage([5.0]), max_hs_m=2.5)
+        sea_w = [w for w in s.warnings if w.kind == "sea"]
+        assert len(sea_w) == 1
+        assert sea_w[0].level == 4  # 2.5 m falls in level 4 (2–3 m band)
+        assert "2.5" in sea_w[0].message
+
+    def test_no_sea_warning_without_max_hs(self) -> None:
+        s = score_complexity(_make_passage([18.0]))
+        assert not any(w.kind == "sea" for w in s.warnings)
+
+    def test_both_axes_warned(self) -> None:
+        s = score_complexity(_make_passage([22.0]), max_hs_m=2.5)
+        assert any(w.kind == "wind" for w in s.warnings)
+        assert any(w.kind == "sea" for w in s.warnings)
 
 
 def test_empty_passage_rejected() -> None:
