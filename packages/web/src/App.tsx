@@ -106,12 +106,11 @@ function App() {
               isLoading={isLoading}
               selectedHour={selectedHour}
               onSelectHour={setSelectedHour}
-              spotName={spot?.name}
             />
           ) : (
             <EmptyState />
           )}
-          <footer className="text-center text-[11px] py-1 shrink-0" style={{ color: 'var(--ow-fg-2)' }}>
+          <footer className="hidden sm:block text-center text-[11px] py-1 shrink-0" style={{ color: 'var(--ow-fg-2)' }}>
             Data by{" "}
             <a
               href="https://open-meteo.com/"
