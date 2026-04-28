@@ -22,9 +22,9 @@ Typical orchestration pattern (LLM perspective):
   departure, and chosen archetype. Use ``model="auto"`` so the server picks
   AROME (≤48 h) → ICON-EU (≤5 d) → GFS (≤16 d) automatically — the chosen
   model is reflected in ``passage.model``.
-* The response includes a ready-to-display ``html`` (render it inline if your
-  host supports HTML) and an ``openwind_url`` (use as a fallback CTA on
-  text-only clients).
+* The response includes a ready-to-display ``html``: inject it verbatim in
+  your response — no markdown code-block fence, no reformatting. Use
+  ``openwind_url`` as fallback on text-only clients.
 * ``get_marine_forecast`` is the escape hatch for sea-state lookup or model
   comparison — not needed for the typical "A → B by date X" question.
 """
@@ -180,11 +180,12 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
 
         ## How to display
 
-        Render ``html`` inline if your host client supports HTML — emit it as
-        a fenced ``html`` code block (Claude, ChatGPT, Cursor) or pass it to
-        artifact / show_widget. On text-only clients (Le Chat, Goose, terminal),
-        skip the HTML and present ``openwind_url`` as a "View full plan →"
-        link in your prose answer.
+        **IMPORTANT — inject ``html`` verbatim, no wrapper.**
+        Copy the exact string from ``result["html"]`` into your response as-is.
+        Do NOT wrap it in a markdown code block (no ```html``` fence) — that
+        prevents rendering. Do NOT reconstruct or reformat the widget manually.
+        On text-only clients (terminal, Le Chat), skip ``html`` and present
+        ``openwind_url`` as a "View full plan →" link instead.
 
         ## Args
 
