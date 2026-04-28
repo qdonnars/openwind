@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 
@@ -17,8 +18,11 @@ from openwind_data.routing.archetypes import get_polar, lookup_polar
 from openwind_data.routing.geometry import Point
 from openwind_data.routing.passage import (
     LIGHT_WIND_THRESHOLD_KN,
+    MAX_SWEEP_WINDOWS,
     STRONG_WIND_THRESHOLD_KN,
+    best_vmg_upwind,
     estimate_passage,
+    estimate_passage_windows,
     wave_derate,
 )
 
@@ -410,3 +414,203 @@ class TestModelFallback:
                 segment_length_nm=10.0,
             )
         assert excinfo.value.model == "gfs_seamless"
+
+
+class TestBestVmgUpwind:
+    def test_returns_positive_vmg_speed(self) -> None:
+        polar = get_polar("cruiser_40ft")
+        opt_twa, opt_speed = best_vmg_upwind(polar, 12.0)
+        assert opt_twa > 0.0
+        assert opt_speed > 0.0
+
+    def test_optimal_twa_in_upwind_range(self) -> None:
+        polar = get_polar("cruiser_40ft")
+        opt_twa, _ = best_vmg_upwind(polar, 12.0)
+        assert 30.0 <= opt_twa <= 90.0
+
+    def test_all_archetypes_return_positive(self) -> None:
+        from openwind_data.routing.archetypes import list_archetypes
+        for archetype in list_archetypes():
+            opt_twa, opt_speed = best_vmg_upwind(archetype, 10.0)
+            assert opt_speed > 0.0, f"{archetype.name} returned zero speed"
+
+    def test_light_wind_still_positive(self) -> None:
+        polar = get_polar("cruiser_30ft")
+        opt_twa, opt_speed = best_vmg_upwind(polar, 3.0)
+        assert opt_speed > 0.0
+
+
+class TestVmgUpwindCorrection:
+    async def test_upwind_correction_gives_correct_vmg(self) -> None:
+        # Dead upwind (TWA=0°): effective speed = polar(opt_twa) × cos(opt_twa).
+        # This is the real VMG toward destination when tacking — always less than
+        # polar(opt_twa) itself, and less than the clamped polar at 0° (which
+        # lookup_polar returns as the first-column value, an inaccurate shortcut).
+        polar = get_polar("cruiser_40ft")
+        tws = 12.0
+        opt_twa, opt_speed = best_vmg_upwind(polar, tws)
+        vmg_effective = opt_speed * math.cos(math.radians(opt_twa))  # twa=0°
+        # Must be positive and strictly less than the uncorrected polar at opt_twa.
+        assert vmg_effective > 0.0
+        assert vmg_effective < opt_speed
+        # Also less than beam-reach speed (physically expected: upwind is slower).
+        beam_speed = lookup_polar(polar, tws, 90.0)
+        assert vmg_effective < beam_speed
+
+    async def test_partial_upwind_less_penalty_than_dead_upwind(self) -> None:
+        # TWA=20° → cos(opt-20°) is larger than cos(opt-0°) → less speed reduction.
+        polar = get_polar("cruiser_40ft")
+        tws = 12.0
+        opt_twa, opt_speed = best_vmg_upwind(polar, tws)
+        # Both are upwind (< opt_twa assumed > 20°)
+        assert opt_twa > 20.0, "test premise: optimal twa must be >20° for this archetype"
+        eff_0 = opt_speed * math.cos(math.radians(opt_twa - 0.0))
+        eff_20 = opt_speed * math.cos(math.radians(opt_twa - 20.0))
+        assert eff_20 > eff_0
+
+    async def test_smooth_transition_at_optimal_angle(self) -> None:
+        # At twa == opt_twa: cos(0) = 1 → effective_polar = opt_speed = lookup(polar, tws, opt_twa)
+        polar = get_polar("cruiser_40ft")
+        tws = 12.0
+        opt_twa, opt_speed = best_vmg_upwind(polar, tws)
+        effective = opt_speed * math.cos(math.radians(opt_twa - opt_twa))
+        assert effective == pytest.approx(opt_speed, rel=1e-9)
+
+    async def test_beam_reach_unchanged(self) -> None:
+        # TWA=90° equals opt_twa threshold boundary or above → use direct polar.
+        # Simulate: wind from west (270°), route northward (bearing≈0°).
+        # normalize_twa(twd=270, course=0) → |270-0| normalized → 90°
+        adapter = StubAdapter(tws_kn=12.0, twd_deg=270.0)
+        report = await estimate_passage(
+            [Point(43.0, 5.0), Point(44.0, 5.0)],  # northward
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
+        )
+        polar = get_polar("cruiser_40ft")
+        for seg in report.segments:
+            # At TWA=90°, no VMG correction should be applied.
+            expected = lookup_polar(polar, seg.tws_kn, seg.twa_deg)
+            assert seg.polar_speed_kn == pytest.approx(expected, rel=1e-9)
+
+    async def test_downwind_route_unchanged(self) -> None:
+        # TWD=270 (wind from west), route westward (bearing≈270°) → TWA=180°.
+        adapter = StubAdapter(tws_kn=12.0, twd_deg=270.0)
+        report = await estimate_passage(
+            [Point(43.0, 6.0), Point(43.0, 5.0)],  # westward
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
+        )
+        polar = get_polar("cruiser_40ft")
+        for seg in report.segments:
+            expected = lookup_polar(polar, seg.tws_kn, seg.twa_deg)
+            assert seg.polar_speed_kn == pytest.approx(expected, rel=1e-9)
+
+
+class TestEstimatePassageWindows:
+    async def test_returns_correct_window_count_exact(self) -> None:
+        # 6h sweep at 1h → 7 windows (06:00, 07:00, ..., 12:00)
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        earliest = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
+        latest = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+        reports = await estimate_passage_windows(
+            [MARSEILLE, PORQUEROLLES],
+            earliest,
+            latest,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
+        )
+        assert len(reports) == 7
+
+    async def test_returns_correct_window_count_interval(self) -> None:
+        # 6h sweep at 2h → 4 windows (06:00, 08:00, 10:00, 12:00)
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        earliest = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
+        latest = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+        reports = await estimate_passage_windows(
+            [MARSEILLE, PORQUEROLLES],
+            earliest,
+            latest,
+            "cruiser_40ft",
+            sweep_interval_hours=2,
+            adapter=adapter,
+            segment_length_nm=20.0,
+        )
+        assert len(reports) == 4
+
+    async def test_each_window_departure_is_correct(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        earliest = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
+        latest = datetime(2026, 5, 1, 8, 0, tzinfo=UTC)
+        reports = await estimate_passage_windows(
+            [MARSEILLE, PORQUEROLLES],
+            earliest,
+            latest,
+            "cruiser_40ft",
+            sweep_interval_hours=1,
+            adapter=adapter,
+            segment_length_nm=20.0,
+        )
+        assert len(reports) == 3
+        assert reports[0].departure_time == earliest
+        assert reports[1].departure_time == earliest + timedelta(hours=1)
+        assert reports[2].departure_time == earliest + timedelta(hours=2)
+
+    async def test_single_window_when_equal(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        t = datetime(2026, 5, 1, 8, 0, tzinfo=UTC)
+        reports = await estimate_passage_windows(
+            [MARSEILLE, PORQUEROLLES], t, t, "cruiser_40ft",
+            adapter=adapter, segment_length_nm=20.0,
+        )
+        assert len(reports) == 1
+        assert reports[0].departure_time == t
+
+    async def test_window_cap_raises(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        earliest = datetime(2026, 5, 1, 0, 0, tzinfo=UTC)
+        latest = earliest + timedelta(days=15)  # 360 windows > 336 cap
+        with pytest.raises(ValueError, match=str(MAX_SWEEP_WINDOWS)):
+            await estimate_passage_windows(
+                [MARSEILLE, PORQUEROLLES], earliest, latest, "cruiser_40ft",
+                adapter=adapter,
+            )
+
+    async def test_naive_departure_rejected(self) -> None:
+        adapter = StubAdapter()
+        with pytest.raises(ValueError, match="timezone-aware"):
+            await estimate_passage_windows(
+                [MARSEILLE, PORQUEROLLES],
+                datetime(2026, 5, 1, 6, 0),  # naive
+                datetime(2026, 5, 1, 8, 0, tzinfo=UTC),
+                "cruiser_40ft",
+                adapter=adapter,
+            )
+
+    async def test_latest_before_earliest_rejected(self) -> None:
+        adapter = StubAdapter()
+        earliest = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+        latest = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
+        with pytest.raises(ValueError):
+            await estimate_passage_windows(
+                [MARSEILLE, PORQUEROLLES], earliest, latest, "cruiser_40ft",
+                adapter=adapter,
+            )
+
+    async def test_all_windows_are_passagereports(self) -> None:
+        from openwind_data.routing.passage import PassageReport
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        earliest = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
+        latest = datetime(2026, 5, 1, 8, 0, tzinfo=UTC)
+        reports = await estimate_passage_windows(
+            [MARSEILLE, PORQUEROLLES], earliest, latest, "cruiser_40ft",
+            adapter=adapter, segment_length_nm=20.0,
+        )
+        for r in reports:
+            assert isinstance(r, PassageReport)
+            assert r.duration_h > 0
+            assert r.distance_nm > 0

@@ -21,7 +21,10 @@ from openwind_data.routing.geometry import (
 from openwind_data.routing.passage import (
     PassageReport,
     SegmentReport,
+    _build_conditions_summary,
+    best_vmg_upwind,
     estimate_passage,
+    estimate_passage_windows,
 )
 
 __all__ = [
@@ -32,8 +35,11 @@ __all__ = [
     "Point",
     "Segment",
     "SegmentReport",
+    "_build_conditions_summary",
     "bearing",
+    "best_vmg_upwind",
     "estimate_passage",
+    "estimate_passage_windows",
     "get_polar",
     "haversine_distance",
     "interpolate_great_circle",
