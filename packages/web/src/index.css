@@ -262,6 +262,79 @@ body {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ow-accent) 35%, transparent);
 }
 
+/* Dual-thumb range (compare-windows form). Two overlapping native sliders;
+   z-index swaps in JS based on which thumb is closer to either edge. */
+.ow-range-track {
+  position: relative;
+  height: 22px;
+  display: flex;
+  align-items: center;
+}
+.ow-range-track-bg {
+  position: absolute;
+  inset: 8px 0 8px 0;
+  background: var(--ow-bg-2);
+  border: 1px solid var(--ow-line-2);
+  border-radius: 3px;
+}
+.ow-range-track-fill {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  background: var(--ow-accent-soft);
+  border-top: 1px solid var(--ow-accent);
+  border-bottom: 1px solid var(--ow-accent);
+}
+.ow-range-input {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 22px;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  pointer-events: none; /* track itself ignores clicks; thumbs re-enable */
+  margin: 0;
+}
+.ow-range-input:focus { outline: none; }
+.ow-range-input::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+  border: none;
+}
+.ow-range-input::-moz-range-track {
+  height: 6px;
+  background: transparent;
+  border: none;
+}
+.ow-range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ow-accent);
+  border: 2px solid var(--ow-bg-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  margin-top: -7px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.ow-range-input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ow-accent);
+  border: 2px solid var(--ow-bg-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.ow-range-input:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ow-accent) 35%, transparent);
+}
+
 /* Leaflet attribution smaller on mobile */
 .leaflet-control-attribution {
   font-size: 9px !important;

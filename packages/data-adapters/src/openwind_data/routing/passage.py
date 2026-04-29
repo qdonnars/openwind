@@ -452,20 +452,29 @@ async def estimate_passage_windows(
             ]
         )
 
-        # Sweep remaining departure windows sequentially (all cache hits, no I/O).
+        # Sweep remaining departure windows sequentially. Per-window tolerance:
+        # if a single departure raises ForecastHorizonError (e.g. its mid-time
+        # extends past the resolved model's horizon), skip it and continue —
+        # the user gets partial results instead of a hard failure on the whole
+        # sweep. The caller compares expected window count vs len(reports) and
+        # surfaces a meta-warning. ValueError / KeyError still bubble (those
+        # are caller-side bugs).
         current = earliest_utc + timedelta(hours=sweep_interval_hours)
         while current <= latest_utc:
-            report = await estimate_passage(
-                waypoints,
-                current,
-                boat_archetype,
-                efficiency=efficiency,
-                segment_length_nm=segment_length_nm,
-                adapter=fetch_adapter,
-                model=resolved_model,
-                use_wave_correction=use_wave_correction,
-            )
-            reports.append(report)
+            try:
+                report = await estimate_passage(
+                    waypoints,
+                    current,
+                    boat_archetype,
+                    efficiency=efficiency,
+                    segment_length_nm=segment_length_nm,
+                    adapter=fetch_adapter,
+                    model=resolved_model,
+                    use_wave_correction=use_wave_correction,
+                )
+                reports.append(report)
+            except ForecastHorizonError:
+                pass
             current += timedelta(hours=sweep_interval_hours)
     finally:
         if own_adapter and hasattr(fetch_adapter, "aclose"):

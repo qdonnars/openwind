@@ -620,6 +620,52 @@ class TestEstimatePassageWindows:
             assert r.duration_h > 0
             assert r.distance_nm > 0
 
+    async def test_partial_skip_on_per_window_horizon_error(self) -> None:
+        """Some windows hitting ForecastHorizonError must NOT fail the whole sweep.
+        Caller infers skip count from len(reports) vs expected window count."""
+        from openwind_data.adapters.base import (
+            ForecastBundle as _FB, SeaSeries as _SS, WindSeries as _WS,
+        )
+
+        class FlakyAdapter(StubAdapter):
+            """Returns empty wind for the 3rd fetch onward (mid-times past 2nd window)."""
+            def __init__(self) -> None:
+                super().__init__(tws_kn=10.0, twd_deg=0.0)
+                self.fetch_count = 0
+                self.fail_at_call = 6  # let prewarm + first sweep window pass
+
+            async def fetch(
+                self,
+                lat: float,
+                lon: float,
+                start: datetime,
+                end: datetime,
+                models: list[str] | None = None,
+            ) -> _FB:
+                self.fetch_count += 1
+                if self.fetch_count >= self.fail_at_call:
+                    return _FB(
+                        lat=lat, lon=lon, start=start, end=end,
+                        wind_by_model={(models or ["meteofrance_arome_france"])[0]: _WS(
+                            model=(models or ["meteofrance_arome_france"])[0], points=()
+                        )},
+                        sea=_SS(points=()),
+                        requested_at=start,
+                    )
+                return await super().fetch(lat, lon, start, end, models)
+
+        adapter = FlakyAdapter()
+        earliest = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
+        latest = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)  # 7 windows at 1h
+        reports = await estimate_passage_windows(
+            [MARSEILLE, PORQUEROLLES], earliest, latest, "cruiser_40ft",
+            adapter=adapter, segment_length_nm=20.0,
+        )
+        # First window must succeed (resolved before flakiness kicks in).
+        assert len(reports) >= 1
+        # Some windows skipped → fewer than 7 total, no exception bubbled.
+        assert len(reports) < 7
+
 
 class TestSeaStateAlwaysSurfaced:
     """Hs must be populated on every segment when sea data is available,
