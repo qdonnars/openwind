@@ -315,6 +315,15 @@ async def _api_passage(request: Request) -> JSONResponse:
         except ForecastHorizonError as exc:
             return JSONResponse({"error": str(exc)}, status_code=422)
 
+        # Sweep is partial-tolerant: estimate_passage_windows skips windows
+        # that hit ForecastHorizonError. Compute the expected count to surface
+        # a meta-warning if some were dropped.
+        from datetime import timedelta as _td
+        expected_windows = (
+            int((latest_departure - departure).total_seconds() / 3600 / sweep_interval) + 1
+        )
+        skipped_count = max(0, expected_windows - len(reports))
+
         windows: list[dict[str, Any]] = []
         for report in reports:
             score = score_complexity(report)
@@ -334,9 +343,13 @@ async def _api_passage(request: Request) -> JSONResponse:
             })
 
         meta_warnings: list[str] = []
+        if skipped_count > 0:
+            meta_warnings.append(
+                f"{skipped_count} fenêtre(s) ignorée(s) faute de couverture météo "
+                f"(horizon dépassé) — affichage des {len(windows)} restantes."
+            )
         if target_eta_dt is not None:
-            from datetime import timedelta
-            tol = timedelta(hours=2).total_seconds()
+            tol = _td(hours=2).total_seconds()
             target_utc = target_eta_dt.astimezone(UTC)
             filtered = [
                 w for w in windows
