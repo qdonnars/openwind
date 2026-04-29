@@ -1,4 +1,4 @@
-import type { PassageResponse, Archetype } from "../plan/types";
+import type { PassageResponse, MultiWindowResponse, Archetype } from "../plan/types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "https://qdonnars-openwind-mcp.hf.space";
 
@@ -23,6 +23,37 @@ export async function fetchPassage(params: {
     throw new Error(err["error"] ?? `Erreur serveur ${res.status}`);
   }
   return res.json() as Promise<PassageResponse>;
+}
+
+export async function fetchPassageWindows(params: {
+  waypoints: [number, number][];
+  earliest: string;
+  latest: string;
+  archetype: string;
+  intervalHours: number;
+  targetEta?: string;
+  efficiency?: number;
+}): Promise<MultiWindowResponse> {
+  const body: Record<string, unknown> = {
+    waypoints: params.waypoints,
+    departure: params.earliest,
+    archetype: params.archetype,
+    efficiency: params.efficiency ?? 0.75,
+    latest_departure: params.latest,
+    sweep_interval_hours: params.intervalHours,
+  };
+  if (params.targetEta) body["target_eta"] = params.targetEta;
+
+  const res = await fetch(`${API_BASE}/api/v1/passage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as Record<string, string>;
+    throw new Error(err["error"] ?? `Erreur serveur ${res.status}`);
+  }
+  return res.json() as Promise<MultiWindowResponse>;
 }
 
 export async function fetchArchetypes(): Promise<Archetype[]> {

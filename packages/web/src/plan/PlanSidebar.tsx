@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { useTheme } from "../design/theme";
-import type { PassageReport, ComplexityScore, SegmentReport, Archetype } from "./types";
+import type { PassageReport, ComplexityScore, SegmentReport, Archetype, PassageWindow } from "./types";
 import { aggregateLegs } from "./aggregateLegs";
 import { cxLevel, CX_COLORS } from "./types";
+import { WindowsTable } from "./WindowsTable";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -418,6 +419,20 @@ interface PlanSidebarProps {
   forecastUpdatedAt: string | null;
   waypointCount: number;
   waypoints: [number, number][];
+  // Compare-windows mode (lifted from local state in step 2)
+  mode: PlanMode;
+  onModeChange: (m: PlanMode) => void;
+  sweepEarliest: string;
+  sweepLatest: string;
+  sweepIntervalHours: number;
+  sweepTargetEta: string;
+  onSweepEarliestChange: (iso: string) => void;
+  onSweepLatestChange: (iso: string) => void;
+  onSweepIntervalChange: (h: number) => void;
+  onSweepTargetEtaChange: (iso: string) => void;
+  windows: PassageWindow[] | null;
+  metaWarnings: string[];
+  onCompareFetch: () => void;
 }
 
 export function PlanSidebar({
@@ -435,21 +450,22 @@ export function PlanSidebar({
   forecastUpdatedAt,
   waypointCount,
   waypoints,
+  mode,
+  onModeChange,
+  sweepEarliest,
+  sweepLatest,
+  sweepIntervalHours,
+  sweepTargetEta,
+  onSweepEarliestChange,
+  onSweepLatestChange,
+  onSweepIntervalChange,
+  onSweepTargetEtaChange,
+  windows,
+  metaWarnings,
+  onCompareFetch,
 }: PlanSidebarProps) {
   const { resolvedTheme } = useTheme();
   const canCalculate = waypointCount >= 2;
-
-  // Step 1 (UI only): mode toggle + sweep form local state.
-  // No API wiring yet — calculate stays disabled in compare mode with a hint.
-  const [mode, setMode] = useState<PlanMode>("single");
-  const [sweepEarliest, setSweepEarliest] = useState(() => departure);
-  const [sweepLatest, setSweepLatest] = useState(() => {
-    const d = new Date(departure);
-    d.setDate(d.getDate() + 2);
-    return toLocalIso(d);
-  });
-  const [sweepInterval, setSweepInterval] = useState(3);
-  const [targetEta, setTargetEta] = useState("");
 
   if (isLoading) {
     return (
@@ -508,7 +524,7 @@ export function PlanSidebar({
         </p>
 
         {/* Mode toggle */}
-        <ModeToggle value={mode} onChange={setMode} />
+        <ModeToggle value={mode} onChange={onModeChange} />
 
         {/* Departure (single) or sweep form (compare) */}
         {mode === "single" ? (
@@ -517,12 +533,12 @@ export function PlanSidebar({
           <SweepForm
             earliest={sweepEarliest}
             latest={sweepLatest}
-            intervalHours={sweepInterval}
-            targetEta={targetEta}
-            onEarliestChange={setSweepEarliest}
-            onLatestChange={setSweepLatest}
-            onIntervalChange={setSweepInterval}
-            onTargetEtaChange={setTargetEta}
+            intervalHours={sweepIntervalHours}
+            targetEta={sweepTargetEta}
+            onEarliestChange={onSweepEarliestChange}
+            onLatestChange={onSweepLatestChange}
+            onIntervalChange={onSweepIntervalChange}
+            onTargetEtaChange={onSweepTargetEtaChange}
             resolvedTheme={resolvedTheme}
           />
         )}
@@ -535,37 +551,41 @@ export function PlanSidebar({
         />
 
         {/* Calculate button */}
-        {mode === "single" ? (
-          <button
-            onClick={onRefetch}
-            disabled={!canCalculate}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
-            style={{
-              background: canCalculate ? "var(--ow-accent)" : "var(--ow-bg-2)",
-              color: canCalculate ? "#fff" : "var(--ow-fg-3)",
-              border: `1px solid ${canCalculate ? "transparent" : "var(--ow-line-2)"}`,
-              cursor: canCalculate ? "pointer" : "not-allowed",
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M13.5 2.5A7 7 0 1 0 14.5 9"/><path d="M14 1v4h-4"/>
-            </svg>
-            {canCalculate ? "Calculer le passage" : `${waypointCount}/2 waypoints`}
-          </button>
-        ) : (
-          <button
-            disabled
-            title="Comparateur — branchement MCP à venir"
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold"
-            style={{
-              background: "var(--ow-bg-2)",
-              color: "var(--ow-fg-3)",
-              border: "1px dashed var(--ow-line-2)",
-              cursor: "not-allowed",
-            }}
-          >
-            Comparer les créneaux · à venir
-          </button>
+        <button
+          onClick={mode === "single" ? onRefetch : onCompareFetch}
+          disabled={!canCalculate}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
+          style={{
+            background: canCalculate ? "var(--ow-accent)" : "var(--ow-bg-2)",
+            color: canCalculate ? "#fff" : "var(--ow-fg-3)",
+            border: `1px solid ${canCalculate ? "transparent" : "var(--ow-line-2)"}`,
+            cursor: canCalculate ? "pointer" : "not-allowed",
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13.5 2.5A7 7 0 1 0 14.5 9"/><path d="M14 1v4h-4"/>
+          </svg>
+          {canCalculate
+            ? mode === "single" ? "Calculer le passage" : "Comparer les créneaux"
+            : `${waypointCount}/2 waypoints`}
+        </button>
+
+        {/* Windows table — shown after a successful compare-mode fetch */}
+        {mode === "compare" && windows && windows.length > 0 && (
+          <div className="space-y-2">
+            {metaWarnings.map((m, i) => (
+              <p key={i} className="text-[11px] rounded-lg px-3 py-1.5"
+                 style={{ background: "var(--ow-warn-soft)", color: "var(--ow-warn)" }}>
+                {m}
+              </p>
+            ))}
+            <div className="rounded-xl overflow-hidden border" style={{ borderColor: "var(--ow-line)" }}>
+              <WindowsTable windows={windows} />
+            </div>
+            <p className="text-[10px]" style={{ color: "var(--ow-fg-3)" }}>
+              {windows.length} fenêtre{windows.length > 1 ? "s" : ""} comparée{windows.length > 1 ? "s" : ""} · cliquez sur une ligne pour le détail (à venir)
+            </p>
+          </div>
         )}
       </div>
     );
@@ -655,10 +675,11 @@ export function PlanSidebar({
           <div>
             <div className="flex items-center gap-2 mb-1 px-1 text-[9px]" style={{ color: "var(--ow-fg-3)" }}>
               <span className="w-5 shrink-0" />
-              <span className="flex-1 grid grid-cols-4 gap-1">
+              <span className="flex-1 grid grid-cols-5 gap-1">
                 <span>Heure</span>
                 <span>Allure</span>
                 <span>Vent</span>
+                <span>Mer</span>
                 <span className="text-right">Vitesse</span>
               </span>
             </div>
@@ -668,6 +689,9 @@ export function PlanSidebar({
                 const windLabel = Math.round(leg.tws_min) === Math.round(leg.tws_max)
                   ? `${Math.round(leg.tws_min)} kn`
                   : `${Math.round(leg.tws_min)}–${Math.round(leg.tws_max)} kn`;
+                const seaLabel = leg.hs_avg_m == null
+                  ? "—"
+                  : `${leg.hs_avg_m.toFixed(1)}m ${leg.sea_direction}`;
                 return (
                   <div key={i} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ background: "var(--ow-bg-2)" }}>
                     <span
@@ -676,10 +700,11 @@ export function PlanSidebar({
                     >
                       {i + 1}
                     </span>
-                    <div className="flex-1 grid grid-cols-4 gap-1 tabular-nums" style={{ fontFamily: "var(--ow-font-mono)" }}>
+                    <div className="flex-1 grid grid-cols-5 gap-1 tabular-nums" style={{ fontFamily: "var(--ow-font-mono)" }}>
                       <span style={{ color: "var(--ow-fg-1)" }}>{fmtTime(leg.end_time)}</span>
                       <span style={{ color: "var(--ow-fg-0)" }}>{leg.point_of_sail}</span>
                       <span style={{ color: "var(--ow-fg-1)" }}>{windLabel}</span>
+                      <span style={{ color: "var(--ow-fg-1)" }}>{seaLabel}</span>
                       <span className="text-right" style={{ color: "var(--ow-fg-0)" }}>{leg.boat_speed_kn.toFixed(1)} kn</span>
                     </div>
                   </div>

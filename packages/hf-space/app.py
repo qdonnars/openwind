@@ -28,7 +28,11 @@ from openwind_data.adapters.base import ForecastHorizonError
 from openwind_data.routing.archetypes import list_archetypes_metadata
 from openwind_data.routing.complexity import score_complexity
 from openwind_data.routing.geometry import Point
-from openwind_data.routing.passage import estimate_passage
+from openwind_data.routing.passage import (
+    _build_conditions_summary,
+    estimate_passage,
+    estimate_passage_windows,
+)
 from openwind_mcp_core import build_server
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -279,6 +283,87 @@ async def _api_passage(request: Request) -> JSONResponse:
     except (TypeError, ValueError) as exc:
         return JSONResponse({"error": f"invalid efficiency: {exc}"}, status_code=422)
 
+    # Sweep mode — triggered when ``latest_departure`` is provided.
+    latest_raw = body.get("latest_departure")
+    if latest_raw is not None:
+        try:
+            latest_departure = datetime.fromisoformat(latest_raw)
+        except (ValueError, TypeError) as exc:
+            return JSONResponse({"error": f"invalid latest_departure: {exc}"}, status_code=422)
+        try:
+            sweep_interval = int(body.get("sweep_interval_hours", 1))
+        except (TypeError, ValueError) as exc:
+            return JSONResponse({"error": f"invalid sweep_interval_hours: {exc}"}, status_code=422)
+
+        target_eta_raw = body.get("target_eta")
+        target_eta_dt: datetime | None = None
+        if target_eta_raw is not None:
+            try:
+                target_eta_dt = datetime.fromisoformat(target_eta_raw)
+            except (ValueError, TypeError) as exc:
+                return JSONResponse({"error": f"invalid target_eta: {exc}"}, status_code=422)
+
+        try:
+            reports = await estimate_passage_windows(
+                waypoints, departure, latest_departure, body["archetype"],
+                sweep_interval_hours=sweep_interval, efficiency=efficiency, model="auto",
+            )
+        except KeyError as exc:
+            return JSONResponse({"error": f"unknown archetype: {exc}"}, status_code=422)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
+        except ForecastHorizonError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
+
+        windows: list[dict[str, Any]] = []
+        for report in reports:
+            score = score_complexity(report)
+            windows.append({
+                "departure": report.departure_time.isoformat(),
+                "arrival": report.arrival_time.isoformat(),
+                "duration_h": round(report.duration_h, 2),
+                "distance_nm": round(report.distance_nm, 1),
+                "complexity": {
+                    "level": score.level,
+                    "label": score.label,
+                    "tws_max_kn": round(score.tws_max_kn, 1),
+                    "rationale": score.rationale,
+                },
+                "conditions_summary": _build_conditions_summary(report),
+                "warnings": list(report.warnings) + [w.message for w in score.warnings],
+            })
+
+        meta_warnings: list[str] = []
+        if target_eta_dt is not None:
+            from datetime import timedelta
+            tol = timedelta(hours=2).total_seconds()
+            target_utc = target_eta_dt.astimezone(UTC)
+            filtered = [
+                w for w in windows
+                if abs((datetime.fromisoformat(w["arrival"]) - target_utc).total_seconds()) <= tol
+            ]
+            if not filtered:
+                meta_warnings.append(
+                    f"aucune fenêtre n'arrive dans ±2h de target_eta={target_eta_raw} ; "
+                    f"toutes les {len(windows)} fenêtres retournées"
+                )
+            else:
+                windows = filtered
+
+        return JSONResponse({
+            "mode": "multi_window",
+            "sweep": {
+                "earliest": departure.isoformat(),
+                "latest": latest_departure.isoformat(),
+                "interval_hours": sweep_interval,
+                "window_count": len(windows),
+            },
+            "windows": windows,
+            "meta_warnings": meta_warnings,
+            "forecast_updated_at": datetime.now(UTC).isoformat(),
+        })
+
+    # Single mode — unchanged.
     try:
         passage = await estimate_passage(
             waypoints, departure, body["archetype"], efficiency=efficiency, model="auto"
