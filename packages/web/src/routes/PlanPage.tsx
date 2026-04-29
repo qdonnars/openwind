@@ -12,6 +12,7 @@ import {
   waypointsEqual,
   type LastSimulation,
 } from "../plan/lastSimulation";
+import { ModeToggle, type PlanMode } from "../plan/ModeToggle";
 import { cxLevel, CX_COLORS } from "../plan/types";
 import { aggregateLegs } from "../plan/aggregateLegs";
 
@@ -86,6 +87,8 @@ function CompactDrawer({
   error,
   isStale,
   onRefetch,
+  mode,
+  onModeChange,
 }: {
   passage: PassageReport | null;
   complexity: ComplexityScore | null;
@@ -94,27 +97,44 @@ function CompactDrawer({
   error: string | null;
   isStale: boolean;
   onRefetch: () => void;
+  mode: PlanMode;
+  onModeChange: (m: PlanMode) => void;
 }) {
+  // Mode toggle is always visible at the top so the user can swap between
+  // Simuler / Comparer even when single-mode results are showing.
+  const header = (
+    <div className="px-3 pt-3 pb-2" style={{ background: "var(--ow-bg-1)" }}>
+      <ModeToggle value={mode} onChange={onModeChange} />
+    </div>
+  );
+
   if (isLoading) {
     return (
-      <div className="p-3 space-y-2 animate-fade-in">
-        {[0, 1, 2].map((i) => <div key={i} className="skeleton h-9 rounded-lg" />)}
+      <div>
+        {header}
+        <div className="p-3 space-y-2 animate-fade-in">
+          {[0, 1, 2].map((i) => <div key={i} className="skeleton h-9 rounded-lg" />)}
+        </div>
       </div>
     );
   }
   if (error) {
     return (
-      <div className="p-3">
-        <p className="text-xs rounded-lg px-3 py-2" style={{ background: "var(--ow-err-soft)", color: "var(--ow-err)" }}>{error}</p>
+      <div>
+        {header}
+        <div className="p-3">
+          <p className="text-xs rounded-lg px-3 py-2" style={{ background: "var(--ow-err-soft)", color: "var(--ow-err)" }}>{error}</p>
+        </div>
       </div>
     );
   }
-  if (!passage || !complexity) return null;
+  if (!passage || !complexity) return header;
 
   const legs = aggregateLegs(passage.segments, waypoints);
 
   return (
     <div>
+      {header}
       {/* Sticky header */}
       <div
         className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 border-b"
@@ -206,6 +226,83 @@ function CopyLinkButton() {
     >
       {copied ? "Copié ✓" : "🔗"}
     </button>
+  );
+}
+
+// ── ResizableMobileDrawer ────────────────────────────────────────────────────
+// User-resizable bottom drawer: a 4 px grab-handle at the top responds to
+// pointer drag (mouse or touch) and adjusts the drawer height in vh. The
+// chosen height persists in localStorage so reload feels stable.
+
+const DRAWER_HEIGHT_KEY = "ow_drawer_vh_v1";
+const DRAWER_MIN_VH = 12;
+const DRAWER_MAX_VH = 90;
+
+function ResizableMobileDrawer({
+  defaultVh,
+  children,
+}: {
+  defaultVh: number;
+  children: React.ReactNode;
+}) {
+  const [vh, setVh] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(DRAWER_HEIGHT_KEY);
+      const parsed = raw ? Number(raw) : NaN;
+      return Number.isFinite(parsed) ? Math.max(DRAWER_MIN_VH, Math.min(DRAWER_MAX_VH, parsed)) : defaultVh;
+    } catch {
+      return defaultVh;
+    }
+  });
+  const dragRef = useRef<{ startY: number; startVh: number } | null>(null);
+
+  function persist(next: number) {
+    try { localStorage.setItem(DRAWER_HEIGHT_KEY, String(next)); } catch { /* best-effort */ }
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    dragRef.current = { startY: e.clientY, startVh: vh };
+  }
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current) return;
+    const dy = dragRef.current.startY - e.clientY; // up = positive
+    const vhDelta = (dy / window.innerHeight) * 100;
+    const next = Math.max(DRAWER_MIN_VH, Math.min(DRAWER_MAX_VH, dragRef.current.startVh + vhDelta));
+    setVh(next);
+  }
+  function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (dragRef.current) {
+      persist(vh);
+      dragRef.current = null;
+    }
+    (e.currentTarget as HTMLDivElement).releasePointerCapture?.(e.pointerId);
+  }
+
+  return (
+    <div
+      className="lg:hidden shrink-0 overflow-y-auto border-t flex flex-col"
+      style={{ height: `${vh}vh`, background: "var(--ow-bg-1)", borderColor: "var(--ow-line)" }}
+    >
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Redimensionner le panneau"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        className="shrink-0 flex items-center justify-center cursor-row-resize touch-none"
+        style={{ height: 14, background: "var(--ow-bg-1)" }}
+      >
+        <span
+          className="block rounded-full"
+          style={{ width: 36, height: 4, background: "var(--ow-line-2)" }}
+        />
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
+    </div>
   );
 }
 
@@ -576,18 +673,8 @@ export function PlanPage() {
         </div>
       </div>
 
-      {/* Mobile drawer — below map */}
-      {/* When a single-mode passage is computed: compact leg-rows view (38vh).
-          Otherwise (no passage, compare mode, error): full PlanSidebar so the
-          mode toggle, form, and Calculate/Compare buttons stay reachable. */}
-      <div
-        className="lg:hidden shrink-0 overflow-y-auto border-t"
-        style={{
-          maxHeight: passage ? "38vh" : "60vh",
-          background: "var(--ow-bg-1)",
-          borderColor: "var(--ow-line)",
-        }}
-      >
+      {/* Mobile drawer — below map. User-resizable via the handle bar at the top. */}
+      <ResizableMobileDrawer defaultVh={passage ? 38 : 60}>
         {passage && complexity && planMode === "single" ? (
           <CompactDrawer
             passage={passage}
@@ -597,6 +684,8 @@ export function PlanPage() {
             error={apiError}
             isStale={isStale}
             onRefetch={handleRefetch}
+            mode={planMode}
+            onModeChange={handleModeChange}
           />
         ) : (
           <PlanSidebar
@@ -630,7 +719,7 @@ export function PlanPage() {
             onWindowSelect={handleWindowSelect}
           />
         )}
-      </div>
+      </ResizableMobileDrawer>
     </div>
   );
 }
