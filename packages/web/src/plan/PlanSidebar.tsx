@@ -625,6 +625,7 @@ interface PlanSidebarProps {
   windows: PassageWindow[] | null;
   metaWarnings: string[];
   onCompareFetch: () => void;
+  onWindowSelect?: (w: PassageWindow) => void;
 }
 
 export function PlanSidebar({
@@ -655,6 +656,7 @@ export function PlanSidebar({
   windows,
   metaWarnings,
   onCompareFetch,
+  onWindowSelect,
 }: PlanSidebarProps) {
   const { resolvedTheme } = useTheme();
   const sweepValid = mode === "compare"
@@ -775,10 +777,10 @@ export function PlanSidebar({
               </p>
             ))}
             <div className="rounded-xl overflow-hidden border" style={{ borderColor: "var(--ow-line)" }}>
-              <WindowsTable windows={windows} />
+              <WindowsTable windows={windows} onSelect={onWindowSelect} />
             </div>
             <p className="text-[10px]" style={{ color: "var(--ow-fg-3)" }}>
-              {windows.length} fenêtre{windows.length > 1 ? "s" : ""} comparée{windows.length > 1 ? "s" : ""} · cliquez sur une ligne pour le détail (à venir)
+              {windows.length} fenêtre{windows.length > 1 ? "s" : ""} comparée{windows.length > 1 ? "s" : ""} · cliquez sur une ligne pour ouvrir la simulation détaillée
             </p>
           </div>
         )}

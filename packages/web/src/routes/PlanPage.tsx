@@ -348,6 +348,23 @@ export function PlanPage() {
     }
   }
 
+  // Drill-down from the compare-windows table: pick a window → switch to
+  // single mode with that window's departure pre-filled, then fetch.
+  function handleWindowSelect(w: PassageWindow) {
+    // Convert TZ-aware ISO from the backend to the naive local "YYYY-MM-DDTHH:MM"
+    // shape that the single-mode departure input expects.
+    const d = new Date(w.departure);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const naiveDep = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+    setPlanMode("single");
+    setDeparture(naiveDep);
+    setWindows(null);
+    setMetaWarnings([]);
+    setApiError(null);
+    doFetch(waypoints, archetype, naiveDep);
+  }
+
   if (!isParsedOk(initialParsed)) {
     return (
       <div
@@ -466,6 +483,7 @@ export function PlanPage() {
             windows={windows}
             metaWarnings={metaWarnings}
             onCompareFetch={doFetchWindows}
+            onWindowSelect={handleWindowSelect}
           />
         </div>
       </div>
@@ -521,6 +539,7 @@ export function PlanPage() {
             windows={windows}
             metaWarnings={metaWarnings}
             onCompareFetch={doFetchWindows}
+            onWindowSelect={handleWindowSelect}
           />
         )}
       </div>
