@@ -128,6 +128,166 @@ function DepartureSlider({
 
 
 
+// ── ModeToggle ───────────────────────────────────────────────────────────────
+
+type PlanMode = "single" | "compare";
+
+function ModeToggle({ value, onChange }: { value: PlanMode; onChange: (m: PlanMode) => void }) {
+  return (
+    <div
+      className="flex p-1 rounded-xl text-xs font-semibold"
+      style={{ background: "var(--ow-bg-2)", border: "1px solid var(--ow-line-2)" }}
+      role="tablist"
+      aria-label="Mode de planification"
+    >
+      {(
+        [
+          ["single", "Simuler ma route"],
+          ["compare", "Comparer les fenêtres"],
+        ] as const
+      ).map(([m, label]) => {
+        const active = value === m;
+        return (
+          <button
+            key={m}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(m)}
+            className="flex-1 px-3 py-1.5 rounded-lg transition-colors"
+            style={{
+              background: active ? "var(--ow-bg-1)" : "transparent",
+              color: active ? "var(--ow-fg-0)" : "var(--ow-fg-2)",
+              boxShadow: active ? "var(--ow-shadow-soft)" : "none",
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── SweepForm ─────────────────────────────────────────────────────────────────
+
+const SWEEP_INTERVALS: { value: number; label: string }[] = [
+  { value: 1, label: "Toutes les heures" },
+  { value: 3, label: "Toutes les 3h" },
+  { value: 6, label: "Toutes les 6h" },
+];
+
+function SweepForm({
+  earliest,
+  latest,
+  intervalHours,
+  targetEta,
+  onEarliestChange,
+  onLatestChange,
+  onIntervalChange,
+  onTargetEtaChange,
+  resolvedTheme,
+}: {
+  earliest: string;
+  latest: string;
+  intervalHours: number;
+  targetEta: string;
+  onEarliestChange: (iso: string) => void;
+  onLatestChange: (iso: string) => void;
+  onIntervalChange: (h: number) => void;
+  onTargetEtaChange: (iso: string) => void;
+  resolvedTheme: "light" | "dark";
+}) {
+  const colorScheme = resolvedTheme === "light" ? "light" : "dark";
+  const [showEta, setShowEta] = useState(targetEta !== "");
+
+  const inputStyle = {
+    background: "var(--ow-bg-2)",
+    color: "var(--ow-fg-0)",
+    border: "1px solid var(--ow-line-2)",
+    fontFamily: "var(--ow-font-mono)",
+    colorScheme,
+  } as const;
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="block text-[10px] uppercase tracking-widest font-semibold mb-1" style={{ color: "var(--ow-fg-2)" }}>
+          Départ au plus tôt
+        </label>
+        <input
+          type="datetime-local"
+          value={earliest}
+          onChange={(e) => onEarliestChange(e.target.value)}
+          className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums"
+          style={inputStyle}
+        />
+      </div>
+
+      <div>
+        <label className="block text-[10px] uppercase tracking-widest font-semibold mb-1" style={{ color: "var(--ow-fg-2)" }}>
+          Départ au plus tard
+        </label>
+        <input
+          type="datetime-local"
+          value={latest}
+          onChange={(e) => onLatestChange(e.target.value)}
+          className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums"
+          style={inputStyle}
+        />
+      </div>
+
+      <div>
+        <label className="block text-[10px] uppercase tracking-widest font-semibold mb-1" style={{ color: "var(--ow-fg-2)" }}>
+          Pas d'échantillonnage
+        </label>
+        <div className="flex gap-1.5">
+          {SWEEP_INTERVALS.map(({ value, label }) => {
+            const active = intervalHours === value;
+            return (
+              <button
+                key={value}
+                onClick={() => onIntervalChange(value)}
+                className="flex-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                style={{
+                  background: active ? "var(--ow-accent-soft)" : "var(--ow-bg-2)",
+                  color: active ? "var(--ow-accent)" : "var(--ow-fg-1)",
+                  border: `1px solid ${active ? "var(--ow-accent)" : "var(--ow-line-2)"}`,
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <button
+          type="button"
+          onClick={() => {
+            const next = !showEta;
+            setShowEta(next);
+            if (!next) onTargetEtaChange("");
+          }}
+          className="text-[10px] underline"
+          style={{ color: "var(--ow-fg-2)" }}
+        >
+          {showEta ? "Retirer l'heure d'arrivée souhaitée" : "+ Heure d'arrivée souhaitée (option)"}
+        </button>
+        {showEta && (
+          <input
+            type="datetime-local"
+            value={targetEta}
+            onChange={(e) => onTargetEtaChange(e.target.value)}
+            className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums mt-1.5"
+            style={inputStyle}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── ComplexityBadge ───────────────────────────────────────────────────────────
 
 function ComplexityBadge({ level, label }: { level: number; label: string }) {
@@ -279,6 +439,18 @@ export function PlanSidebar({
   const { resolvedTheme } = useTheme();
   const canCalculate = waypointCount >= 2;
 
+  // Step 1 (UI only): mode toggle + sweep form local state.
+  // No API wiring yet — calculate stays disabled in compare mode with a hint.
+  const [mode, setMode] = useState<PlanMode>("single");
+  const [sweepEarliest, setSweepEarliest] = useState(() => departure);
+  const [sweepLatest, setSweepLatest] = useState(() => {
+    const d = new Date(departure);
+    d.setDate(d.getDate() + 2);
+    return toLocalIso(d);
+  });
+  const [sweepInterval, setSweepInterval] = useState(3);
+  const [targetEta, setTargetEta] = useState("");
+
   if (isLoading) {
     return (
       <div className="p-4 space-y-4 animate-fade-in">
@@ -335,8 +507,25 @@ export function PlanSidebar({
             : "Cliquez sur la carte pour placer votre point d'arrivée."}
         </p>
 
-        {/* Departure */}
-        <DepartureSlider value={departure} onChange={onDepartureChange} resolvedTheme={resolvedTheme} />
+        {/* Mode toggle */}
+        <ModeToggle value={mode} onChange={setMode} />
+
+        {/* Departure (single) or sweep form (compare) */}
+        {mode === "single" ? (
+          <DepartureSlider value={departure} onChange={onDepartureChange} resolvedTheme={resolvedTheme} />
+        ) : (
+          <SweepForm
+            earliest={sweepEarliest}
+            latest={sweepLatest}
+            intervalHours={sweepInterval}
+            targetEta={targetEta}
+            onEarliestChange={setSweepEarliest}
+            onLatestChange={setSweepLatest}
+            onIntervalChange={setSweepInterval}
+            onTargetEtaChange={setTargetEta}
+            resolvedTheme={resolvedTheme}
+          />
+        )}
 
         {/* Archetype */}
         <ArchetypeSelector
@@ -346,22 +535,38 @@ export function PlanSidebar({
         />
 
         {/* Calculate button */}
-        <button
-          onClick={onRefetch}
-          disabled={!canCalculate}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
-          style={{
-            background: canCalculate ? "var(--ow-accent)" : "var(--ow-bg-2)",
-            color: canCalculate ? "#fff" : "var(--ow-fg-3)",
-            border: `1px solid ${canCalculate ? "transparent" : "var(--ow-line-2)"}`,
-            cursor: canCalculate ? "pointer" : "not-allowed",
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M13.5 2.5A7 7 0 1 0 14.5 9"/><path d="M14 1v4h-4"/>
-          </svg>
-          {canCalculate ? "Calculer le passage" : `${waypointCount}/2 waypoints`}
-        </button>
+        {mode === "single" ? (
+          <button
+            onClick={onRefetch}
+            disabled={!canCalculate}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
+            style={{
+              background: canCalculate ? "var(--ow-accent)" : "var(--ow-bg-2)",
+              color: canCalculate ? "#fff" : "var(--ow-fg-3)",
+              border: `1px solid ${canCalculate ? "transparent" : "var(--ow-line-2)"}`,
+              cursor: canCalculate ? "pointer" : "not-allowed",
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13.5 2.5A7 7 0 1 0 14.5 9"/><path d="M14 1v4h-4"/>
+            </svg>
+            {canCalculate ? "Calculer le passage" : `${waypointCount}/2 waypoints`}
+          </button>
+        ) : (
+          <button
+            disabled
+            title="Comparateur — branchement MCP à venir"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold"
+            style={{
+              background: "var(--ow-bg-2)",
+              color: "var(--ow-fg-3)",
+              border: "1px dashed var(--ow-line-2)",
+              cursor: "not-allowed",
+            }}
+          >
+            Comparer les créneaux · à venir
+          </button>
+        )}
       </div>
     );
   }
