@@ -28,15 +28,31 @@ function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function fmtRange(min: number, max: number, unit: string, decimals = 0): string {
+function fmtRange(min: number | null | undefined, max: number | null | undefined, unit: string, decimals = 0): string {
+  // Defensive: a HF Space deployment lag may serve a response missing fields
+  // we expect (e.g. hs_min_m before #69). Prefer a graceful "—" over a render
+  // crash. Use loose `== null` to catch both null and undefined.
+  if (min == null && max == null) return "—";
+  if (min == null) return `${max!.toFixed(decimals)} ${unit}`;
+  if (max == null) return `${min.toFixed(decimals)} ${unit}`;
   const a = min.toFixed(decimals);
   const b = max.toFixed(decimals);
   return a === b ? `${a} ${unit}` : `${a}–${b} ${unit}`;
 }
 
-function fmtHsRange(min: number | null, max: number | null): string {
-  if (min === null || max === null) return "—";
+function fmtHsRange(min: number | null | undefined, max: number | null | undefined): string {
+  if (min == null && max == null) return "—";
   return fmtRange(min, max, "m", 1);
+}
+
+function fmtDurationSafe(h: number | null | undefined): string {
+  if (h == null || !Number.isFinite(h)) return "—";
+  return fmtDuration(h);
+}
+
+function fmtTimeSafe(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return fmtTime(iso);
 }
 
 export interface WindowsTableProps {
@@ -55,9 +71,9 @@ export function WindowsTable({ windows, onSelect }: WindowsTableProps) {
       if (sortKey === "departure") {
         cmp = new Date(a.departure).getTime() - new Date(b.departure).getTime();
       } else if (sortKey === "duration") {
-        cmp = a.duration_h - b.duration_h;
+        cmp = (a.duration_h ?? 0) - (b.duration_h ?? 0);
       } else if (sortKey === "complexity") {
-        cmp = a.complexity.level - b.complexity.level;
+        cmp = (a.complexity?.level ?? 0) - (b.complexity?.level ?? 0);
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -112,7 +128,14 @@ export function WindowsTable({ windows, onSelect }: WindowsTableProps) {
 
       <div className="divide-y" style={{ borderColor: "var(--ow-line)" }}>
         {sorted.map((w) => {
-          const cs = w.conditions_summary;
+          // Defensive reads — backend version skew (e.g. older HF Space) may
+          // omit nested fields that newer types declare. Default to empty
+          // shapes so display falls back to "—" instead of crashing.
+          const cs = w.conditions_summary ?? {} as Partial<typeof w.conditions_summary>;
+          const cx = w.complexity ?? {} as Partial<typeof w.complexity>;
+          const sail = cs.predominant_sail_angle;
+          const cxLvl = typeof cx.level === "number" ? cx.level : 0;
+          const cxColor = CX_COLORS[cxLvl] ?? "var(--ow-fg-3)";
           return (
             <button
               key={w.departure}
@@ -128,10 +151,10 @@ export function WindowsTable({ windows, onSelect }: WindowsTableProps) {
               <span className="tabular-nums" style={{ color: "var(--ow-fg-0)" }}>
                 {fmtDeparture(w.departure)}
               </span>
-              <span className="tabular-nums">{fmtDuration(w.duration_h)}</span>
-              <span className="tabular-nums">{fmtTime(w.arrival)}</span>
+              <span className="tabular-nums">{fmtDurationSafe(w.duration_h)}</span>
+              <span className="tabular-nums">{fmtTimeSafe(w.arrival)}</span>
               <span className="capitalize" style={{ color: "var(--ow-fg-1)" }}>
-                {SAIL_LABELS[cs.predominant_sail_angle] ?? cs.predominant_sail_angle}
+                {sail ? (SAIL_LABELS[sail] ?? sail) : "—"}
               </span>
               <span className="tabular-nums">{fmtRange(cs.tws_min_kn, cs.tws_max_kn, "")}</span>
               <span className="tabular-nums">{fmtHsRange(cs.hs_min_m, cs.hs_max_m)}</span>
@@ -139,13 +162,13 @@ export function WindowsTable({ windows, onSelect }: WindowsTableProps) {
                 <span
                   className="inline-flex items-center justify-center w-7 h-6 rounded-md text-[11px] font-bold"
                   style={{
-                    background: CX_COLORS[w.complexity.level] + "22",
-                    color: CX_COLORS[w.complexity.level],
-                    border: `1px solid ${CX_COLORS[w.complexity.level]}55`,
+                    background: cxColor + "22",
+                    color: cxColor,
+                    border: `1px solid ${cxColor}55`,
                   }}
-                  title={`${w.complexity.label} — ${w.complexity.rationale}`}
+                  title={cx.label && cx.rationale ? `${cx.label} — ${cx.rationale}` : cx.label ?? ""}
                 >
-                  {w.complexity.level}
+                  {cxLvl || "—"}
                 </span>
               </span>
             </button>
