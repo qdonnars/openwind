@@ -280,7 +280,29 @@ export function SpotMap({
       }
     };
 
+    // Right-click (desktop) — same outcomes as long-press but instant. We
+    // suppress the browser context menu so the rename/add dialog is the only
+    // surface the user has to interact with.
+    const handleContextMenu = async (e: MouseEvent) => {
+      e.preventDefault();
+      cancelPress();
+      const target = e.target as Element;
+      const editSpot = elementToSpotRef.current.get(target);
+      if (editSpot) {
+        setPendingEditRef.current(editSpot);
+        return;
+      }
+      const tag = target.tagName.toLowerCase();
+      if (tag === "circle" || tag === "path") return;
+      const rect = el.getBoundingClientRect();
+      const point = L.point(e.clientX - rect.left, e.clientY - rect.top);
+      const latlng = map.containerPointToLatLng(point);
+      const name = await reverseGeocode(latlng.lat, latlng.lng);
+      setPendingRef.current({ lat: latlng.lat, lng: latlng.lng, name });
+    };
+
     el.addEventListener("pointerdown", handlePointerDown);
+    el.addEventListener("contextmenu", handleContextMenu);
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerUp);
@@ -324,6 +346,7 @@ export function SpotMap({
       cancelPress();
       ro.disconnect();
       el.removeEventListener("pointerdown", handlePointerDown);
+      el.removeEventListener("contextmenu", handleContextMenu);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
@@ -393,7 +416,9 @@ export function SpotMap({
   useEffect(() => {
     if (!mapRef.current) return;
     syncMarkers();
-    mapRef.current.setView([current.latitude, current.longitude], 10, { animate: true });
+    // Pan to the active spot but keep the user's current zoom — clicking a
+    // marker shouldn't yank them out of a wide overview or a tight zoom-in.
+    mapRef.current.panTo([current.latitude, current.longitude], { animate: true });
   }, [current, customSpots, syncMarkers]);
 
   // Wind arrows
