@@ -58,6 +58,52 @@ export interface PassageResponse {
   forecast_updated_at: string;
 }
 
+// ── Sweep mode (compare-windows) ─────────────────────────────────────────────
+
+export type SailAngle = "pres" | "travers" | "largue" | "portant";
+
+export interface ConditionsSummary {
+  tws_min_kn: number;
+  tws_max_kn: number;
+  predominant_sail_angle: SailAngle;
+  hs_min_m: number | null;
+  hs_max_m: number | null;
+}
+
+export interface PassageWindow {
+  departure: string;
+  arrival: string;
+  duration_h: number;
+  distance_nm: number;
+  complexity: {
+    level: number;
+    label: string;
+    tws_max_kn: number;
+    rationale: string;
+  };
+  conditions_summary: ConditionsSummary;
+  warnings: string[];
+}
+
+export interface MultiWindowResponse {
+  mode: "multi_window";
+  sweep: {
+    earliest: string;
+    latest: string;
+    interval_hours: number;
+    window_count: number;
+  };
+  windows: PassageWindow[];
+  meta_warnings: string[];
+  forecast_updated_at: string;
+}
+
+export type PassageOrSweepResponse = PassageResponse | MultiWindowResponse;
+
+export function isMultiWindow(r: PassageOrSweepResponse): r is MultiWindowResponse {
+  return (r as MultiWindowResponse).mode === "multi_window";
+}
+
 export interface Archetype {
   slug: string;
   name: string;

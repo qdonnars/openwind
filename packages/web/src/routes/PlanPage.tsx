@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from "react";
 import { parsePlanUrl, isParsedOk, buildPlanUrl } from "../plan/parseUrl";
 import { PlanMap, type PlanMapHandle } from "../plan/PlanMap";
 import { PlanSidebar } from "../plan/PlanSidebar";
-import { fetchPassage, fetchArchetypes } from "../api/passage";
+import { fetchPassage, fetchPassageWindows, fetchArchetypes } from "../api/passage";
 import { ThemeToggle } from "../design/theme";
 import { SpotSearch } from "../components/SpotSearch";
-import type { PassageReport, ComplexityScore, Archetype } from "../plan/types";
+import type { PassageReport, ComplexityScore, Archetype, PassageWindow } from "../plan/types";
 import { cxLevel, CX_COLORS } from "../plan/types";
 import { aggregateLegs } from "../plan/aggregateLegs";
 
@@ -141,6 +141,9 @@ function CompactDrawer({
           const windLabel = Math.round(leg.tws_min) === Math.round(leg.tws_max)
             ? `${Math.round(leg.tws_min)} kn`
             : `${Math.round(leg.tws_min)}–${Math.round(leg.tws_max)} kn`;
+          const seaLabel = leg.hs_avg_m == null
+            ? null
+            : `${leg.hs_avg_m.toFixed(1)}m ${leg.sea_direction}`;
           return (
             <div
               key={i}
@@ -154,7 +157,7 @@ function CompactDrawer({
                 {i + 1}
               </span>
               <span className="flex-1 tabular-nums" style={{ color: "var(--ow-fg-1)", fontFamily: "var(--ow-font-mono)" }}>
-                {leg.point_of_sail} · {windLabel} · {leg.boat_speed_kn.toFixed(1)} kn
+                {leg.point_of_sail} · {windLabel}{seaLabel ? ` · ${seaLabel}` : ""} · {leg.boat_speed_kn.toFixed(1)} kn
               </span>
               <span className="tabular-nums shrink-0" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
                 {fmtTime(leg.end_time)}
@@ -226,6 +229,20 @@ export function PlanPage() {
   const [forecastUpdatedAt, setForecastUpdatedAt] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
 
+  // Compare-windows mode (lifted from PlanSidebar in step 2)
+  const [planMode, setPlanMode] = useState<"single" | "compare">("single");
+  const [sweepEarliest, setSweepEarliest] = useState(() => departure);
+  const [sweepLatest, setSweepLatest] = useState(() => {
+    const d = new Date(departure);
+    d.setDate(d.getDate() + 2);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
+  const [sweepInterval, setSweepInterval] = useState<number>(3);
+  const [sweepTargetEta, setSweepTargetEta] = useState("");
+  const [windows, setWindows] = useState<PassageWindow[] | null>(null);
+  const [metaWarnings, setMetaWarnings] = useState<string[]>([]);
+
   useEffect(() => {
     fetchArchetypes().then(setArchetypes).catch(() => {});
   }, []);
@@ -291,6 +308,35 @@ export function PlanPage() {
 
   function handleRefetch() {
     doFetch(waypoints, archetype, departure);
+  }
+
+  function doFetchWindows() {
+    setIsLoading(true);
+    setApiError(null);
+    fetchPassageWindows({
+      waypoints,
+      earliest: toTzAware(sweepEarliest),
+      latest: toTzAware(sweepLatest),
+      archetype,
+      intervalHours: sweepInterval,
+      targetEta: sweepTargetEta ? toTzAware(sweepTargetEta) : undefined,
+    })
+      .then((res) => {
+        setWindows(res.windows);
+        setMetaWarnings(res.meta_warnings);
+        setForecastUpdatedAt(res.forecast_updated_at);
+        // Clear single-mode results so the sidebar swaps view cleanly.
+        setPassage(null);
+        setComplexity(null);
+        setIsStale(false);
+      })
+      .catch((e: Error) => setApiError(e.message))
+      .finally(() => setIsLoading(false));
+  }
+
+  function handleModeChange(next: "single" | "compare") {
+    setPlanMode(next);
+    setApiError(null);
   }
 
   if (!isParsedOk(initialParsed)) {
@@ -398,6 +444,19 @@ export function PlanPage() {
             forecastUpdatedAt={forecastUpdatedAt}
             waypointCount={waypoints.length}
             waypoints={waypoints}
+            mode={planMode}
+            onModeChange={handleModeChange}
+            sweepEarliest={sweepEarliest}
+            sweepLatest={sweepLatest}
+            sweepIntervalHours={sweepInterval}
+            sweepTargetEta={sweepTargetEta}
+            onSweepEarliestChange={setSweepEarliest}
+            onSweepLatestChange={setSweepLatest}
+            onSweepIntervalChange={setSweepInterval}
+            onSweepTargetEtaChange={setSweepTargetEta}
+            windows={windows}
+            metaWarnings={metaWarnings}
+            onCompareFetch={doFetchWindows}
           />
         </div>
       </div>
