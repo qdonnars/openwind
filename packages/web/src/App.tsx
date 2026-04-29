@@ -25,7 +25,7 @@ function EmptyState() {
         </p>
         <p className="text-sm leading-relaxed" style={{ color: 'var(--ow-fg-1)' }}>
           <span className="lg:hidden">Long press on the map to place a wind spot</span>
-          <span className="hidden lg:inline">Long click on the map to place a wind spot</span>
+          <span className="hidden lg:inline">Right-click on the map to place a wind spot</span>
         </p>
       </div>
     </div>
@@ -61,7 +61,6 @@ function App() {
 
   const isDefault = spot != null && spot.latitude === RADE_MARSEILLE.latitude && spot.longitude === RADE_MARSEILLE.longitude && !isCustom(spot);
   const canSave = spot != null && !isCustom(spot) && !isDefault;
-  const isSaved = spot != null && isCustom(spot);
 
   const mapCenter: Spot = spot ?? RADE_MARSEILLE;
 
@@ -73,9 +72,7 @@ function App() {
       <Header
         onSelectSpot={setSpot}
         canSave={canSave}
-        isSaved={isSaved}
         onSave={() => spot && addSpot(spot)}
-        onRemove={() => { if (spot) { removeSpot(spot); setSpot(null); setForecasts([]); setSelectedHour(null); } }}
       />
 
       {/* Map fills remaining space, table as bottom panel */}
