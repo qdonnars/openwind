@@ -667,6 +667,9 @@ export function PlanSidebar({
 
   return (
     <div className="p-4 space-y-4 animate-fade-in">
+      {/* Mode toggle — always visible so the user can switch back to compare */}
+      <ModeToggle value={mode} onChange={onModeChange} />
+
       {/* Recalculate — grows when stale */}
       <button
         onClick={onRefetch}

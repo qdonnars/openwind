@@ -335,8 +335,17 @@ export function PlanPage() {
   }
 
   function handleModeChange(next: "single" | "compare") {
+    if (next === planMode) return;
     setPlanMode(next);
     setApiError(null);
+    // Drop the opposite mode's results so the sidebar renders the right view.
+    if (next === "compare") {
+      setPassage(null);
+      setComplexity(null);
+    } else {
+      setWindows(null);
+      setMetaWarnings([]);
+    }
   }
 
   if (!isParsedOk(initialParsed)) {
@@ -461,20 +470,59 @@ export function PlanPage() {
         </div>
       </div>
 
-      {/* Mobile compact drawer — below map */}
+      {/* Mobile drawer — below map */}
+      {/* When a single-mode passage is computed: compact leg-rows view (38vh).
+          Otherwise (no passage, compare mode, error): full PlanSidebar so the
+          mode toggle, form, and Calculate/Compare buttons stay reachable. */}
       <div
         className="lg:hidden shrink-0 overflow-y-auto border-t"
-        style={{ maxHeight: "38vh", background: "var(--ow-bg-1)", borderColor: "var(--ow-line)" }}
+        style={{
+          maxHeight: passage ? "38vh" : "60vh",
+          background: "var(--ow-bg-1)",
+          borderColor: "var(--ow-line)",
+        }}
       >
-        <CompactDrawer
-          passage={passage}
-          complexity={complexity}
-          waypoints={waypoints}
-          isLoading={isLoading}
-          error={apiError}
-          isStale={isStale}
-          onRefetch={handleRefetch}
-        />
+        {passage && complexity && planMode === "single" ? (
+          <CompactDrawer
+            passage={passage}
+            complexity={complexity}
+            waypoints={waypoints}
+            isLoading={isLoading}
+            error={apiError}
+            isStale={isStale}
+            onRefetch={handleRefetch}
+          />
+        ) : (
+          <PlanSidebar
+            passage={passage}
+            complexity={complexity}
+            isLoading={isLoading}
+            error={apiError}
+            archetypes={archetypes}
+            currentArchetypeSlug={archetype}
+            onArchetypeChange={handleArchetypeChange}
+            departure={departure}
+            onDepartureChange={handleDepartureChange}
+            isStale={isStale}
+            onRefetch={handleRefetch}
+            forecastUpdatedAt={forecastUpdatedAt}
+            waypointCount={waypoints.length}
+            waypoints={waypoints}
+            mode={planMode}
+            onModeChange={handleModeChange}
+            sweepEarliest={sweepEarliest}
+            sweepLatest={sweepLatest}
+            sweepIntervalHours={sweepInterval}
+            sweepTargetEta={sweepTargetEta}
+            onSweepEarliestChange={setSweepEarliest}
+            onSweepLatestChange={setSweepLatest}
+            onSweepIntervalChange={setSweepInterval}
+            onSweepTargetEtaChange={setSweepTargetEta}
+            windows={windows}
+            metaWarnings={metaWarnings}
+            onCompareFetch={doFetchWindows}
+          />
+        )}
       </div>
     </div>
   );

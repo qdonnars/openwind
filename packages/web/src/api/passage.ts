@@ -6,7 +6,10 @@ const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "https
 // original string if no rule matches, so unknown errors stay debuggable.
 export function friendlyError(raw: string): string {
   if (/forecast horizon exceeded/i.test(raw)) {
-    return "Cette date est trop loin dans le futur — la météo n'est fiable que sur ~14 jours. Choisissez une date plus proche.";
+    // Cause la plus fréquente : date > today+15 (cap Open-Meteo). Mais peut
+    // aussi survenir transitoirement quand un modèle de la chaîne tombe ;
+    // d'où la formulation prudente.
+    return "Le service météo n'a pas pu couvrir cette période. Essayez une date plus proche, ou réessayez dans quelques instants.";
   }
   if (/at least 2 waypoints/i.test(raw)) {
     return "Placez au moins 2 waypoints sur la carte pour calculer une route.";
