@@ -689,7 +689,10 @@ export function PlanSidebar({
     );
   }
 
-  if (!passage || !complexity) {
+  // In compare mode we always show the form + (optional) windows table,
+  // even if a single-mode `passage` is also in memory. That way toggling
+  // back to single shows the cached single result without a re-fetch.
+  if (mode === "compare" || !passage || !complexity) {
     return (
       <div className="p-4 space-y-4 animate-fade-in">
         {/* Waypoint progress */}
