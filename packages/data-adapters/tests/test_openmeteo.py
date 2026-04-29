@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 import respx
 
+from openwind_data.adapters.base import ForecastHorizonError
 from openwind_data.adapters.openmeteo import (
+    API_MAX_FUTURE_DAYS,
     DEFAULT_MODEL,
     FORECAST_URL,
     MARINE_URL,
@@ -183,6 +185,85 @@ async def test_end_before_start_raises():
 @respx.mock
 async def test_http_error_propagates(marine_porquerolles):
     respx.get(FORECAST_URL).mock(return_value=httpx.Response(500))
+    respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
+
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
+    start, end = _start_end()
+    with pytest.raises(httpx.HTTPStatusError):
+        await adapter.fetch(lat=43.0, lon=5.0, start=start, end=end)
+
+
+async def test_start_past_api_cap_raises_horizon_error_without_http():
+    """If start_date exceeds Open-Meteo's date-range cap, fail fast with
+    ForecastHorizonError — no HTTP call burned, auto-fallback exhausts cleanly,
+    API layer returns 422 instead of bubbling httpx 400 → 500.
+    """
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
+    far_start = datetime.now(UTC) + timedelta(days=API_MAX_FUTURE_DAYS + 5)
+    far_end = far_start + timedelta(hours=12)
+    with respx.mock(assert_all_called=False) as r:
+        forecast = r.get(FORECAST_URL).mock(return_value=httpx.Response(200, json={}))
+        marine = r.get(MARINE_URL).mock(return_value=httpx.Response(200, json={}))
+        with pytest.raises(ForecastHorizonError):
+            await adapter.fetch(lat=43.0, lon=5.0, start=far_start, end=far_end)
+        assert forecast.call_count == 0
+        assert marine.call_count == 0
+
+
+@respx.mock
+async def test_prefetch_end_capped_to_api_max(forecast_marseille_arome, marine_porquerolles):
+    """The +7d prefetch widening must not push end_date past Open-Meteo's cap —
+    otherwise even passages within the cap break."""
+    forecast_route = respx.get(FORECAST_URL).mock(
+        return_value=httpx.Response(200, json=forecast_marseille_arome)
+    )
+    respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
+
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
+    now = datetime.now(UTC)
+    start = now + timedelta(days=API_MAX_FUTURE_DAYS - 2)
+    end = start + timedelta(hours=12)
+    await adapter.fetch(lat=43.30, lon=5.35, start=start, end=end)
+
+    sent = forecast_route.calls.last.request
+    end_date_sent = datetime.fromisoformat(sent.url.params["end_date"]).date()
+    api_max = (now + timedelta(days=API_MAX_FUTURE_DAYS)).date()
+    assert end_date_sent <= api_max
+
+
+@respx.mock
+async def test_om_400_horizon_translates_to_forecast_horizon_error(marine_porquerolles):
+    """Open-Meteo returns 400 with 'out of allowed range' when start/end_date
+    exceed the API cap. We translate that to ForecastHorizonError so the auto-
+    fallback chain reacts (defense-in-depth — the cap above should prevent it).
+    """
+    respx.get(FORECAST_URL).mock(
+        return_value=httpx.Response(
+            400,
+            json={
+                "error": True,
+                "reason": "Parameter 'end_date' is out of allowed range from X to Y",
+            },
+        )
+    )
+    respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
+
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
+    start, end = _start_end()
+    with pytest.raises(ForecastHorizonError):
+        await adapter.fetch(lat=43.0, lon=5.0, start=start, end=end)
+
+
+@respx.mock
+async def test_om_400_other_keeps_http_error(marine_porquerolles):
+    """A 400 with an unrelated reason (e.g. malformed param) must keep its
+    HTTPStatusError so real bugs stay visible — only horizon errors translate.
+    """
+    respx.get(FORECAST_URL).mock(
+        return_value=httpx.Response(
+            400, json={"error": True, "reason": "Parameter 'latitude' must be a number"}
+        )
+    )
     respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
 
     adapter = OpenMeteoAdapter(http_min_interval_s=0)

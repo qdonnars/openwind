@@ -24,7 +24,9 @@ function toLocalIso(d: Date): string {
 
 // ── DepartureSlider ──────────────────────────────────────────────────────────
 
-const SLIDER_MAX_HOURS = 21 * 24; // 3 weeks
+// Open-Meteo's forecast endpoint caps start_date/end_date at ~today+15. We cap
+// the slider at 14 d to leave 1 d of margin (clock skew, TZ crossings).
+const SLIDER_MAX_HOURS = 14 * 24;
 
 function DepartureSlider({
   value,
@@ -117,7 +119,6 @@ function DepartureSlider({
             <span>Maintenant</span>
             <span>+1 sem.</span>
             <span>+2 sem.</span>
-            <span>+3 sem.</span>
           </div>
         </>
       )}
