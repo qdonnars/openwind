@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "Cloud-agnostic FastMCP server for OpenWind — sailing planner tools."
 requires-python = ">=3.12"
 dependencies = [
-    "mcp[cli]>=1.2",
+    # MCP Apps support requires:
+    # - 1.19.0+ for `meta=` kwarg on @tool / @resource (PR #1463)
+    # - 1.23.3+ for the `text/html;profile=mcp-app` MIME validator (PR #1755)
+    # - <1.28 to avoid the FastMCP -> MCPServer rename (post-1.27 HEAD)
+    "mcp[cli]>=1.23.3,<1.28",
     "openwind-data",
 ]
 

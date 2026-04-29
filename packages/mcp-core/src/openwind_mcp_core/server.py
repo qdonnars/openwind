@@ -10,23 +10,23 @@ Tools exposed (V1):
    → ``cruiser_30ft``). No server-side mapping table.
 2. ``get_marine_forecast`` — wind+sea around a point/window for one or more models.
 3. ``plan_passage`` — single-shot end-to-end: timing along the polyline,
-   1-5 complexity score, rendered HTML widget, and openwind.fr deep-link.
-   Replaces the previous trio (``estimate_passage`` + ``score_complexity`` +
-   ``render_passage_widget``) — one call, one Open-Meteo fetch, one round-trip.
+   1-5 complexity score, rendered MCP App widget, and openwind.fr deep-link.
 
-Typical orchestration pattern (LLM perspective):
+## Rich rendering (MCP Apps)
 
-* Call ``list_boat_archetypes`` once at the start of the conversation, map the
-  user's commercial model from ``examples`` + ``length_ft`` + ``type``.
-* For an "A → B" question, call ``plan_passage`` ONCE with the waypoints,
-  departure, and chosen archetype. Use ``model="auto"`` so the server picks
-  AROME (≤48 h) → ICON-EU (≤5 d) → GFS (≤16 d) automatically — the chosen
-  model is reflected in ``passage.model``.
-* The response includes a ready-to-display ``html``: inject it verbatim in
-  your response — no markdown code-block fence, no reformatting. Use
-  ``openwind_url`` as fallback on text-only clients.
-* ``get_marine_forecast`` is the escape hatch for sea-state lookup or model
-  comparison — not needed for the typical "A → B by date X" question.
+``plan_passage`` declares ``_meta.ui.resourceUri`` pointing at
+``ui://openwind/plan-passage`` — a sandboxed HTML resource that iframes
+``openwind.fr/plan?...``. Hosts that support the MCP Apps spec (Claude,
+Claude Desktop, ChatGPT, VS Code Copilot, Goose, Postman, MCPJam — see the
+`extension client matrix`_) render the widget inline. Hosts that do NOT
+support MCP Apps (Cursor, Le Chat, terminal, …) silently fall back to the
+tool's text response: a compact summary plus the ``openwind_url`` deep link.
+
+The dead-on-arrival ``html`` field that older versions returned has been
+dropped — relying on every host to render arbitrary HTML in chat was fragile
+by design (see PR #74 for the full reasoning).
+
+.. _extension client matrix: https://modelcontextprotocol.io/extensions/client-matrix
 """
 
 from __future__ import annotations
@@ -53,7 +53,15 @@ from openwind_data.routing import (
     score_complexity as _score_complexity,
 )
 
-from .render import build_openwind_url, render_passage
+from .render import build_openwind_url
+
+# MCP Apps UI resource URI for plan_passage. The host fetches this resource
+# and renders it in a sandboxed iframe; the resource itself iframes
+# openwind.fr/plan, so the rendered widget IS the live web app — single
+# source of truth, no duplicate widget code to maintain.
+PLAN_UI_RESOURCE_URI = "ui://openwind/plan-passage"
+PLAN_UI_MIME = "text/html;profile=mcp-app"
+PLAN_UI_FRAME_DOMAINS = ["https://openwind.fr"]
 
 
 def _archetype_summary(p: Any) -> dict[str, Any]:
@@ -117,20 +125,21 @@ uses unless overridden by tool parameters.
   convergence iteration. Bias bounded by Mediterranean wind correlation.
 - Routes split into ~10 nm sub-segments by default for weather sampling.
 
-## Multi-window sweep mode
+## Compare-windows mode
 
-`plan_passage` accepts an optional `latest_departure` to sweep N hourly
-departure windows over the same route. Weather is fetched once (cache
-prewarm), simulations are in-memory. Hard cap: 14 d x 24 h = 336 windows.
-Returns a list of windows; the LLM picks qualitatively (no server-side
-ranking).
+`plan_passage` accepts an optional `latest_departure` that turns the call
+into a window comparison: it walks N hourly departures over the same route
+and returns one entry per window. Weather is fetched once (cache prewarm),
+simulations are in-memory. Hard cap: 14 d x 24 h = 336 windows. The LLM
+picks qualitatively (no server-side ranking).
 
 ## Mediterranean defaults
 
 - Tides ignored (< 40 cm, negligible vs forecast uncertainty).
 - Currents ignored (Liguro-Provencal too weak / variable for V1).
 - Wind model: AROME 1.3 km (<= 48 h horizon, captures thermals and local
-  winds). Auto-falls back to ICON-EU (<= 5 d) -> GFS (<= 16 d).
+  winds). Auto-falls back to ICON-EU (<= 5 d) -> ECMWF IFS 0.25 deg
+  (<= 10 d) -> GFS (<= 16 d).
 - Wave model: Open-Meteo Marine (significant Hs, period, direction).
 
 ## What is NOT modelled (V1)
@@ -172,6 +181,38 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
     server: FastMCP = FastMCP("openwind")
     fetch_adapter: MarineDataAdapter = adapter or OpenMeteoAdapter()
 
+    @server.resource(
+        PLAN_UI_RESOURCE_URI,
+        name="OpenWind plan widget",
+        mime_type=PLAN_UI_MIME,
+        meta={"ui": {"csp": {"frameDomains": PLAN_UI_FRAME_DOMAINS}}},
+    )
+    def plan_widget_resource() -> str:
+        """MCP Apps UI resource: a thin HTML doc that iframes openwind.fr/plan.
+
+        The query string of the inner iframe is set client-side by the host
+        from the tool's structured output (waypoints, departure, archetype).
+        Hosts that support MCP Apps render this in a sandboxed iframe; the
+        nested openwind.fr iframe is allowed via the ``frameDomains`` CSP.
+        """
+        # The {{params}} placeholder is filled by the host from the tool's
+        # `structuredContent` (per the MCP Apps templating convention). If a
+        # host doesn't yet support templating, the iframe just opens
+        # openwind.fr's empty /plan view — still better than a render crash.
+        return (
+            "<!doctype html><html lang=\"fr\"><head>"
+            "<meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            "<title>Plan</title>"
+            "<style>html,body{margin:0;height:100%;background:#FAF7EE}"
+            "iframe{width:100%;height:100%;border:0;display:block}</style>"
+            "</head><body>"
+            "<iframe src=\"https://openwind.fr/plan{{queryString}}\" "
+            "title=\"OpenWind passage plan\" "
+            "allow=\"geolocation; clipboard-write\"></iframe>"
+            "</body></html>"
+        )
+
     @server.tool()
     def read_me() -> str:
         """Return OpenWind's calculation methodology as Markdown.
@@ -182,7 +223,7 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
 
         The returned text covers: polar lookup, default efficiency 0.75,
         VMG / tacking correction, wave derate, single-pass timing,
-        multi-window sweep semantics, Mediterranean simplifications
+        compare-windows mode semantics, Mediterranean simplifications
         (tides, currents), and what is intentionally NOT modelled in V1.
         """
         return _METHODOLOGY
@@ -247,7 +288,9 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
             ],
         }
 
-    @server.tool()
+    @server.tool(
+        meta={"ui": {"resourceUri": PLAN_UI_RESOURCE_URI}},
+    )
     async def plan_passage(
         waypoints: list[dict[str, float]],
         departure: str,
@@ -256,22 +299,16 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         segment_length_nm: float = 10.0,
         model: str = AUTO_MODEL,
         max_hs_m: float | None = None,
-        render: bool = True,
-        boat_name: str | None = None,
-        leg_titles: list[str] | None = None,
-        locale: str = "fr",
-        timezone: str = "Europe/Paris",
         latest_departure: str | None = None,
         sweep_interval_hours: int = 1,
         target_eta: str | None = None,
     ) -> dict[str, Any]:
-        """Plan an A→B passage end-to-end: timing + complexity + widget + deep-link.
+        """Plan an A→B passage end-to-end: timing + complexity + deep-link.
 
         ONE call gives you everything for the typical "leaving Marseille for
         Porquerolles tomorrow on a 30-footer" question. The server fetches
         Open-Meteo once, computes the passage, scores its complexity from the
-        same report (no double-fetch), renders the HTML widget, and builds the
-        openwind.fr deep-link.
+        same report (no double-fetch), and emits the openwind.fr deep-link.
 
         ## Returned payload
 
@@ -279,19 +316,20 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
           model used, segments[] with TWS/TWA/boat_speed/Hs, warnings).
         - ``complexity``: 1-5 difficulty score with wind/sea breakdown and a
           human-readable rationale.
-        - ``html``: ready-to-display widget HTML (~5 KB, self-contained, dark
-          mode aware). Always populated when ``render=True`` (default).
-        - ``openwind_url``: ALWAYS present. Deep-link to openwind.fr/plan that
-          re-renders the same passage server-side.
+        - ``openwind_url``: deep-link to openwind.fr/plan that renders the
+          same passage in the standalone web app.
 
-        ## How to display
+        ## How it renders
 
-        **IMPORTANT — inject ``html`` verbatim, no wrapper.**
-        Copy the exact string from ``result["html"]`` into your response as-is.
-        Do NOT wrap it in a markdown code block (no ```html``` fence) — that
-        prevents rendering. Do NOT reconstruct or reformat the widget manually.
-        On text-only clients (terminal, Le Chat), skip ``html`` and present
-        ``openwind_url`` as a "View full plan →" link instead.
+        On hosts that support MCP Apps (Claude, Claude Desktop, ChatGPT, VS
+        Code Copilot, Goose, Postman, MCPJam), the response is automatically
+        accompanied by an interactive widget — the live openwind.fr/plan view
+        served via the ``ui://openwind/plan-passage`` resource declared on
+        this tool's ``_meta``. Nothing to inject manually.
+
+        On hosts without MCP Apps support (Cursor, Le Chat, terminal), present
+        a short text summary of the result (route, ETA, complexity, warnings)
+        and offer ``openwind_url`` as the "View full plan →" link.
 
         ## Args
 
@@ -307,40 +345,27 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
                 balances precision vs Open-Meteo budget; drop to 5 for tight
                 coastal work, raise to 20 for long offshore legs.
             model: wind model. Default ``"auto"`` tries AROME (≤48 h) →
-                ICON-EU (≤5 d) → GFS (≤16 d). Pass an explicit name to bypass.
+                ICON-EU (≤5 d) → ECMWF IFS 0.25° (≤10 d) → GFS (≤16 d).
+                Pass an explicit name to bypass.
             max_hs_m: optional max significant wave height (meters) over the
                 route — pass it if you have a sea-state estimate from
                 ``get_marine_forecast`` and want it factored into the score.
                 Defaults to wind-only scoring.
-            render: if True (default), populate ``html`` with the rendered
-                widget. Set to False on clients that don't display HTML at all,
-                to save ~1500 tokens of context.
-            boat_name: optional commercial name (e.g. ``"OTAGO III"``);
-                prepended to the widget's boat line.
-            leg_titles: optional human-friendly per-leg titles (e.g.
-                ``["Sortie rade", "Cap Sicié → Grand Ribaud"]``). Falls back
-                to ``"Leg N · wpN → wpN+1"`` for missing entries.
-            locale: ``"fr"`` (default) or ``"en"`` — drives widget label text
-                and date format.
-            timezone: IANA tz for time display in the widget (default
-                ``"Europe/Paris"``).
 
-        ## Sweep mode (latest_departure set)
+        ## Compare-windows mode (latest_departure set)
 
-        When ``latest_departure`` is provided, the tool sweeps departure times
-        from ``departure`` to ``latest_departure`` every ``sweep_interval_hours``
-        (default 1 h). Returns ``{"mode": "multi_window", "sweep": {...},
-        "windows": [...]}`` instead of the single-passage payload. Each window
-        contains ``departure``, ``arrival``, ``duration_h``, ``distance_nm``,
+        When ``latest_departure`` is provided, the tool switches into a
+        window-comparison call: it walks departure times from ``departure``
+        up to ``latest_departure`` every ``sweep_interval_hours`` (default
+        1 h). Returns ``{"mode": "multi_window", "sweep": {...}, "windows":
+        [...]}`` instead of the single-passage payload. Each window contains
+        ``departure``, ``arrival``, ``duration_h``, ``distance_nm``,
         ``complexity``, ``conditions_summary``, ``warnings``, and its own
-        ``openwind_url``. HTML is never rendered in sweep mode — the LLM reasons
-        qualitatively over the windows and presents 2-3 options; the user picks
-        one; the LLM then calls ``plan_passage`` once more with that specific
-        departure to get the rendered widget.
+        ``openwind_url``.
 
         ``target_eta``: optional ISO-8601 datetime. When set, only windows that
-        arrive within ±2 h of the target are returned. If none match, all windows
-        are returned with a ``meta_warnings`` note.
+        arrive within ±2 h of the target are returned. If none match, all
+        windows are returned with a ``meta_warnings`` note.
 
         ## Failure modes
 
@@ -396,7 +421,7 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
                 "meta_warnings": meta_warnings,
             }
 
-        # --- SINGLE MODE (unchanged) ---
+        # --- SINGLE MODE ---
         report = await _estimate_passage(
             pts,
             dep,
@@ -408,25 +433,9 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         )
         score = _score_complexity(report, max_hs_m=max_hs_m)
 
-        passage_dict = _passage_to_dict(report)
-        complexity_dict = asdict(score)
-
-        html: str | None = None
-        if render:
-            html = render_passage(
-                passage_dict,
-                complexity_dict,
-                waypoints=waypoints,
-                boat_name=boat_name,
-                leg_titles=leg_titles,
-                locale=locale,
-                timezone=timezone,
-            )
-
         return {
-            "passage": passage_dict,
-            "complexity": complexity_dict,
-            "html": html,
+            "passage": _passage_to_dict(report),
+            "complexity": asdict(score),
             "openwind_url": build_openwind_url(waypoints, departure, archetype),
         }
 
