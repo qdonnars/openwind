@@ -108,25 +108,24 @@ class TestListArchetypes:
 
 
 class TestPlanPassage:
-    """The single workhorse tool. Replaces estimate_passage + score_complexity
-    + render_passage_widget. The contract is: ONE call returns timing,
-    complexity, html, and openwind_url — and fetches Open-Meteo ONCE."""
+    """The single workhorse tool. Replaces estimate_passage + score_complexity.
+    Contract: ONE call returns timing + complexity + openwind_url, fetches
+    Open-Meteo ONCE. Rich rendering moved to MCP Apps via _meta.ui resource."""
 
     async def test_returns_full_payload(self) -> None:
         adapter = StubAdapter()
         server = build_server(adapter=adapter)
         out = await _call(server, "plan_passage", _BASE_PLAN_ARGS)
 
-        assert {"passage", "complexity", "html", "openwind_url"} <= out.keys()
+        assert {"passage", "complexity", "openwind_url"} <= out.keys()
+        # html field is gone in the MCP Apps era.
+        assert "html" not in out
         # Passage shape
         assert isinstance(out["passage"]["departure_time"], str)
         assert out["passage"]["archetype"] == "cruiser_40ft"
         assert len(out["passage"]["segments"]) >= 1
         # Complexity shape
         assert 1 <= out["complexity"]["level"] <= 5
-        # HTML rendered by default — no placeholders left
-        assert isinstance(out["html"], str)
-        assert "{{" not in out["html"]
         # URL always present
         assert out["openwind_url"].startswith("https://openwind.fr/plan?")
 
@@ -144,18 +143,6 @@ class TestPlanPassage:
             "score_complexity may be re-fetching"
         )
 
-    async def test_render_false_skips_html(self) -> None:
-        # Opt-out path for text-only clients that don't need the ~5 KB markup.
-        adapter = StubAdapter()
-        server = build_server(adapter=adapter)
-        out = await _call(server, "plan_passage", {**_BASE_PLAN_ARGS, "render": False})
-        assert out["html"] is None
-        # URL still present — it's the always-on fallback CTA.
-        assert out["openwind_url"].startswith("https://openwind.fr/plan?")
-        # Passage and complexity still computed.
-        assert out["passage"]["archetype"] == "cruiser_40ft"
-        assert 1 <= out["complexity"]["level"] <= 5
-
     async def test_openwind_url_uses_explicit_waypoints(self) -> None:
         # The URL encodes the user's original waypoints, not the (potentially
         # subdivided) segments — so partage SMS reproduit fidèlement la nav.
@@ -165,33 +152,13 @@ class TestPlanPassage:
         assert "wpts=43.300,5.350;43.000,6.200" in url
         assert "archetype=cruiser_40ft" in url
 
-    async def test_locale_fr_swaps_widget_labels(self) -> None:
+    async def test_ui_resource_registered(self) -> None:
+        # MCP Apps: the host needs to be able to fetch ui://openwind/plan-passage.
+        from openwind_mcp_core.server import PLAN_UI_RESOURCE_URI
         server = build_server(adapter=StubAdapter())
-        out = await _call(server, "plan_passage", {**_BASE_PLAN_ARGS, "locale": "fr"})
-        body = out["html"]
-        assert ">DÉPART<" in body
-        assert ">Durée<" in body
-        assert ">Complexité<" in body
-
-    async def test_locale_en_keeps_english(self) -> None:
-        server = build_server(adapter=StubAdapter())
-        out = await _call(server, "plan_passage", {**_BASE_PLAN_ARGS, "locale": "en"})
-        assert ">DEPARTURE<" in out["html"]
-        assert ">DÉPART<" not in out["html"]
-
-    async def test_boat_name_and_leg_titles_threaded_to_html(self) -> None:
-        server = build_server(adapter=StubAdapter())
-        out = await _call(
-            server,
-            "plan_passage",
-            {
-                **_BASE_PLAN_ARGS,
-                "boat_name": "OTAGO III",
-                "leg_titles": ["Custom title only"],
-            },
-        )
-        assert "OTAGO III" in out["html"]
-        assert "Custom title only" in out["html"]
+        resources = await server.list_resources()
+        uris = [str(r.uri) for r in resources]
+        assert PLAN_UI_RESOURCE_URI in uris
 
     async def test_max_hs_factors_into_complexity(self) -> None:
         # max_hs_m used to be on its own tool (score_complexity); now it's
@@ -243,8 +210,9 @@ class TestPlanPassageSweep:
         assert cs["predominant_sail_angle"] in ("pres", "travers", "largue", "portant")
 
     async def test_html_never_rendered_in_sweep(self) -> None:
+        # html field is gone everywhere now (MCP Apps era).
         server = build_server(adapter=StubAdapter())
-        out = await _call(server, "plan_passage", {**_SWEEP_ARGS, "render": True})
+        out = await _call(server, "plan_passage", _SWEEP_ARGS)
         assert "html" not in out
         for w in out["windows"]:
             assert "html" not in w
@@ -272,8 +240,9 @@ class TestPlanPassageSweep:
     async def test_single_mode_backward_compatible(self) -> None:
         server = build_server(adapter=StubAdapter())
         out = await _call(server, "plan_passage", _BASE_PLAN_ARGS)
-        assert {"passage", "complexity", "html", "openwind_url"} <= out.keys()
+        assert {"passage", "complexity", "openwind_url"} <= out.keys()
         assert "mode" not in out
+        assert "html" not in out  # dropped in the MCP Apps migration
 
     async def test_target_eta_filters_windows(self) -> None:
         # With constant 12 kn from north, passage ~8h → arrival ~14:00 from 06:00
