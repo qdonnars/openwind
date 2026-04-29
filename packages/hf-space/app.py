@@ -327,6 +327,10 @@ async def _api_passage(request: Request) -> JSONResponse:
         windows: list[dict[str, Any]] = []
         for report in reports:
             score = score_complexity(report)
+            # Include the full passage + complexity per window so a frontend
+            # drill-down ("click a row → see detail") needs zero re-fetch.
+            # The summary fields above (`complexity` partial, `conditions_summary`,
+            # `duration_h`, `distance_nm`) stay for compact table rendering.
             windows.append({
                 "departure": report.departure_time.isoformat(),
                 "arrival": report.arrival_time.isoformat(),
@@ -340,6 +344,8 @@ async def _api_passage(request: Request) -> JSONResponse:
                 },
                 "conditions_summary": _build_conditions_summary(report),
                 "warnings": list(report.warnings) + [w.message for w in score.warnings],
+                "passage": _to_json(report),
+                "complexity_full": _to_json(score),
             })
 
         meta_warnings: list[str] = []

@@ -6,6 +6,12 @@ import { fetchPassage, fetchPassageWindows, fetchArchetypes, friendlyError } fro
 import { ThemeToggle } from "../design/theme";
 import { SpotSearch } from "../components/SpotSearch";
 import type { PassageReport, ComplexityScore, Archetype, PassageWindow } from "../plan/types";
+import {
+  loadLastSimulation,
+  saveLastSimulation,
+  waypointsEqual,
+  type LastSimulation,
+} from "../plan/lastSimulation";
 import { cxLevel, CX_COLORS } from "../plan/types";
 import { aggregateLegs } from "../plan/aggregateLegs";
 
@@ -261,6 +267,23 @@ export function PlanPage() {
         window.history.replaceState(null, "", url);
         const ttl = 7 * 24 * 3600;
         document.cookie = `ow_last_trip=${encodeURIComponent(window.location.href)};max-age=${ttl};path=/;SameSite=Lax`;
+        // Persist for next visit. Merge into existing cache so a previously
+        // saved compare-mode result stays available.
+        const prev = loadLastSimulation();
+        const sameRoute =
+          prev && waypointsEqual(prev.waypoints, wpts) && prev.archetype === arch;
+        saveLastSimulation({
+          waypoints: wpts,
+          archetype: arch,
+          single: {
+            departure: dep,
+            passage: res.passage,
+            complexity: res.complexity,
+            forecastUpdatedAt: res.forecast_updated_at,
+          },
+          compare: sameRoute ? prev?.compare : undefined,
+          cachedAt: Date.now(),
+        });
       })
       .catch((e: Error) => setApiError(friendlyError(e.message)))
       .finally(() => setIsLoading(false));
@@ -268,6 +291,37 @@ export function PlanPage() {
 
   useEffect(() => {
     if (!isParsedOk(initialParsed) || initialParsed.waypoints.length < 2) return;
+    // Try the localStorage cache first: if we have a saved simulation for the
+    // same route + archetype, hydrate state directly and skip the network call.
+    // The user sees their last plan instantly on reload.
+    const cached: LastSimulation | null = loadLastSimulation();
+    const cacheMatches =
+      cached &&
+      waypointsEqual(cached.waypoints, initialParsed.waypoints) &&
+      cached.archetype === initialParsed.archetype;
+    if (cacheMatches) {
+      // Restore single-mode result if its departure matches the URL departure.
+      if (cached.single && cached.single.departure === departure) {
+        setPassage(cached.single.passage);
+        setComplexity(cached.single.complexity);
+        setForecastUpdatedAt(cached.single.forecastUpdatedAt);
+      }
+      // Always restore compare-mode windows + sweep params if present —
+      // sweep range isn't encoded in the URL, so we trust the cache.
+      if (cached.compare) {
+        setWindows(cached.compare.windows);
+        setMetaWarnings(cached.compare.metaWarnings);
+        setSweepEarliest(cached.compare.sweepEarliest);
+        setSweepLatest(cached.compare.sweepLatest);
+        setSweepInterval(cached.compare.sweepIntervalHours);
+        setSweepTargetEta(cached.compare.sweepTargetEta ?? "");
+        if (!cached.single || cached.single.departure !== departure) {
+          setForecastUpdatedAt(cached.compare.forecastUpdatedAt);
+        }
+      }
+      // If we restored anything, skip the auto-fetch.
+      if (cached.single || cached.compare) return;
+    }
     doFetch(initialParsed.waypoints, initialParsed.archetype, departure);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -325,10 +379,28 @@ export function PlanPage() {
         setWindows(res.windows);
         setMetaWarnings(res.meta_warnings);
         setForecastUpdatedAt(res.forecast_updated_at);
-        // Clear single-mode results so the sidebar swaps view cleanly.
-        setPassage(null);
-        setComplexity(null);
+        // Don't clear single-mode results — render gates on `mode` instead.
         setIsStale(false);
+        // Persist for next visit. Merge with existing single-mode cache if
+        // the route still matches.
+        const prev = loadLastSimulation();
+        const sameRoute =
+          prev && waypointsEqual(prev.waypoints, waypoints) && prev.archetype === archetype;
+        saveLastSimulation({
+          waypoints,
+          archetype,
+          single: sameRoute ? prev?.single : undefined,
+          compare: {
+            sweepEarliest,
+            sweepLatest,
+            sweepIntervalHours: sweepInterval,
+            sweepTargetEta: sweepTargetEta || undefined,
+            windows: res.windows,
+            metaWarnings: res.meta_warnings,
+            forecastUpdatedAt: res.forecast_updated_at,
+          },
+          cachedAt: Date.now(),
+        });
       })
       .catch((e: Error) => setApiError(friendlyError(e.message)))
       .finally(() => setIsLoading(false));
@@ -338,31 +410,47 @@ export function PlanPage() {
     if (next === planMode) return;
     setPlanMode(next);
     setApiError(null);
-    // Drop the opposite mode's results so the sidebar renders the right view.
-    if (next === "compare") {
-      setPassage(null);
-      setComplexity(null);
-    } else {
-      setWindows(null);
-      setMetaWarnings([]);
-    }
+    // Don't clear opposite-mode results: keeping `passage` and `windows`
+    // both in memory lets the user toggle back and forth without re-fetching.
+    // The render branches gate on `mode` so stale data never leaks visually.
   }
 
   // Drill-down from the compare-windows table: pick a window → switch to
-  // single mode with that window's departure pre-filled, then fetch.
+  // single mode with that window's departure pre-filled.
+  // Fast path: the sweep response already includes `passage` and
+  // `complexity_full` per window — hydrate state directly, zero re-fetch.
+  // Fallback: older HF Space deployments don't include those fields → call
+  // doFetch as before so the UX still works during deployment lag.
   function handleWindowSelect(w: PassageWindow) {
-    // Convert TZ-aware ISO from the backend to the naive local "YYYY-MM-DDTHH:MM"
-    // shape that the single-mode departure input expects.
     const d = new Date(w.departure);
     const pad = (n: number) => String(n).padStart(2, "0");
     const naiveDep = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
     setPlanMode("single");
     setDeparture(naiveDep);
-    setWindows(null);
     setMetaWarnings([]);
     setApiError(null);
-    doFetch(waypoints, archetype, naiveDep);
+
+    if (w.passage && w.complexity_full) {
+      // Hydrate from the in-memory window — instant.
+      setPassage(w.passage);
+      setComplexity(w.complexity_full);
+      setIsLoading(false);
+      setIsStale(false);
+      // Update URL + cookie so reload restores the same view.
+      const url = buildPlanUrl(waypoints, naiveDep, archetype);
+      window.history.replaceState(null, "", url);
+      const ttl = 7 * 24 * 3600;
+      document.cookie = `ow_last_trip=${encodeURIComponent(window.location.href)};max-age=${ttl};path=/;SameSite=Lax`;
+      // Keep windows around so the user can switch back to compare mode and
+      // see the table again without re-fetching the sweep.
+      // setWindows(null) intentionally NOT called — user toggling back to
+      // compare should see their table immediately.
+    } else {
+      // Backwards-compatible fallback: re-fetch.
+      setWindows(null);
+      doFetch(waypoints, archetype, naiveDep);
+    }
   }
 
   if (!isParsedOk(initialParsed)) {

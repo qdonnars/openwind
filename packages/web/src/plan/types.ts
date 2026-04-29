@@ -83,6 +83,11 @@ export interface PassageWindow {
   };
   conditions_summary: ConditionsSummary;
   warnings: string[];
+  // Full per-window detail for instant drill-down (no re-fetch). Optional
+  // because older HF Space deployments may still serve responses without
+  // these fields — frontend must fall back to fetching when missing.
+  passage?: PassageReport;
+  complexity_full?: ComplexityScore;
 }
 
 export interface MultiWindowResponse {
