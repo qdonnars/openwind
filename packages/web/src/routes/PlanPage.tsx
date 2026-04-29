@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { parsePlanUrl, isParsedOk, buildPlanUrl } from "../plan/parseUrl";
 import { PlanMap, type PlanMapHandle } from "../plan/PlanMap";
 import { PlanSidebar } from "../plan/PlanSidebar";
-import { fetchPassage, fetchPassageWindows, fetchArchetypes } from "../api/passage";
+import { fetchPassage, fetchPassageWindows, fetchArchetypes, friendlyError } from "../api/passage";
 import { ThemeToggle } from "../design/theme";
 import { SpotSearch } from "../components/SpotSearch";
 import type { PassageReport, ComplexityScore, Archetype, PassageWindow } from "../plan/types";
@@ -262,7 +262,7 @@ export function PlanPage() {
         const ttl = 7 * 24 * 3600;
         document.cookie = `ow_last_trip=${encodeURIComponent(window.location.href)};max-age=${ttl};path=/;SameSite=Lax`;
       })
-      .catch((e: Error) => setApiError(e.message))
+      .catch((e: Error) => setApiError(friendlyError(e.message)))
       .finally(() => setIsLoading(false));
   }
 
@@ -330,7 +330,7 @@ export function PlanPage() {
         setComplexity(null);
         setIsStale(false);
       })
-      .catch((e: Error) => setApiError(e.message))
+      .catch((e: Error) => setApiError(friendlyError(e.message)))
       .finally(() => setIsLoading(false));
   }
 

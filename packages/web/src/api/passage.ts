@@ -2,6 +2,30 @@ import type { PassageResponse, MultiWindowResponse, Archetype } from "../plan/ty
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "https://qdonnars-openwind-mcp.hf.space";
 
+// Translate known backend error messages to actionable French. Returns the
+// original string if no rule matches, so unknown errors stay debuggable.
+export function friendlyError(raw: string): string {
+  if (/forecast horizon exceeded/i.test(raw)) {
+    return "Cette date est trop loin dans le futur — la météo n'est fiable que sur ~14 jours. Choisissez une date plus proche.";
+  }
+  if (/at least 2 waypoints/i.test(raw)) {
+    return "Placez au moins 2 waypoints sur la carte pour calculer une route.";
+  }
+  if (/unknown archetype/i.test(raw)) {
+    return "Type de bateau inconnu. Sélectionnez un archétype dans la liste.";
+  }
+  if (/invalid (departure|latest_departure|target_eta)/i.test(raw)) {
+    return "Date invalide. Vérifiez le format des champs date.";
+  }
+  if (/sweep would produce \d+ windows/i.test(raw)) {
+    return "Trop de créneaux à comparer. Réduisez la fenêtre ou augmentez le pas d'échantillonnage.";
+  }
+  if (/Erreur serveur 5\d\d/.test(raw) || /HTTP 5\d\d/.test(raw)) {
+    return "Le serveur météo est indisponible. Réessayez dans quelques instants.";
+  }
+  return raw;
+}
+
 export async function fetchPassage(params: {
   waypoints: [number, number][];
   departure: string;

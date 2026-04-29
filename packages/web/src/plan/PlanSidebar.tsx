@@ -177,6 +177,52 @@ const SWEEP_INTERVALS: { value: number; label: string }[] = [
   { value: 6, label: "Toutes les 6h" },
 ];
 
+// Match the single-mode slider cap: Open-Meteo forecast tops out at ~today+15;
+// we keep 14 d to leave 1 d of margin for clock skew / TZ crossings.
+const SWEEP_HORIZON_DAYS = 14;
+// Backend safety cap: 14 d × 24 h = 336 windows. Mirror it here so we can
+// surface a friendly hint before sending an oversize request.
+const MAX_SWEEP_WINDOWS = 336;
+
+export interface SweepValidation {
+  ok: boolean;
+  message?: string;
+}
+
+export function validateSweep(earliest: string, latest: string, intervalHours: number): SweepValidation {
+  if (!earliest || !latest) return { ok: false, message: "Renseignez une fenêtre de départ." };
+  const e = new Date(earliest);
+  const l = new Date(latest);
+  if (Number.isNaN(e.getTime()) || Number.isNaN(l.getTime())) {
+    return { ok: false, message: "Dates invalides." };
+  }
+  if (l.getTime() <= e.getTime()) {
+    return { ok: false, message: "Le « plus tard » doit être après le « plus tôt »." };
+  }
+  const horizonMs = SWEEP_HORIZON_DAYS * 86_400_000;
+  const now = new Date();
+  if (l.getTime() - now.getTime() > horizonMs) {
+    return {
+      ok: false,
+      message: `La météo n'est fiable que sur ${SWEEP_HORIZON_DAYS} jours. Choisissez une date plus tôt.`,
+    };
+  }
+  const windows = Math.floor((l.getTime() - e.getTime()) / 3_600_000 / intervalHours) + 1;
+  if (windows > MAX_SWEEP_WINDOWS) {
+    return {
+      ok: false,
+      message: `Trop de créneaux à comparer (${windows}). Réduisez la fenêtre ou augmentez le pas.`,
+    };
+  }
+  return { ok: true };
+}
+
+// Minimal "YYYY-MM-DDTHH:MM" formatter from a Date (local time).
+function toLocalIsoMin(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function SweepForm({
   earliest,
   latest,
@@ -201,6 +247,18 @@ function SweepForm({
   const colorScheme = resolvedTheme === "light" ? "light" : "dark";
   const [showEta, setShowEta] = useState(targetEta !== "");
 
+  // Bound the date pickers to [now, now + SWEEP_HORIZON_DAYS] so users can't
+  // pick something the forecast won't cover. Memoised so the picker doesn't
+  // jitter as the user types.
+  const { minIso, maxIso } = useMemo(() => {
+    const now = new Date();
+    now.setSeconds(0, 0);
+    const max = new Date(now.getTime() + SWEEP_HORIZON_DAYS * 86_400_000);
+    return { minIso: toLocalIsoMin(now), maxIso: toLocalIsoMin(max) };
+  }, []);
+
+  const validation = validateSweep(earliest, latest, intervalHours);
+
   const inputStyle = {
     background: "var(--ow-bg-2)",
     color: "var(--ow-fg-0)",
@@ -218,6 +276,8 @@ function SweepForm({
         <input
           type="datetime-local"
           value={earliest}
+          min={minIso}
+          max={maxIso}
           onChange={(e) => onEarliestChange(e.target.value)}
           className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums"
           style={inputStyle}
@@ -231,10 +291,17 @@ function SweepForm({
         <input
           type="datetime-local"
           value={latest}
+          min={earliest || minIso}
+          max={maxIso}
           onChange={(e) => onLatestChange(e.target.value)}
           className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums"
           style={inputStyle}
         />
+        {!validation.ok && validation.message && (
+          <p className="text-[11px] mt-1" style={{ color: "var(--ow-warn)" }}>
+            {validation.message}
+          </p>
+        )}
       </div>
 
       <div>
@@ -279,6 +346,8 @@ function SweepForm({
           <input
             type="datetime-local"
             value={targetEta}
+            min={earliest || minIso}
+            max={maxIso}
             onChange={(e) => onTargetEtaChange(e.target.value)}
             className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums mt-1.5"
             style={inputStyle}
@@ -465,7 +534,10 @@ export function PlanSidebar({
   onCompareFetch,
 }: PlanSidebarProps) {
   const { resolvedTheme } = useTheme();
-  const canCalculate = waypointCount >= 2;
+  const sweepValid = mode === "compare"
+    ? validateSweep(sweepEarliest, sweepLatest, sweepIntervalHours)
+    : { ok: true } as SweepValidation;
+  const canCalculate = waypointCount >= 2 && (mode === "single" || sweepValid.ok);
 
   if (isLoading) {
     return (
