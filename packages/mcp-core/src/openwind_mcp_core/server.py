@@ -63,15 +63,20 @@ PLAN_UI_RESOURCE_URI = "ui://openwind/plan-passage"
 PLAN_UI_MIME = "text/html;profile=mcp-app"
 PLAN_UI_FRAME_DOMAINS = ["https://openwind.fr"]
 
-# Body of the MCP Apps UI resource. Vanilla JS — no external deps so the
-# sandbox CSP doesn't need to whitelist a CDN. Implements just enough of the
-# postMessage protocol to (a) surface ``ui/initialize`` ready-state to the
-# host and (b) listen for any incoming structured content with an
-# ``openwind_url`` field, then bind the inner iframe to it.
+# Body of the MCP Apps UI resource. Vanilla JS implementing the actual MCP
+# Apps spec handshake (per https://github.com/modelcontextprotocol/ext-apps,
+# spec rev 2026-01-26):
 #
-# Multi-shape match is intentional: the spec evolves, and different hosts
-# (Claude.ai, Claude Desktop, ChatGPT, …) ship slightly different framings.
-# Falls back to an "Open in openwind.fr" CTA if nothing lands in 6 s.
+#   1. Iframe sends ``ui/initialize`` JSON-RPC request on load.
+#   2. Host responds (we ignore the body — we just need the handshake done).
+#   3. Host pushes ``ui/notifications/tool-result`` when the tool finishes,
+#      with the standard ``CallToolResult`` shape:
+#      ``{ structuredContent: { ...tool return... }, content: [...], ... }``
+#   4. We extract ``openwind_url`` (single mode) or ``windows[0].openwind_url``
+#      (sweep mode) and bind the iframe src.
+#
+# Defensive fallback paths kept for shape variations across hosts
+# (Claude.ai vs Claude Desktop vs ChatGPT vs MCPJam may differ slightly).
 _PLAN_WIDGET_HTML = """<!doctype html>
 <html lang="fr">
 <head>
@@ -84,7 +89,7 @@ _PLAN_WIDGET_HTML = """<!doctype html>
     iframe{width:100%;height:100%;border:0;display:block}
     .placeholder{display:flex;flex-direction:column;align-items:center;
       justify-content:center;height:100%;padding:2rem;text-align:center;gap:.6rem}
-    .placeholder .dim{color:#777169;font-size:.95rem}
+    .placeholder .dim{color:#777169;font-size:.9rem}
     .placeholder a{color:#1D9E75;text-decoration:none;padding:.55rem 1rem;
       border:1px solid #1D9E75;border-radius:8px;font-weight:600}
     @media (prefers-color-scheme:dark){
@@ -98,34 +103,23 @@ _PLAN_WIDGET_HTML = """<!doctype html>
   <div id="root">
     <div class="placeholder">
       <p>Chargement du plan…</p>
-      <p class="dim">Si rien n'apparaît, ouvrez le plan complet :</p>
+      <p class="dim">Si rien n'apparaît :</p>
       <a id="fallback" href="https://openwind.fr/plan" target="_blank" rel="noopener">openwind.fr →</a>
     </div>
   </div>
   <script>
   (function(){
-    var loaded = false;
-    function findUrl(o){
-      if(!o || typeof o !== 'object') return null;
-      if(typeof o.openwind_url === 'string') return o.openwind_url;
-      // Sweep mode: pick the first window's URL as a sensible default.
-      if(Array.isArray(o.windows) && o.windows[0] && o.windows[0].openwind_url){
-        return o.windows[0].openwind_url;
-      }
-      // Recurse into common wrappers used by various MCP hosts.
-      var keys = ['structuredContent','result','toolResult','params','content','data','payload'];
-      for(var i=0;i<keys.length;i++){
-        var v = o[keys[i]];
-        if(v){
-          var found = findUrl(v);
-          if(found) return found;
-        }
-      }
-      return null;
+    var bound = false;
+    var nextId = 1;
+
+    function send(msg){
+      try { window.parent && window.parent.postMessage(msg, '*'); }
+      catch(e){}
     }
-    function show(url){
-      if(loaded) return;
-      loaded = true;
+
+    function bindIframe(url){
+      if(bound) return;
+      bound = true;
       var root = document.getElementById('root');
       var iframe = document.createElement('iframe');
       iframe.src = url;
@@ -135,36 +129,63 @@ _PLAN_WIDGET_HTML = """<!doctype html>
       root.innerHTML = '';
       root.appendChild(iframe);
     }
-    function showFallback(url){
+
+    function updateFallbackLink(url){
       var a = document.getElementById('fallback');
       if(a && url){ a.href = url; }
     }
-    window.addEventListener('message', function(ev){
-      try {
-        var url = findUrl(ev.data);
-        if(url){ show(url); }
-      } catch(e){ /* ignore */ }
-    });
-    // Announce ready-state to the host so it knows to push the result.
-    // We send a few well-known shapes since the spec field is method-name.
-    function announceReady(){
-      var msgs = [
-        {jsonrpc:'2.0',method:'ui/ready',params:{}},
-        {jsonrpc:'2.0',method:'ui/initialize',params:{}},
-        {type:'ui-ready'}
-      ];
-      try {
-        for(var i=0;i<msgs.length;i++){
-          window.parent && window.parent.postMessage(msgs[i],'*');
-        }
-      } catch(e){ /* ignore */ }
+
+    // CallToolResult.structuredContent -> openwind_url, with sweep fallback
+    // and a few defensive lookups for older or alternate framings.
+    function extractUrl(payload){
+      if(!payload || typeof payload !== 'object') return null;
+      var sc = payload.structuredContent
+            || (payload.params && payload.params.structuredContent)
+            || (payload.result && payload.result.structuredContent)
+            || payload;
+      if(!sc) return null;
+      if(typeof sc.openwind_url === 'string') return sc.openwind_url;
+      if(Array.isArray(sc.windows) && sc.windows[0] && sc.windows[0].openwind_url){
+        return sc.windows[0].openwind_url;
+      }
+      return null;
     }
-    if(document.readyState === 'complete'){ announceReady(); }
-    else { window.addEventListener('load', announceReady); }
-    // Hard fallback: keep the placeholder + CTA visible if nothing lands.
-    setTimeout(function(){
-      if(!loaded){ /* placeholder stays; fallback link works */ }
-    }, 6000);
+
+    window.addEventListener('message', function(ev){
+      var msg = ev.data;
+      if(!msg) return;
+      var method = msg.method;
+
+      // Spec method we care about: tool result delivered to the view.
+      if(method === 'ui/notifications/tool-result'
+         || method === 'notifications/tool-result'
+         || method === 'ui/tool-result'){
+        var url = extractUrl(msg.params || msg);
+        if(url){ bindIframe(url); updateFallbackLink(url); }
+        return;
+      }
+
+      // Some hosts may push the tool result as a plain message (non-JSON-RPC).
+      if(!method){
+        var url2 = extractUrl(msg);
+        if(url2){ bindIframe(url2); updateFallbackLink(url2); }
+      }
+    });
+
+    // Spec initialize handshake. Without it, several hosts won't push the
+    // tool-result notification.
+    function initialize(){
+      send({
+        jsonrpc: '2.0', id: nextId++, method: 'ui/initialize',
+        params: {
+          protocolVersion: '2026-01-26',
+          appCapabilities: {},
+          clientInfo: { name: 'openwind-plan-widget', version: '1' }
+        }
+      });
+    }
+    if(document.readyState === 'complete'){ initialize(); }
+    else { window.addEventListener('load', initialize); }
   })();
   </script>
 </body>
@@ -467,6 +488,23 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         On hosts without MCP Apps support (Cursor, Le Chat, terminal), present
         a short text summary of the result (route, ETA, complexity, warnings)
         and offer ``openwind_url`` as the "View full plan →" link.
+
+        ## ALWAYS include the openwind_url(s) in your text reply
+
+        Even when the widget renders inline, the user wants the link spelled
+        out so they can open the full app, share it, or bookmark it. Treat
+        this as a hard requirement, not a fallback:
+
+        - **Single mode**: end your reply with a Markdown link, e.g.
+          ``[Voir le plan détaillé →](https://openwind.fr/plan?…)``.
+        - **Compare-windows mode**: list 2-4 of the most relevant windows
+          and give each its own link, e.g.
+          ``- Sam 2 mai 09h · 11h12 · ⚡2/5 — [voir →](url)``.
+          The user picks one from the chat, not the widget.
+
+        Phrase the link with intent ("voir le plan détaillé", "ouvrir cette
+        fenêtre dans l'app"), not just a bare URL — the user should know
+        what clicking does.
 
         ## Args
 
