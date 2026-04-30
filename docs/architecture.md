@@ -20,8 +20,10 @@ on the server.
         │  openwind-mcp-core   (FastMCP, cloud-agnostic)│
         │   ┌── list_boat_archetypes                    │
         │   ├── get_marine_forecast                     │
-        │   ├── estimate_passage                   │
-        │   └── score_complexity                   │
+        │   ├── plan_passage    (single + compare-      │
+        │   │                    windows mode; declares │
+        │   │                    MCP Apps UI resource)  │
+        │   └── read_me                                 │
         └────────────┬─────────────────────────────────┘
                      │ pure Python calls
         ┌────────────▼─────────────────────────────────┐
@@ -50,15 +52,21 @@ A typical Claude Desktop conversation produces this tool sequence:
 2. **Sample the forecast.** `get_marine_forecast(lat, lon, start, end)` for the
    route's midpoint(s) and the candidate window. AROME is the default model
    for the Mediterranean. Claude reads wind, gusts, and (when relevant) Hs.
-3. **Estimate the passage.** `estimate_passage(waypoints, departure,
-   archetype)` returns per-segment timing, TWA, polar speed, and warnings.
-   The server fetches one wind bundle per segment (single-pass approximation;
-   no convergence loop — challenge #7 in `plan/01-challenges.md`).
-4. **Score it.** `score_complexity(...)` returns a 1-5 difficulty level
-   from wind max (and Hs max if the LLM passes one). The level is a hint;
-   Claude is expected to re-frame qualitatively.
-5. **Render.** Claude narrates: arrival ETA, complexity, warnings, and (V2)
-   produces a `/plan?...` URL the standalone web app can render statically.
+3. **Plan the passage.** `plan_passage(waypoints, departure, archetype)`
+   returns, in a single call: per-segment timing (TWA, polar speed,
+   warnings), a 1-5 complexity score, and an `openwind.fr/plan?...`
+   deep-link. The server fetches one wind bundle per segment (single-pass
+   approximation; no convergence loop). When the caller passes
+   `latest_departure`, the same call sweeps hourly windows over the route
+   and returns a list — the LLM compares qualitatively.
+4. **Render & narrate.** The tool declares
+   `_meta.ui.resourceUri = ui://openwind/plan-passage`, so MCP-Apps-aware
+   hosts (Claude, Claude Desktop, ChatGPT, VS Code Copilot, Goose, Postman,
+   MCPJam) auto-render the live openwind.fr/plan view in a sandboxed
+   iframe. Hosts without MCP Apps support fall back to a text summary
+   (ETA / complexity / warnings) plus the `openwind_url` deep-link. If the
+   user later asks "how is this computed?", the LLM calls `read_me` and
+   quotes the methodology.
 
 The server **never decides** the trip is good or bad. It returns numbers; the
 LLM produces the verdict.
@@ -94,7 +102,7 @@ Re-deploying anywhere = writing a new wrapper that calls `build_server()`.
 
 ## Failure modes by design
 
-- **Single-pass timing.** `estimate_passage` does not iterate to convergence.
+- **Single-pass timing.** `plan_passage` does not iterate to convergence.
   Bias is bounded for typical Med passages (< few hours of forecast offset is
   inside the temporal correlation length).
 - **Efficiency 0.75.** ORC polars are theoretical maxima; cruisers lose ~25%

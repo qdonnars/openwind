@@ -34,9 +34,13 @@ https://qdonnars-openwind-mcp.hf.space/mcp
 > *"I'm leaving Marseille tomorrow morning for Porquerolles on a Sun Odyssey
 > 36. How long is the passage and how tricky is it?"*
 
-**3.** Your assistant calls the OpenWind tools, renders an inline preview
-card, and hands you a deep-link to the full plan on
-[openwind.fr](https://openwind.fr). No account. No API key. No credit card.
+**3.** Your assistant calls the OpenWind tools and answers in plain language.
+On hosts that support the [MCP Apps spec](https://modelcontextprotocol.io/extensions/client-matrix)
+(Claude, Claude Desktop, ChatGPT, VS Code Copilot, Goose, Postman, MCPJam) you
+also get the live [openwind.fr](https://openwind.fr) plan view rendered
+inline. On hosts that don't (Cursor, Le Chat, terminal), the assistant hands
+you the same plan as a deep-link instead. No account. No API key. No credit
+card.
 
 > **First time with MCP?** Pick your client on
 > [modelcontextprotocol.io/clients](https://modelcontextprotocol.io/clients),
@@ -48,20 +52,20 @@ card, and hands you a deep-link to the full plan on
 ## Why OpenWind
 
 - **Free & keyless** — wind + sea data via [Open-Meteo](https://open-meteo.com) (CC BY 4.0).
-- **Mediterranean-tuned** — AROME 1.3 km by default, catches thermals & mistral. ICON-EU / GFS for longer reach.
-- **Boat-aware** — 5 archetypes, real polars, `efficiency` knob for trim and crew level.
-- **Client-agnostic** — one HTTP MCP endpoint, no vendor lock-in.
+- **Mediterranean-tuned** — AROME 1.3 km by default, catches thermals & mistral. ICON-EU → ECMWF → GFS for longer reach.
+- **Boat-aware** — 5 archetypes, real polars, `efficiency` parameter for trim and crew level.
+- **Window-aware** — one call sweeps up to 14 days of hourly departures so the LLM can pick the calmest slot.
+- **Client-agnostic** — one HTTP MCP endpoint, no vendor lock-in. Rich [MCP Apps](https://modelcontextprotocol.io/extensions/client-matrix) widget on supporting hosts; clean deep-link fallback on the rest.
 - **Open source, MIT** — self-host on Fly, Modal, your VPS in minutes.
 
-## Five tools
+## Four tools
 
 | Tool                      | What it does                                                              |
 |---------------------------|---------------------------------------------------------------------------|
 | `list_boat_archetypes`    | Five descriptive archetypes; the LLM maps "Sun Odyssey 36" → `cruiser_30ft`. |
 | `get_marine_forecast`     | Wind + sea around a point/window, multi-model.                            |
-| `estimate_passage`        | Per-segment timing along a polyline of waypoints.                         |
-| `score_complexity`        | 1–5 difficulty score from wind (and optional max wave height).            |
-| `read_me`                 | Hands the client a self-contained HTML widget for inline rendering.       |
+| `plan_passage`            | End-to-end: per-leg timing + 1–5 complexity + openwind.fr deep-link, in one call. Pass `latest_departure` and it walks every hourly window up to 14 days out so the LLM can compare side-by-side. Declares an MCP Apps UI resource — supporting hosts auto-render the live plan in a sandboxed iframe. |
+| `read_me`                 | Returns OpenWind's calculation methodology — call when the user asks how things are computed. |
 
 ## About this Space
 
@@ -82,8 +86,7 @@ Fly, Modal, or a VPS by writing a different wrapper.
 ## Cold-start
 
 Free CPU-basic hardware sleeps after 48 h of inactivity. First request after
-sleep takes ~5 s to wake. Acceptable for V1 (cf.
-[plan decision #4](https://github.com/qdonnars/openwind/blob/main/plan/04-backlog.md)).
+sleep takes ~5 s to wake. Acceptable for V1.
 
 ## License
 
