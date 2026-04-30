@@ -63,6 +63,114 @@ PLAN_UI_RESOURCE_URI = "ui://openwind/plan-passage"
 PLAN_UI_MIME = "text/html;profile=mcp-app"
 PLAN_UI_FRAME_DOMAINS = ["https://openwind.fr"]
 
+# Body of the MCP Apps UI resource. Vanilla JS — no external deps so the
+# sandbox CSP doesn't need to whitelist a CDN. Implements just enough of the
+# postMessage protocol to (a) surface ``ui/initialize`` ready-state to the
+# host and (b) listen for any incoming structured content with an
+# ``openwind_url`` field, then bind the inner iframe to it.
+#
+# Multi-shape match is intentional: the spec evolves, and different hosts
+# (Claude.ai, Claude Desktop, ChatGPT, …) ship slightly different framings.
+# Falls back to an "Open in openwind.fr" CTA if nothing lands in 6 s.
+_PLAN_WIDGET_HTML = """<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OpenWind</title>
+  <style>
+    html,body{margin:0;height:100%;background:#FAF7EE;color:#1A1A1A;
+      font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+    iframe{width:100%;height:100%;border:0;display:block}
+    .placeholder{display:flex;flex-direction:column;align-items:center;
+      justify-content:center;height:100%;padding:2rem;text-align:center;gap:.6rem}
+    .placeholder .dim{color:#777169;font-size:.95rem}
+    .placeholder a{color:#1D9E75;text-decoration:none;padding:.55rem 1rem;
+      border:1px solid #1D9E75;border-radius:8px;font-weight:600}
+    @media (prefers-color-scheme:dark){
+      html,body{background:#15140F;color:#F2F2F2}
+      .placeholder .dim{color:#888780}
+      .placeholder a{color:#2BBE93;border-color:#2BBE93}
+    }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div class="placeholder">
+      <p>Chargement du plan…</p>
+      <p class="dim">Si rien n'apparaît, ouvrez le plan complet :</p>
+      <a id="fallback" href="https://openwind.fr/plan" target="_blank" rel="noopener">openwind.fr →</a>
+    </div>
+  </div>
+  <script>
+  (function(){
+    var loaded = false;
+    function findUrl(o){
+      if(!o || typeof o !== 'object') return null;
+      if(typeof o.openwind_url === 'string') return o.openwind_url;
+      // Sweep mode: pick the first window's URL as a sensible default.
+      if(Array.isArray(o.windows) && o.windows[0] && o.windows[0].openwind_url){
+        return o.windows[0].openwind_url;
+      }
+      // Recurse into common wrappers used by various MCP hosts.
+      var keys = ['structuredContent','result','toolResult','params','content','data','payload'];
+      for(var i=0;i<keys.length;i++){
+        var v = o[keys[i]];
+        if(v){
+          var found = findUrl(v);
+          if(found) return found;
+        }
+      }
+      return null;
+    }
+    function show(url){
+      if(loaded) return;
+      loaded = true;
+      var root = document.getElementById('root');
+      var iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.title = 'OpenWind passage plan';
+      iframe.allow = 'clipboard-write';
+      iframe.referrerPolicy = 'no-referrer';
+      root.innerHTML = '';
+      root.appendChild(iframe);
+    }
+    function showFallback(url){
+      var a = document.getElementById('fallback');
+      if(a && url){ a.href = url; }
+    }
+    window.addEventListener('message', function(ev){
+      try {
+        var url = findUrl(ev.data);
+        if(url){ show(url); }
+      } catch(e){ /* ignore */ }
+    });
+    // Announce ready-state to the host so it knows to push the result.
+    // We send a few well-known shapes since the spec field is method-name.
+    function announceReady(){
+      var msgs = [
+        {jsonrpc:'2.0',method:'ui/ready',params:{}},
+        {jsonrpc:'2.0',method:'ui/initialize',params:{}},
+        {type:'ui-ready'}
+      ];
+      try {
+        for(var i=0;i<msgs.length;i++){
+          window.parent && window.parent.postMessage(msgs[i],'*');
+        }
+      } catch(e){ /* ignore */ }
+    }
+    if(document.readyState === 'complete'){ announceReady(); }
+    else { window.addEventListener('load', announceReady); }
+    // Hard fallback: keep the placeholder + CTA visible if nothing lands.
+    setTimeout(function(){
+      if(!loaded){ /* placeholder stays; fallback link works */ }
+    }, 6000);
+  })();
+  </script>
+</body>
+</html>
+"""
+
 
 def _archetype_summary(p: Any) -> dict[str, Any]:
     return {
@@ -188,30 +296,18 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         meta={"ui": {"csp": {"frameDomains": PLAN_UI_FRAME_DOMAINS}}},
     )
     def plan_widget_resource() -> str:
-        """MCP Apps UI resource: a thin HTML doc that iframes openwind.fr/plan.
+        """MCP Apps UI resource — iframe wrapper for openwind.fr/plan.
 
-        The query string of the inner iframe is set client-side by the host
-        from the tool's structured output (waypoints, departure, archetype).
-        Hosts that support MCP Apps render this in a sandboxed iframe; the
-        nested openwind.fr iframe is allowed via the ``frameDomains`` CSP.
+        Receives the tool's ``structuredContent`` over postMessage (per the
+        MCP Apps spec — the host pushes results to the iframe via a
+        JSON-RPC dialect on the postMessage channel) and binds the inner
+        iframe's ``src`` to ``openwind_url`` from the result.
+
+        Defensive against multiple message shapes — different hosts have
+        different framings, and the spec is young — and falls back to a
+        deep-link CTA if no result arrives within 6 s.
         """
-        # The {{params}} placeholder is filled by the host from the tool's
-        # `structuredContent` (per the MCP Apps templating convention). If a
-        # host doesn't yet support templating, the iframe just opens
-        # openwind.fr's empty /plan view — still better than a render crash.
-        return (
-            "<!doctype html><html lang=\"fr\"><head>"
-            "<meta charset=\"utf-8\">"
-            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-            "<title>Plan</title>"
-            "<style>html,body{margin:0;height:100%;background:#FAF7EE}"
-            "iframe{width:100%;height:100%;border:0;display:block}</style>"
-            "</head><body>"
-            "<iframe src=\"https://openwind.fr/plan{{queryString}}\" "
-            "title=\"OpenWind passage plan\" "
-            "allow=\"geolocation; clipboard-write\"></iframe>"
-            "</body></html>"
-        )
+        return _PLAN_WIDGET_HTML
 
     @server.tool()
     def read_me() -> str:
@@ -303,14 +399,42 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         sweep_interval_hours: int = 1,
         target_eta: str | None = None,
     ) -> dict[str, Any]:
-        """Plan an A→B passage end-to-end: timing + complexity + deep-link.
+        """Plan an A→B passage. Compare departure windows by default; pin a
+        single departure only when the user gives an explicit time.
 
-        ONE call gives you everything for the typical "leaving Marseille for
-        Porquerolles tomorrow on a 30-footer" question. The server fetches
-        Open-Meteo once, computes the passage, scores its complexity from the
-        same report (no double-fetch), and emits the openwind.fr deep-link.
+        ## Tool routing — read this first
+
+        Before calling, classify the user's question:
+
+        1. **Pure weather lookup at a point** ("y aura-t-il du vent à Cassis
+           samedi à 14h ?", "quelles vagues dimanche au cap Sicié ?") — call
+           ``get_marine_forecast`` and answer in text. Do NOT call
+           ``plan_passage``: there's no route to plan.
+
+        2. **Trajet question with a flexible date** ("Marseille → Porquerolles
+           ce week-end", "demain ou après-demain", "dans les prochains jours")
+           — call ``plan_passage`` in **compare-windows mode**: pass
+           ``latest_departure`` (e.g. earliest+48h) and ``sweep_interval_hours``
+           (3 or 6 typically) so the user sees several departure scenarios
+           side-by-side. Then pick 2-3 good ones and let the user choose.
+           This is the **default** for trajet planning — same API cost as a
+           single passage thanks to cache prewarm, much more value.
+
+        3. **Trajet with a precise hour pinned by the user** ("je pars demain
+           à 8h", "départ Saturday 9am") — call ``plan_passage`` in single
+           mode (no ``latest_departure``). Used for the final "show me the
+           detailed plan for THIS departure" view, often after step 2.
+
+        4. **Methodology question** ("comment c'est calculé ?",
+           "quelle efficacité par défaut ?") — call ``read_me``.
+
+        Rule of thumb: if the user does NOT give an exact hour, prefer
+        compare-windows. The widget renders one of the windows by default
+        and the chat lets the user pick another.
 
         ## Returned payload
+
+        Single mode:
 
         - ``passage``: per-segment timing report (distance_nm, duration_h,
           model used, segments[] with TWS/TWA/boat_speed/Hs, warnings).
@@ -319,13 +443,26 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         - ``openwind_url``: deep-link to openwind.fr/plan that renders the
           same passage in the standalone web app.
 
+        Compare-windows mode (``latest_departure`` set):
+
+        - ``mode``: ``"multi_window"``.
+        - ``sweep``: ``earliest`` / ``latest`` / ``interval_hours`` /
+          ``window_count``.
+        - ``windows[]``: each entry has ``departure``, ``arrival``,
+          ``duration_h``, ``distance_nm``, ``complexity`` (level + label +
+          rationale), ``conditions_summary`` (tws_min/max, predominant sail
+          angle, hs_min/max), ``warnings``, ``passage`` (full per-segment
+          report), ``complexity_full`` (full score), ``openwind_url``.
+        - ``meta_warnings``: top-level notes ("3 fenêtres ignorées …").
+
         ## How it renders
 
         On hosts that support MCP Apps (Claude, Claude Desktop, ChatGPT, VS
         Code Copilot, Goose, Postman, MCPJam), the response is automatically
         accompanied by an interactive widget — the live openwind.fr/plan view
         served via the ``ui://openwind/plan-passage`` resource declared on
-        this tool's ``_meta``. Nothing to inject manually.
+        this tool's ``_meta``. The widget reads ``openwind_url`` from the
+        structured output and embeds the matching plan view as an iframe.
 
         On hosts without MCP Apps support (Cursor, Le Chat, terminal), present
         a short text summary of the result (route, ETA, complexity, warnings)
