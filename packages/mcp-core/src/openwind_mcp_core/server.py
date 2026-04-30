@@ -62,26 +62,34 @@ from .render import build_openwind_url
 PLAN_UI_RESOURCE_URI = "ui://openwind/plan-passage"
 PLAN_UI_MIME = "text/html;profile=mcp-app"
 PLAN_UI_FRAME_DOMAINS = ["https://openwind.fr"]
+# unpkg serves the official @modelcontextprotocol/ext-apps SDK bundle that
+# implements the ui/initialize -> ui/notifications/initialized handshake and
+# the ui/notifications/tool-result listener. Same CDN as the official
+# qr-server / say-server / threejs-server examples.
+PLAN_UI_RESOURCE_DOMAINS = ["https://unpkg.com"]
 
-# Body of the MCP Apps UI resource. Vanilla JS implementing the actual MCP
-# Apps spec handshake (per https://github.com/modelcontextprotocol/ext-apps,
-# spec rev 2026-01-26):
+# Body of the MCP Apps UI resource. Uses the official @modelcontextprotocol/
+# ext-apps SDK from unpkg — same pattern as the qr-server / say-server /
+# threejs-server reference examples in the ext-apps repo.
 #
-#   1. Iframe sends ``ui/initialize`` JSON-RPC request on load.
-#   2. Host responds (we ignore the body — we just need the handshake done).
-#   3. Host pushes ``ui/notifications/tool-result`` when the tool finishes,
-#      with the standard ``CallToolResult`` shape:
-#      ``{ structuredContent: { ...tool return... }, content: [...], ... }``
-#   4. We extract ``openwind_url`` (single mode) or ``windows[0].openwind_url``
-#      (sweep mode) and bind the iframe src.
+# Why the SDK (and not hand-rolled postMessage):
 #
-# Defensive fallback paths kept for shape variations across hosts
-# (Claude.ai vs Claude Desktop vs ChatGPT vs MCPJam may differ slightly).
+# The handshake has two messages, not one:
+#   1. ``ui/initialize`` REQUEST with ``params.appInfo`` (NOT clientInfo!) —
+#      different name from the core MCP ``initialize``.
+#   2. After the host responds, the iframe MUST send the
+#      ``ui/notifications/initialized`` notification before the host considers
+#      the view ready and starts pushing ``ui/notifications/tool-result``.
+#
+# Skipping (2) — or sending ``clientInfo`` instead of ``appInfo`` — leaves the
+# host in "view-not-ready" state forever, the iframe stays blank. Easier to
+# let the SDK handle that than to hand-roll it correctly.
 _PLAN_WIDGET_HTML = """<!doctype html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>OpenWind</title>
   <style>
     html,body{margin:0;height:100%;background:#FAF7EE;color:#1A1A1A;
@@ -107,86 +115,45 @@ _PLAN_WIDGET_HTML = """<!doctype html>
       <a id="fallback" href="https://openwind.fr/plan" target="_blank" rel="noopener">openwind.fr →</a>
     </div>
   </div>
-  <script>
-  (function(){
-    var bound = false;
-    var nextId = 1;
+  <script type="module">
+    import { App } from "https://unpkg.com/@modelcontextprotocol/ext-apps@0.4.0/app-with-deps";
 
-    function send(msg){
-      try { window.parent && window.parent.postMessage(msg, '*'); }
-      catch(e){}
+    function extractUrl(result) {
+      if (!result) return null;
+      const sc = result.structuredContent;
+      if (sc && typeof sc.openwind_url === 'string') return sc.openwind_url;
+      if (sc && Array.isArray(sc.windows) && sc.windows[0] && sc.windows[0].openwind_url) {
+        return sc.windows[0].openwind_url;
+      }
+      return null;
     }
 
-    function bindIframe(url){
-      if(bound) return;
-      bound = true;
-      var root = document.getElementById('root');
-      var iframe = document.createElement('iframe');
+    function bindIframe(url) {
+      const root = document.getElementById('root');
+      const iframe = document.createElement('iframe');
       iframe.src = url;
       iframe.title = 'OpenWind passage plan';
       iframe.allow = 'clipboard-write';
       iframe.referrerPolicy = 'no-referrer';
       root.innerHTML = '';
       root.appendChild(iframe);
+      const fb = document.getElementById('fallback');
+      if (fb) fb.href = url;
     }
 
-    function updateFallbackLink(url){
-      var a = document.getElementById('fallback');
-      if(a && url){ a.href = url; }
+    const app = new App({ name: "OpenWind Plan", version: "1.0.0" });
+
+    app.ontoolresult = (result) => {
+      const url = extractUrl(result);
+      if (url) bindIframe(url);
+    };
+
+    try {
+      await app.connect();
+    } catch (e) {
+      // Stay on the placeholder + clickable fallback — better than a hang.
+      console.error('[openwind] MCP App connect failed', e);
     }
-
-    // CallToolResult.structuredContent -> openwind_url, with sweep fallback
-    // and a few defensive lookups for older or alternate framings.
-    function extractUrl(payload){
-      if(!payload || typeof payload !== 'object') return null;
-      var sc = payload.structuredContent
-            || (payload.params && payload.params.structuredContent)
-            || (payload.result && payload.result.structuredContent)
-            || payload;
-      if(!sc) return null;
-      if(typeof sc.openwind_url === 'string') return sc.openwind_url;
-      if(Array.isArray(sc.windows) && sc.windows[0] && sc.windows[0].openwind_url){
-        return sc.windows[0].openwind_url;
-      }
-      return null;
-    }
-
-    window.addEventListener('message', function(ev){
-      var msg = ev.data;
-      if(!msg) return;
-      var method = msg.method;
-
-      // Spec method we care about: tool result delivered to the view.
-      if(method === 'ui/notifications/tool-result'
-         || method === 'notifications/tool-result'
-         || method === 'ui/tool-result'){
-        var url = extractUrl(msg.params || msg);
-        if(url){ bindIframe(url); updateFallbackLink(url); }
-        return;
-      }
-
-      // Some hosts may push the tool result as a plain message (non-JSON-RPC).
-      if(!method){
-        var url2 = extractUrl(msg);
-        if(url2){ bindIframe(url2); updateFallbackLink(url2); }
-      }
-    });
-
-    // Spec initialize handshake. Without it, several hosts won't push the
-    // tool-result notification.
-    function initialize(){
-      send({
-        jsonrpc: '2.0', id: nextId++, method: 'ui/initialize',
-        params: {
-          protocolVersion: '2026-01-26',
-          appCapabilities: {},
-          clientInfo: { name: 'openwind-plan-widget', version: '1' }
-        }
-      });
-    }
-    if(document.readyState === 'complete'){ initialize(); }
-    else { window.addEventListener('load', initialize); }
-  })();
   </script>
 </body>
 </html>
@@ -314,7 +281,16 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         PLAN_UI_RESOURCE_URI,
         name="OpenWind plan widget",
         mime_type=PLAN_UI_MIME,
-        meta={"ui": {"csp": {"frameDomains": PLAN_UI_FRAME_DOMAINS}}},
+        meta={
+            "ui": {
+                "csp": {
+                    # Allow the inner iframe to load openwind.fr.
+                    "frameDomains": PLAN_UI_FRAME_DOMAINS,
+                    # Allow the SDK bundle (same CDN as the official examples).
+                    "resourceDomains": PLAN_UI_RESOURCE_DOMAINS,
+                }
+            }
+        },
     )
     def plan_widget_resource() -> str:
         """MCP Apps UI resource — iframe wrapper for openwind.fr/plan.
