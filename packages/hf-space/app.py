@@ -178,11 +178,17 @@ LANDING_HTML = """<!doctype html>
     <summary>Le Chat (Mistral)</summary>
     <ol>
       <li>Open <a href="https://chat.mistral.ai" target="_blank" rel="noopener">chat.mistral.ai</a> and sign in.</li>
-      <li>In the left sidebar, click <strong>Connectors</strong>, then <strong>Add MCP server</strong>.</li>
-      <li>Set <strong>Name</strong>: <code>OpenWind</code> · <strong>Auth</strong>: <code>None</code>.</li>
+      <li>In the left sidebar, open <strong>Intelligence</strong> &rarr;
+        <strong>Connecteurs</strong> (in English:
+        <strong>Intelligence</strong> &rarr; <strong>Connectors</strong>),
+        then click <strong>Add MCP server</strong>.</li>
+      <li>Set <strong>Name</strong>: <code>OpenWind</code> &middot; <strong>Auth</strong>: <code>None</code>.</li>
       <li>Paste this in <strong>URL</strong>:
         <pre><code>https://qdonnars-openwind-mcp.hf.space/mcp</code></pre></li>
       <li>Save, then enable the OpenWind toggle inside any conversation.</li>
+      <li>Le Chat doesn&rsquo;t (yet) support the MCP Apps spec, so the
+        widget won&rsquo;t render inline &mdash; the assistant will hand you
+        an <a href="https://openwind.fr">openwind.fr</a> deep-link instead.</li>
     </ol>
   </details>
 
@@ -204,24 +210,44 @@ LANDING_HTML = """<!doctype html>
   <h2>Then ask, in your own words</h2>
   <blockquote>I'm leaving Marseille tomorrow morning for Porquerolles on a Sun Odyssey 36.
     How long is the passage and how tricky is it?</blockquote>
-  <p>Your assistant calls the OpenWind tools, renders an inline preview card, and hands
-    you a deep-link to the full plan on <a href="https://openwind.fr">openwind.fr</a>.</p>
+  <p>Your assistant calls the OpenWind tools and answers in plain language.
+    On hosts that support the
+    <a href="https://modelcontextprotocol.io/extensions/client-matrix" target="_blank" rel="noopener">MCP Apps spec</a>
+    (Claude, Claude Desktop, ChatGPT, VS Code Copilot, Goose, Postman, MCPJam),
+    the live <a href="https://openwind.fr">openwind.fr</a> plan view also
+    renders inline as a sandboxed iframe. On hosts that don&rsquo;t (Cursor,
+    Le Chat, terminal), the assistant hands you the same plan as a deep-link
+    instead.</p>
+  <p>Or to compare a whole weekend&rsquo;s worth of departure windows in one
+    shot:</p>
+  <blockquote>Marseille &rarr; Porquerolles, same boat &mdash; show me the
+    calmest departure between Saturday morning and Monday evening.</blockquote>
 
   <h2>Why OpenWind</h2>
   <ul class="perks">
     <li><strong>Free &amp; keyless.</strong> Wind + sea via
       <a href="https://open-meteo.com">Open-Meteo</a> (CC BY 4.0).</li>
-    <li><strong>Mediterranean-tuned.</strong> AROME 1.3 km by default — catches thermals &amp; mistral.</li>
-    <li><strong>Boat-aware.</strong> Five archetypes, real polars, an <code>efficiency</code> knob.</li>
+    <li><strong>Mediterranean-tuned.</strong> AROME 1.3 km by default; ICON-EU &rarr; ECMWF &rarr; GFS for longer reach.</li>
+    <li><strong>Boat-aware.</strong> Five archetypes, real polars, an <code>efficiency</code> parameter for trim and crew level.</li>
+    <li><strong>Window-aware.</strong> One call sweeps up to 14 days of hourly departures so the LLM can pick the calmest slot.</li>
     <li><strong>Client-agnostic.</strong> One HTTP MCP endpoint. No vendor lock-in.</li>
     <li><strong>Open source, MIT.</strong> Self-host on Fly, Modal, your VPS.</li>
   </ul>
 
-  <h2>Three tools</h2>
-  <p><code>list_boat_archetypes</code>, <code>get_marine_forecast</code>,
-    and <code>plan_passage</code> — the workhorse: one call returns timing,
-    1-5 complexity score, a ready-to-display HTML widget, and a deep-link
-    to the full plan on openwind.fr.</p>
+  <h2>Four tools</h2>
+  <p>The workhorse is <code>plan_passage</code>: one call returns timing, a
+    1-5 complexity score, and an <a href="https://openwind.fr">openwind.fr</a>
+    deep-link. It declares an MCP Apps UI resource, so supporting hosts also
+    render the live plan view in a sandboxed iframe. Pass
+    <code>latest_departure</code> and it walks every hourly window up to 14
+    days out so the LLM can compare side-by-side. The other three tools
+    &mdash; <code>list_boat_archetypes</code>,
+    <code>get_marine_forecast</code>, <code>read_me</code> &mdash; let the
+    assistant pick a boat, sample the forecast ad hoc, or explain the math
+    behind a result.</p>
+  <p>Don&rsquo;t want to wire an MCP host? You can also drive everything by
+    hand at <a href="https://openwind.fr/plan">openwind.fr/plan</a> &mdash;
+    click your route, pick a boat, slide the departure.</p>
 
   <h2>Source</h2>
   <p>Project site: <a href="https://openwind.fr">openwind.fr</a> &middot;
