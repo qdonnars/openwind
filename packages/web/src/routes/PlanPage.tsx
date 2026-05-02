@@ -306,6 +306,85 @@ function ResizableMobileDrawer({
   );
 }
 
+// ── ResizableDesktopSidebar ──────────────────────────────────────────────────
+// Desktop equivalent of ResizableMobileDrawer: vertical grab-handle on the left
+// edge adjusts width in px. Persists in localStorage so reload feels stable.
+// Useful when comparing windows — the 7-column table is cramped at 320–384 px.
+
+const SIDEBAR_WIDTH_KEY = "ow_sidebar_px_v1";
+const SIDEBAR_MIN_PX = 280;
+const SIDEBAR_MAX_PX = 800;
+
+function ResizableDesktopSidebar({
+  defaultPx,
+  children,
+}: {
+  defaultPx: number;
+  children: React.ReactNode;
+}) {
+  const [px, setPx] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      const parsed = raw ? Number(raw) : NaN;
+      return Number.isFinite(parsed)
+        ? Math.max(SIDEBAR_MIN_PX, Math.min(SIDEBAR_MAX_PX, parsed))
+        : defaultPx;
+    } catch {
+      return defaultPx;
+    }
+  });
+  const dragRef = useRef<{ startX: number; startPx: number } | null>(null);
+
+  function persist(next: number) {
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next)); } catch { /* best-effort */ }
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    dragRef.current = { startX: e.clientX, startPx: px };
+  }
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current) return;
+    // Sidebar is on the right, so dragging left expands it.
+    const dx = dragRef.current.startX - e.clientX;
+    const next = Math.max(SIDEBAR_MIN_PX, Math.min(SIDEBAR_MAX_PX, dragRef.current.startPx + dx));
+    setPx(next);
+  }
+  function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (dragRef.current) {
+      persist(px);
+      dragRef.current = null;
+    }
+    (e.currentTarget as HTMLDivElement).releasePointerCapture?.(e.pointerId);
+  }
+
+  return (
+    <div
+      className="hidden lg:flex shrink-0 border-l"
+      style={{ width: `${px}px`, background: "var(--ow-bg-1)", borderColor: "var(--ow-line)" }}
+    >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Redimensionner le panneau"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        className="shrink-0 flex items-center justify-center cursor-col-resize touch-none transition-colors hover:bg-[var(--ow-bg-2)]"
+        style={{ width: 8 }}
+      >
+        <span
+          className="block rounded-full"
+          style={{ width: 4, height: 36, background: "var(--ow-line-2)" }}
+        />
+      </div>
+      <div className="flex-1 min-w-0 overflow-y-auto">{children}</div>
+    </div>
+  );
+}
+
 // ── PlanPage ──────────────────────────────────────────────────────────────────
 
 export function PlanPage() {
@@ -635,11 +714,8 @@ export function PlanPage() {
           )}
         </div>
 
-        {/* Desktop sidebar */}
-        <div
-          className="hidden lg:block shrink-0 w-80 xl:w-96 overflow-y-auto border-l"
-          style={{ background: "var(--ow-bg-1)", borderColor: "var(--ow-line)" }}
-        >
+        {/* Desktop sidebar — user-resizable via the handle on the left edge. */}
+        <ResizableDesktopSidebar defaultPx={384}>
           <PlanSidebar
             passage={passage}
             complexity={complexity}
@@ -670,7 +746,7 @@ export function PlanPage() {
             onCompareFetch={doFetchWindows}
             onWindowSelect={handleWindowSelect}
           />
-        </div>
+        </ResizableDesktopSidebar>
       </div>
 
       {/* Mobile drawer — below map. User-resizable via the handle bar at the top. */}
