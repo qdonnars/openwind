@@ -58,6 +58,19 @@ export interface PassageResponse {
   forecast_updated_at: string;
 }
 
+// ── ETA-driven mode (target arrival, solve for departure) ────────────────────
+
+export interface EtaSolveMeta {
+  target_arrival: string;       // ISO-8601 UTC
+  iterations: number;
+  residual_seconds: number;     // target - actual; positive = arrived too early
+  converged: boolean;
+}
+
+export interface PassageByEtaResponse extends PassageResponse {
+  eta: EtaSolveMeta;
+}
+
 // ── Sweep mode (compare-windows) ─────────────────────────────────────────────
 
 export type SailAngle = "pres" | "travers" | "largue" | "portant";

@@ -4,7 +4,7 @@ import type { PassageReport, ComplexityScore, SegmentReport, Archetype, PassageW
 import { aggregateLegs } from "./aggregateLegs";
 import { cxLevel, CX_COLORS } from "./types";
 import { WindowsTable } from "./WindowsTable";
-import { ModeToggle, type PlanMode } from "./ModeToggle";
+import { ModeToggle, TimeAnchorToggle, type PlanMode, type TimeAnchor } from "./ModeToggle";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -34,10 +34,12 @@ function DepartureSlider({
   value,
   onChange,
   resolvedTheme,
+  anchor: timeAnchor = "departure",
 }: {
   value: string;
   onChange: (iso: string) => void;
   resolvedTheme: "light" | "dark";
+  anchor?: TimeAnchor;
 }) {
   const [showManual, setShowManual] = useState(false);
 
@@ -59,7 +61,15 @@ function DepartureSlider({
     onChange(toLocalIso(d));
   }
 
-  // Display labels
+  function resetToNow() {
+    const d = new Date();
+    d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
+    onChange(toLocalIso(d));
+  }
+
+  // Display labels — section header changes with the time anchor.
+  const sectionLabel = timeAnchor === "arrival" ? "Arrivée" : "Départ";
+  const ariaLabel = timeAnchor === "arrival" ? "Heure d'arrivée souhaitée" : "Date de départ";
   const dateLabel = valueDate.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
   const timeLabel = valueDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const dayDelta = Math.floor((valueDate.getTime() - anchor.getTime()) / 86_400_000);
@@ -72,7 +82,7 @@ function DepartureSlider({
     <div>
       <div className="flex items-baseline justify-between mb-1">
         <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: "var(--ow-fg-2)" }}>
-          Départ
+          {sectionLabel}
         </span>
         <button
           type="button"
@@ -115,10 +125,19 @@ function DepartureSlider({
             value={valueHours}
             onChange={(e) => setHours(Number(e.target.value))}
             className="ow-departure-slider w-full"
-            aria-label="Date de départ"
+            aria-label={ariaLabel}
           />
           <div className="flex justify-between text-[10px] mt-1" style={{ color: "var(--ow-fg-2)" }}>
-            <span>Maintenant</span>
+            {/* Maintenant is clickable: defaulting to J+1 lets the user pick a
+                horizon, but a single tap still lands them back at "now". */}
+            <button
+              type="button"
+              onClick={resetToNow}
+              className="underline-offset-2 hover:underline"
+              style={{ color: dayDelta <= 0 ? "var(--ow-accent)" : "var(--ow-fg-2)" }}
+            >
+              Maintenant
+            </button>
             <span>+1 sem.</span>
             <span>+2 sem.</span>
           </div>
@@ -524,6 +543,9 @@ interface PlanSidebarProps {
   forecastUpdatedAt: string | null;
   waypointCount: number;
   waypoints: [number, number][];
+  // ETA-driven sub-mode for "Simuler ma route".
+  timeAnchor: TimeAnchor;
+  onTimeAnchorChange: (a: TimeAnchor) => void;
   // Compare-windows mode (lifted from local state in step 2)
   mode: PlanMode;
   onModeChange: (m: PlanMode) => void;
@@ -554,6 +576,8 @@ export function PlanSidebar({
   forecastUpdatedAt,
   waypointCount,
   waypoints,
+  timeAnchor,
+  onTimeAnchorChange,
   mode,
   onModeChange,
   sweepEarliest,
@@ -609,7 +633,15 @@ export function PlanSidebar({
 
         {/* Departure (single) or sweep form (compare) */}
         {mode === "single" ? (
-          <DepartureSlider value={departure} onChange={onDepartureChange} resolvedTheme={resolvedTheme} />
+          <div className="space-y-2">
+            <TimeAnchorToggle value={timeAnchor} onChange={onTimeAnchorChange} />
+            <DepartureSlider
+              value={departure}
+              onChange={onDepartureChange}
+              resolvedTheme={resolvedTheme}
+              anchor={timeAnchor}
+            />
+          </div>
         ) : (
           <SweepForm
             earliest={sweepEarliest}
@@ -692,8 +724,14 @@ export function PlanSidebar({
         Recalculer
       </button>
 
-      {/* Departure — editable */}
-      <DepartureSlider value={departure} onChange={onDepartureChange} resolvedTheme={resolvedTheme} />
+      {/* Time anchor + slider — both editable in the result view too. */}
+      <TimeAnchorToggle value={timeAnchor} onChange={onTimeAnchorChange} />
+      <DepartureSlider
+        value={departure}
+        onChange={onDepartureChange}
+        resolvedTheme={resolvedTheme}
+        anchor={timeAnchor}
+      />
 
       {/* Archetype dropdown */}
       <ArchetypeSelector

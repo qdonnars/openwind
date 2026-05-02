@@ -1,4 +1,4 @@
-import type { PassageResponse, MultiWindowResponse, Archetype } from "../plan/types";
+import type { PassageResponse, PassageByEtaResponse, MultiWindowResponse, Archetype } from "../plan/types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "https://qdonnars-openwind-mcp.hf.space";
 
@@ -17,8 +17,11 @@ export function friendlyError(raw: string): string {
   if (/unknown archetype/i.test(raw)) {
     return "Type de bateau inconnu. Sélectionnez un archétype dans la liste.";
   }
-  if (/invalid (departure|latest_departure|target_eta)/i.test(raw)) {
+  if (/invalid (departure|latest_departure|target_eta|target_arrival)/i.test(raw)) {
     return "Date invalide. Vérifiez le format des champs date.";
+  }
+  if (/target_arrival must be timezone-aware/i.test(raw)) {
+    return "L'heure d'arrivée doit inclure le fuseau horaire.";
   }
   if (/sweep would produce \d+ windows/i.test(raw)) {
     return "Trop de créneaux à comparer. Réduisez la fenêtre ou augmentez le pas d'échantillonnage.";
@@ -81,6 +84,35 @@ export async function fetchPassageWindows(params: {
     throw new Error(err["error"] ?? `Erreur serveur ${res.status}`);
   }
   return res.json() as Promise<MultiWindowResponse>;
+}
+
+export async function fetchPassageByEta(params: {
+  waypoints: [number, number][];
+  targetArrival: string;
+  archetype: string;
+  efficiency?: number;
+  toleranceMinutes?: number;
+  maxIterations?: number;
+}): Promise<PassageByEtaResponse> {
+  const body: Record<string, unknown> = {
+    waypoints: params.waypoints,
+    target_arrival: params.targetArrival,
+    archetype: params.archetype,
+    efficiency: params.efficiency ?? 0.75,
+  };
+  if (params.toleranceMinutes !== undefined) body["tolerance_minutes"] = params.toleranceMinutes;
+  if (params.maxIterations !== undefined) body["max_iterations"] = params.maxIterations;
+
+  const res = await fetch(`${API_BASE}/api/v1/passage-by-eta`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as Record<string, string>;
+    throw new Error(err["error"] ?? `Erreur serveur ${res.status}`);
+  }
+  return res.json() as Promise<PassageByEtaResponse>;
 }
 
 export async function fetchArchetypes(): Promise<Archetype[]> {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { parsePlanUrl, isParsedOk, buildPlanUrl } from "../plan/parseUrl";
 import { PlanMap, type PlanMapHandle } from "../plan/PlanMap";
 import { PlanSidebar } from "../plan/PlanSidebar";
-import { fetchPassage, fetchPassageWindows, fetchArchetypes, friendlyError } from "../api/passage";
+import { fetchPassage, fetchPassageByEta, fetchPassageWindows, fetchArchetypes, friendlyError } from "../api/passage";
 import { ThemeToggle } from "../design/theme";
 import { SpotSearch } from "../components/SpotSearch";
 import type { PassageReport, ComplexityScore, Archetype, PassageWindow } from "../plan/types";
@@ -12,15 +12,28 @@ import {
   waypointsEqual,
   type LastSimulation,
 } from "../plan/lastSimulation";
-import { ModeToggle, type PlanMode } from "../plan/ModeToggle";
+import { ModeToggle, type PlanMode, type TimeAnchor } from "../plan/ModeToggle";
 import { cxLevel, CX_COLORS } from "../plan/types";
 import { aggregateLegs } from "../plan/aggregateLegs";
 
 // ── local helpers (mobile components) ────────────────────────────────────────
 
-function nowRoundedLocal(): string {
+// "YYYY-MM-DDTHH:MM" in local time from any ISO timestamp. Mirror of
+// `toTzAware`'s inverse — used to round-trip a server-resolved departure
+// back into the slider/URL format.
+function isoToLocal(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Slider lands on J+1 by default — a now-anchored start is rarely what a
+// sailor wants when planning, and the "Maintenant" tick under the slider
+// remains one click away.
+function tomorrowRoundedLocal(): string {
   const d = new Date();
-  d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
+  d.setDate(d.getDate() + 1);
+  d.setMinutes(0, 0, 0);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -403,9 +416,10 @@ export function PlanPage() {
   );
   const [departure, setDeparture] = useState(() => {
     const raw = isParsedOk(initialParsed) ? initialParsed.departure : "";
-    if (!raw || new Date(raw) < new Date()) return nowRoundedLocal();
+    if (!raw || new Date(raw) < new Date()) return tomorrowRoundedLocal();
     return raw;
   });
+  const [timeAnchor, setTimeAnchor] = useState<TimeAnchor>("departure");
 
   const [passage, setPassage] = useState<PassageReport | null>(null);
   const [complexity, setComplexity] = useState<ComplexityScore | null>(null);
@@ -432,17 +446,24 @@ export function PlanPage() {
     fetchArchetypes().then(setArchetypes).catch(() => {});
   }, []);
 
-  function doFetch(wpts: [number, number][], arch: string, dep: string) {
+  function doFetch(wpts: [number, number][], arch: string, dep: string, anchor: TimeAnchor = "departure") {
     setIsLoading(true);
     setApiError(null);
-    fetchPassage({ waypoints: wpts, departure: toTzAware(dep), archetype: arch })
+    const promise = anchor === "arrival"
+      ? fetchPassageByEta({ waypoints: wpts, targetArrival: toTzAware(dep), archetype: arch })
+      : fetchPassage({ waypoints: wpts, departure: toTzAware(dep), archetype: arch });
+    promise
       .then((res) => {
         setPassage(res.passage);
         setComplexity(res.complexity);
         setForecastUpdatedAt(res.forecast_updated_at);
         setIsStale(false);
-        // Update URL + cookie only on successful fetch
-        const url = buildPlanUrl(wpts, dep, arch);
+        // For URL/cache persistence, always use the resolved departure from the
+        // returned passage (in ETA mode the user-typed `dep` is a target arrival,
+        // not a departure — persisting it would break reload). The user-facing
+        // slider keeps showing whatever they typed.
+        const resolvedDep = isoToLocal(res.passage.departure_time);
+        const url = buildPlanUrl(wpts, resolvedDep, arch);
         window.history.replaceState(null, "", url);
         const ttl = 7 * 24 * 3600;
         document.cookie = `ow_last_trip=${encodeURIComponent(window.location.href)};max-age=${ttl};path=/;SameSite=Lax`;
@@ -455,7 +476,7 @@ export function PlanPage() {
           waypoints: wpts,
           archetype: arch,
           single: {
-            departure: dep,
+            departure: resolvedDep,
             passage: res.passage,
             complexity: res.complexity,
             forecastUpdatedAt: res.forecast_updated_at,
@@ -539,7 +560,13 @@ export function PlanPage() {
   }
 
   function handleRefetch() {
-    doFetch(waypoints, archetype, departure);
+    doFetch(waypoints, archetype, departure, timeAnchor);
+  }
+
+  function handleTimeAnchorChange(next: TimeAnchor) {
+    if (next === timeAnchor) return;
+    setTimeAnchor(next);
+    setIsStale(true);
   }
 
   function doFetchWindows() {
@@ -731,6 +758,8 @@ export function PlanPage() {
             forecastUpdatedAt={forecastUpdatedAt}
             waypointCount={waypoints.length}
             waypoints={waypoints}
+            timeAnchor={timeAnchor}
+            onTimeAnchorChange={handleTimeAnchorChange}
             mode={planMode}
             onModeChange={handleModeChange}
             sweepEarliest={sweepEarliest}
@@ -777,6 +806,8 @@ export function PlanPage() {
             forecastUpdatedAt={forecastUpdatedAt}
             waypointCount={waypoints.length}
             waypoints={waypoints}
+            timeAnchor={timeAnchor}
+            onTimeAnchorChange={handleTimeAnchorChange}
             mode={planMode}
             onModeChange={handleModeChange}
             sweepEarliest={sweepEarliest}

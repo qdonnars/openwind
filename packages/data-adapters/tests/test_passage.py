@@ -17,6 +17,7 @@ from openwind_data.adapters.base import (
 from openwind_data.routing.archetypes import get_polar, lookup_polar
 from openwind_data.routing.geometry import Point
 from openwind_data.routing.passage import (
+    DEFAULT_ETA_TOLERANCE,
     LIGHT_WIND_THRESHOLD_KN,
     MAX_SWEEP_WINDOWS,
     MODERATE_SEA_HS_M,
@@ -24,6 +25,7 @@ from openwind_data.routing.passage import (
     STRONG_WIND_THRESHOLD_KN,
     best_vmg_upwind,
     estimate_passage,
+    estimate_passage_for_arrival,
     estimate_passage_windows,
     wave_derate,
 )
@@ -747,3 +749,116 @@ class TestSeaStateWarnings:
             adapter=adapter, segment_length_nm=20.0,
         )
         assert not any("mer" in w.lower() for w in report.warnings)
+
+
+class TestEstimatePassageForArrival:
+    """ETA-driven solver: given a target arrival, find the right departure."""
+
+    async def test_converges_under_constant_wind(self) -> None:
+        # Constant wind in time → first iteration's residual fully predicts the
+        # second iteration's correction. Should converge on iteration 2 (the
+        # initial heuristic-speed guess is off, the corrected one lands exactly).
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        target = datetime(2026, 5, 1, 14, 0, tzinfo=UTC)
+        plan = await estimate_passage_for_arrival(
+            [MARSEILLE, PORQUEROLLES],
+            target,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=10.0,
+        )
+        assert plan.converged is True
+        assert plan.target_arrival == target
+        assert abs(plan.residual_seconds) <= DEFAULT_ETA_TOLERANCE.total_seconds()
+        # Arrival lands within tolerance of target
+        assert (
+            abs((plan.report.arrival_time - target).total_seconds())
+            <= DEFAULT_ETA_TOLERANCE.total_seconds()
+        )
+        # And departure + duration = arrival (sanity)
+        expected_arrival = plan.report.departure_time + timedelta(hours=plan.report.duration_h)
+        assert abs((plan.report.arrival_time - expected_arrival).total_seconds()) < 1.0
+
+    async def test_iteration_count_is_small(self) -> None:
+        # Constant wind → fixed-point converges in <=3 iterations.
+        adapter = StubAdapter(tws_kn=12.0, twd_deg=180.0)
+        target = datetime(2026, 5, 1, 16, 0, tzinfo=UTC)
+        plan = await estimate_passage_for_arrival(
+            [MARSEILLE, PORQUEROLLES],
+            target,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=10.0,
+        )
+        assert plan.iterations <= 3
+        assert plan.converged
+
+    async def test_naive_target_rejected(self) -> None:
+        adapter = StubAdapter()
+        with pytest.raises(ValueError, match="timezone-aware"):
+            await estimate_passage_for_arrival(
+                [MARSEILLE, PORQUEROLLES],
+                datetime(2026, 5, 1, 14, 0),  # naive
+                "cruiser_40ft",
+                adapter=adapter,
+            )
+
+    async def test_invalid_max_iterations_rejected(self) -> None:
+        adapter = StubAdapter()
+        with pytest.raises(ValueError, match="max_iterations"):
+            await estimate_passage_for_arrival(
+                [MARSEILLE, PORQUEROLLES],
+                datetime(2026, 5, 1, 14, 0, tzinfo=UTC),
+                "cruiser_40ft",
+                adapter=adapter,
+                max_iterations=0,
+            )
+
+    async def test_non_positive_tolerance_rejected(self) -> None:
+        adapter = StubAdapter()
+        with pytest.raises(ValueError, match="tolerance"):
+            await estimate_passage_for_arrival(
+                [MARSEILLE, PORQUEROLLES],
+                datetime(2026, 5, 1, 14, 0, tzinfo=UTC),
+                "cruiser_40ft",
+                adapter=adapter,
+                tolerance=timedelta(0),
+            )
+
+    async def test_did_not_converge_returns_last_with_flag(self) -> None:
+        # Single iteration cannot converge from the heuristic-speed guess
+        # (HEURISTIC_SPEED_KN=6.0 vs cruiser_40ft beam-reach ~5 kn at 10 kn TWS).
+        # Force it: max_iterations=1 + tight tolerance → expect converged=False.
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        target = datetime(2026, 5, 1, 14, 0, tzinfo=UTC)
+        plan = await estimate_passage_for_arrival(
+            [MARSEILLE, PORQUEROLLES],
+            target,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=10.0,
+            max_iterations=1,
+            tolerance=timedelta(seconds=30),
+        )
+        assert plan.converged is False
+        assert plan.iterations == 1
+        # The residual is reported in seconds, and matches target - actual.
+        actual_residual = (target - plan.report.arrival_time).total_seconds()
+        assert plan.residual_seconds == pytest.approx(actual_residual, abs=1e-6)
+
+    async def test_target_arrival_with_local_tz_converted_to_utc(self) -> None:
+        # A non-UTC tzinfo should be normalized; target_arrival on the result
+        # is stored as UTC.
+        from datetime import timezone as tz
+
+        local = tz(timedelta(hours=2))
+        target_local = datetime(2026, 5, 1, 16, 0, tzinfo=local)  # = 14:00 UTC
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        plan = await estimate_passage_for_arrival(
+            [MARSEILLE, PORQUEROLLES],
+            target_local,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=10.0,
+        )
+        assert plan.target_arrival == target_local.astimezone(UTC)
