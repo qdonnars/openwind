@@ -2,10 +2,10 @@
 
 Cloud-agnostic FastMCP server for OpenWind. Exposes 4 tools:
 
-- `list_boat_archetypes` — descriptive list, no server-side mapping
-- `get_marine_forecast` — wind + sea around a point/window
-- `plan_passage` — end-to-end timing + complexity + openwind.fr deep-link; declares an MCP Apps UI resource so supporting hosts auto-render the iframe widget. Optional compare-windows mode (sweep N hourly departures over the same route).
-- `read_me` — calculation methodology (polars, efficiency, VMG, defaults)
+- `list_boat_archetypes` descriptive list, no server-side mapping
+- `get_marine_forecast` wind + sea around a point/window
+- `plan_passage` end-to-end timing + complexity + openwind.fr deep-link; declares an MCP Apps UI resource so supporting hosts auto-render the iframe widget. Optional compare-windows mode (sweep N hourly departures over the same route).
+- `read_me` calculation methodology (polars, efficiency, VMG, defaults)
 
 `build_server()` is the single factory; no Gradio, no `huggingface_hub`. The
 HF Spaces wrapper (Sprint 4) and any future deployment use the same factory.
@@ -22,7 +22,7 @@ uv run pytest
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 or `%APPDATA%\Claude\claude_desktop_config.json` (Windows). On Linux, Claude
-Desktop is not officially supported — use Claude Code (CLI) MCP config or any
+Desktop is not officially supported use Claude Code (CLI) MCP config or any
 other MCP client (Goose, Continue, Zed) that accepts a stdio command.
 
 ```json
@@ -98,14 +98,14 @@ against a stub adapter.
 
 The simulation engine lives in `openwind_data.routing.passage`. Defaults below are what `plan_passage` uses unless overridden.
 
-- **Polar lookup** — 5 ORC-style archetypes, bilinear interpolation in (TWS, TWA), clamped at grid edges. TWA symmetric on [0°, 180°].
+- **Polar lookup** 5 ORC-style archetypes, bilinear interpolation in (TWS, TWA), clamped at grid edges. TWA symmetric on [0°, 180°].
 - **Efficiency 0.75** by default (cruising). Override via the `efficiency` arg: `0.85` racing, `0.65` loaded family, `0.55` heavy seas / fouled hull.
-- **VMG / tacking correction** — when route TWA < optimal upwind angle (~42-48°), effective speed = `polar(opt_TWA) × cos(opt_TWA − route_TWA)`. Models a sailor who tacks instead of pinching.
-- **Wave derate** — opt-in via `use_wave_correction`: `max(0.5, 1 − 0.05 × Hs^1.75 × cos²(TWA/2))`. Off by default; sea state feeds warnings instead.
-- **Single-pass timing** — heuristic 6 kn → segment mid-times → real polar at each mid-time's wind. No convergence iteration.
-- **Sub-segments** — routes split into ~10 nm chunks for weather sampling.
-- **Compare-windows mode** — `plan_passage(latest_departure=...)` walks N hourly departures over the same route and returns one entry per window (max 14 d × 24 h = 336). The LLM picks the calmest qualitatively.
-- **Default model** — AROME 1.3 km (Med thermals); auto-falls back to ICON-EU → ECMWF → GFS for longer horizons.
-- **Mediterranean simplifications** — tides and currents ignored (negligible in V1).
+- **VMG / tacking correction** when route TWA < optimal upwind angle (~42-48°), effective speed = `polar(opt_TWA) × cos(opt_TWA − route_TWA)`. Models a sailor who tacks instead of pinching.
+- **Wave derate** opt-in via `use_wave_correction`: `max(0.5, 1 − 0.05 × Hs^1.75 × cos²(TWA/2))`. Off by default; sea state feeds warnings instead.
+- **Single-pass timing** heuristic 6 kn → segment mid-times → real polar at each mid-time's wind. No convergence iteration.
+- **Sub-segments** routes split into ~10 nm chunks for weather sampling.
+- **Compare-windows mode** `plan_passage(latest_departure=...)` walks N hourly departures over the same route and returns one entry per window (max 14 d × 24 h = 336). The LLM picks the calmest qualitatively.
+- **Default model** AROME 1.3 km (Med thermals); auto-falls back to ICON-EU → ECMWF → GFS for longer horizons.
+- **Mediterranean simplifications** tides and currents ignored (negligible in V1).
 
 Full rationale and references in the [main README's calculation section](../../README.md#calculation-method).

@@ -3,10 +3,10 @@
 Hero assets referenced from the READMEs and the Starlette landing of the HF
 Space.
 
-- `plan.png` — the OpenWind passage view on
+- `plan.png` the OpenWind passage view on
   [openwind.fr](https://openwind.fr) (5 waypoints, ETA, complexity score).
   Used as the hero image in the root README, the HF Space README, and the
-  Starlette landing. Replace by `plan.gif` (animated demo) later — update
+  Starlette landing. Replace by `plan.gif` (animated demo) later update
   the `<img src="…">` in
   [packages/hf-space/app.py](../../packages/hf-space/app.py) and the
   markdown references in the two READMEs.
