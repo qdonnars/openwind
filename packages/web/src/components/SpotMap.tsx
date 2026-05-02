@@ -81,15 +81,21 @@ function relaxLabels(items: ArrowItem[]): void {
 }
 
 function arrowMarkup(it: ArrowItem): string {
-  const headLen = 16;
-  const headAng = 0.4;
+  // Thin shaft + narrow arrowhead. Shaft stops at the base of the head so the
+  // two strokes don't pile up under the tip — gives a sharp, single-pointed look.
+  const headLen = 13;
+  const headAng = 0.3;
   const lx = it.tipX - headLen * Math.sin(it.rad - headAng);
   const ly = it.tipY + headLen * Math.cos(it.rad - headAng);
   const rx = it.tipX - headLen * Math.sin(it.rad + headAng);
   const ry = it.tipY + headLen * Math.cos(it.rad + headAng);
+  // Where the shaft should end (midpoint of the arrowhead base, along the shaft axis).
+  const baseDist = headLen * Math.cos(headAng);
+  const shaftX = it.tipX - baseDist * Math.sin(it.rad);
+  const shaftY = it.tipY + baseDist * Math.cos(it.rad);
   const dropColor = it.color === "#ffffff" ? "#000" : "#fff";
-  return `<line x1="${SPOT_CX}" y1="${SPOT_CY}" x2="${it.tipX}" y2="${it.tipY}" stroke="${it.color}" stroke-width="5" stroke-linecap="round" style="filter:drop-shadow(0 0 2px ${dropColor})"/>
-    <polygon points="${it.tipX},${it.tipY} ${lx},${ly} ${rx},${ry}" fill="${it.color}"/>`;
+  return `<line x1="${SPOT_CX}" y1="${SPOT_CY}" x2="${shaftX}" y2="${shaftY}" stroke="${it.color}" stroke-width="3" stroke-linecap="round" style="filter:drop-shadow(0 0 1.5px ${dropColor})"/>
+    <polygon points="${it.tipX},${it.tipY} ${lx},${ly} ${rx},${ry}" fill="${it.color}" style="filter:drop-shadow(0 0 1.5px ${dropColor})"/>`;
 }
 
 function leaderMarkup(it: ArrowItem): string {
