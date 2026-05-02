@@ -361,8 +361,8 @@ function ResizableDesktopSidebar({
 
   return (
     <div
-      className="hidden lg:flex shrink-0 border-l"
-      style={{ width: `${px}px`, background: "var(--ow-bg-1)", borderColor: "var(--ow-line)" }}
+      className="hidden lg:flex shrink-0"
+      style={{ width: `${px}px`, background: "var(--ow-bg-1)" }}
     >
       <div
         role="separator"
@@ -372,12 +372,16 @@ function ResizableDesktopSidebar({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        className="shrink-0 flex items-center justify-center cursor-col-resize touch-none transition-colors hover:bg-[var(--ow-bg-2)]"
-        style={{ width: 8 }}
+        className="group shrink-0 flex items-center justify-center cursor-col-resize touch-none transition-colors hover:bg-[var(--ow-bg-2)]"
+        style={{
+          width: 12,
+          borderLeft: "1px solid var(--ow-line)",
+          borderRight: "1px solid var(--ow-line)",
+        }}
       >
         <span
-          className="block rounded-full"
-          style={{ width: 4, height: 36, background: "var(--ow-line-2)" }}
+          className="block rounded-full transition-colors group-hover:bg-[var(--ow-accent)]"
+          style={{ width: 4, height: 56, background: "var(--ow-fg-3)" }}
         />
       </div>
       <div className="flex-1 min-w-0 overflow-y-auto">{children}</div>
