@@ -368,6 +368,16 @@ body {
   background: var(--ow-bg-2);
   color: var(--ow-fg-2);
 }
+/* Day separator: discreet on mobile, accent stripe on desktop so the eye
+   finds the day boundary without taking extra vertical space on phones. */
+.ow-day-sep {
+  border-left: 1px solid var(--ow-line-2);
+}
+@media (min-width: 1024px) {
+  .ow-day-sep {
+    border-left: 2px solid var(--ow-accent-line);
+  }
+}
 
 /* ── Theme-aware search ──────────────────────────────────────── */
 .ow-search-input {

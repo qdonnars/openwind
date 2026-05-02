@@ -6,18 +6,21 @@ interface WindCellProps {
   direction: number | null;
   selected: boolean;
   isNow: boolean;
+  isDayStart?: boolean;
   onSelect: () => void;
 }
 
-export function WindCell({ speed, gusts, direction, selected, isNow, onSelect }: WindCellProps) {
+export function WindCell({ speed, gusts, direction, selected, isNow, isDayStart, onSelect }: WindCellProps) {
+  // `isNow` border takes precedence over the day separator (the now marker is more salient).
   const nowBorder = isNow ? "border-l-2 border-l-teal-400" : "";
+  const daySepClass = !isNow && isDayStart ? "ow-day-sep" : "";
   const selectedStyle = selected ? "ring-2 ring-teal-400/70 ring-inset bg-teal-400/10" : "";
 
   if (speed == null) {
     return (
       <td
         role="cell"
-        className={`wind-cell ow-null-cell min-w-[36px] lg:min-w-[44px] h-10 lg:h-14 text-center text-xs align-middle cursor-pointer ${nowBorder} ${selectedStyle}`}
+        className={`wind-cell ow-null-cell min-w-[36px] lg:min-w-[44px] h-10 lg:h-14 text-center text-xs align-middle cursor-pointer ${nowBorder} ${daySepClass} ${selectedStyle}`}
         onClick={onSelect}
       >
         —
@@ -35,7 +38,7 @@ export function WindCell({ speed, gusts, direction, selected, isNow, onSelect }:
   return (
     <td
       role="cell"
-      className={`wind-cell min-w-[36px] lg:min-w-[44px] h-10 lg:h-14 text-center align-middle p-0 cursor-pointer ${nowBorder} ${selectedStyle}`}
+      className={`wind-cell min-w-[36px] lg:min-w-[44px] h-10 lg:h-14 text-center align-middle p-0 cursor-pointer ${nowBorder} ${daySepClass} ${selectedStyle}`}
       style={{ backgroundColor: bg, color }}
       onClick={onSelect}
       aria-label={`${Math.round(speed)} knots${gusts != null ? `, gusts ${Math.round(gusts)}` : ""}${direction != null ? `, direction ${direction}°` : ""}`}

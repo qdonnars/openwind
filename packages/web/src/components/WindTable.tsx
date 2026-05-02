@@ -151,6 +151,16 @@ export function WindTable({
     );
   }, [forecasts]);
 
+  const dayStarts = useMemo(() => {
+    const set = new Set<string>();
+    let prev = "";
+    for (const t of masterTimeline) {
+      const day = t.slice(0, 10);
+      if (day !== prev) { set.add(t); prev = day; }
+    }
+    return set;
+  }, [masterTimeline]);
+
   const nowHour = nowParisHourPrefix();
 
   const updateVisibleDay = useCallback(() => {
@@ -248,6 +258,7 @@ export function WindTable({
                           direction={direction}
                           selected={t === selectedHour}
                           isNow={t.startsWith(nowHour)}
+                          isDayStart={dayStarts.has(t) && i > 0}
                           onSelect={() => onSelectHour(t)}
                         />
                       );

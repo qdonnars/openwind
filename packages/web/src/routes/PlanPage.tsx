@@ -425,7 +425,6 @@ export function PlanPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [sweepInterval, setSweepInterval] = useState<number>(3);
-  const [sweepTargetEta, setSweepTargetEta] = useState("");
   const [windows, setWindows] = useState<PassageWindow[] | null>(null);
   const [metaWarnings, setMetaWarnings] = useState<string[]>([]);
 
@@ -494,7 +493,6 @@ export function PlanPage() {
         setSweepEarliest(cached.compare.sweepEarliest);
         setSweepLatest(cached.compare.sweepLatest);
         setSweepInterval(cached.compare.sweepIntervalHours);
-        setSweepTargetEta(cached.compare.sweepTargetEta ?? "");
         if (!cached.single || cached.single.departure !== departure) {
           setForecastUpdatedAt(cached.compare.forecastUpdatedAt);
         }
@@ -553,7 +551,6 @@ export function PlanPage() {
       latest: toTzAware(sweepLatest),
       archetype,
       intervalHours: sweepInterval,
-      targetEta: sweepTargetEta ? toTzAware(sweepTargetEta) : undefined,
     })
       .then((res) => {
         setWindows(res.windows);
@@ -574,7 +571,6 @@ export function PlanPage() {
             sweepEarliest,
             sweepLatest,
             sweepIntervalHours: sweepInterval,
-            sweepTargetEta: sweepTargetEta || undefined,
             windows: res.windows,
             metaWarnings: res.meta_warnings,
             forecastUpdatedAt: res.forecast_updated_at,
@@ -740,11 +736,9 @@ export function PlanPage() {
             sweepEarliest={sweepEarliest}
             sweepLatest={sweepLatest}
             sweepIntervalHours={sweepInterval}
-            sweepTargetEta={sweepTargetEta}
             onSweepEarliestChange={setSweepEarliest}
             onSweepLatestChange={setSweepLatest}
             onSweepIntervalChange={setSweepInterval}
-            onSweepTargetEtaChange={setSweepTargetEta}
             windows={windows}
             metaWarnings={metaWarnings}
             onCompareFetch={doFetchWindows}
@@ -788,11 +782,9 @@ export function PlanPage() {
             sweepEarliest={sweepEarliest}
             sweepLatest={sweepLatest}
             sweepIntervalHours={sweepInterval}
-            sweepTargetEta={sweepTargetEta}
             onSweepEarliestChange={setSweepEarliest}
             onSweepLatestChange={setSweepLatest}
             onSweepIntervalChange={setSweepInterval}
-            onSweepTargetEtaChange={setSweepTargetEta}
             windows={windows}
             metaWarnings={metaWarnings}
             onCompareFetch={doFetchWindows}
