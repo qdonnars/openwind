@@ -117,6 +117,10 @@ def _build_conditions_summary(report: PassageReport) -> dict:
         "tws_min_kn": round(min(tws), 1),
         "tws_max_kn": round(max(tws), 1),
         "predominant_sail_angle": predominant,
+        # Both bounds so consumers (web table, MCP App widget) can render a
+        # range like "0.3-0.6m" instead of a single max value. PR #69 added
+        # hs_min_m but it was dropped by the squash-merge — restored here.
+        "hs_min_m": round(min(hs), 2) if hs else None,
         "hs_max_m": round(max(hs), 2) if hs else None,
     }
 
