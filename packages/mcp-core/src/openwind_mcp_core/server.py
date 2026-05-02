@@ -221,28 +221,37 @@ _PLAN_WIDGET_HTML = """<!doctype html>
           <thead><tr><th>#</th><th>Heure</th><th>Allure</th><th>Vent</th><th>Mer</th><th>Vitesse</th></tr></thead>
           <tbody>${legRows}</tbody>
         </table>` : ""}
-        <a class="cta" href="${escapeHtml(url)}" target="_blank" rel="noopener">Voir le plan complet sur openwind.fr →</a>
+        <a class="cta" href="${escapeHtml(url)}" rel="noopener">Voir le plan complet sur openwind.fr →</a>
       `;
+    }
+
+    function fmtHsRange(min, max){
+      if(min == null && max == null) return "—";
+      if(min == null) return `${max.toFixed(1)} m`;
+      if(max == null) return `${min.toFixed(1)} m`;
+      const a = min.toFixed(1), b = max.toFixed(1);
+      return a === b ? `${a} m` : `${a}-${b} m`;
     }
 
     function renderCompare(sc){
       const windows = sc.windows || [];
       const sweep = sc.sweep || {};
       const meta = sc.meta_warnings || [];
-      const rows = windows.map(w=>{
+      const rows = windows.map((w,idx)=>{
         const cs = w.conditions_summary || {};
         const cx = w.complexity || {};
         const c = CX_COLORS[cx.level] || CX_COLORS[3];
         const tws = (cs.tws_min_kn != null && cs.tws_max_kn != null)
           ? `${Math.round(cs.tws_min_kn)}-${Math.round(cs.tws_max_kn)} kn` : "—";
         const sail = SAIL[cs.predominant_sail_angle] || cs.predominant_sail_angle || "—";
-        const url = w.openwind_url || "https://openwind.fr/plan";
-        return `<tr class="windows-row" onclick="window.open('${escapeHtml(url)}','_blank')">
+        const sea = fmtHsRange(cs.hs_min_m, cs.hs_max_m);
+        return `<tr class="windows-row" data-window-idx="${idx}" tabindex="0" role="link">
           <td>${fmtDate(w.departure)}</td>
           <td>${fmtDur(w.duration_h)}</td>
           <td>${fmtTime(w.arrival)}</td>
           <td>${escapeHtml(sail)}</td>
           <td>${tws}</td>
+          <td>${sea}</td>
           <td><span class="num" style="background:${c}">${cx.level||"?"}</span></td>
         </tr>`;
       }).join("");
@@ -251,31 +260,75 @@ _PLAN_WIDGET_HTML = """<!doctype html>
         <p class="sub">Du ${fmtDate(sweep.earliest)} au ${fmtDate(sweep.latest)} · pas de ${sweep.interval_hours||"?"}h</p>
         ${meta.map(m=>`<div class="warn">${escapeHtml(m)}</div>`).join("")}
         <table>
-          <thead><tr><th>Départ</th><th>Durée</th><th>ETA</th><th>Allure</th><th>Vent</th><th>⚡</th></tr></thead>
+          <thead><tr><th>Départ</th><th>Durée</th><th>ETA</th><th>Allure</th><th>Vent</th><th>Mer</th><th>⚡</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
-        <p class="sub" style="margin-top:.75rem">Cliquez sur une ligne pour ouvrir le détail dans openwind.fr</p>
+        <p class="sub" style="margin-top:.75rem">Cliquez pour aller directement au routage de cette journée</p>
       `;
+    }
+
+    // Hold the latest structured content so the delegated click handler can
+    // resolve a row index back to its openwind_url.
+    let lastSc = null;
+    const app = new App({ name: "OpenWind Plan", version: "1.0.0" });
+
+    function openUrl(url){
+      // Sandboxed iframes silently drop window.open / target=_blank without
+      // `allow-popups`. The MCP Apps spec exposes a host-mediated open via
+      // app.openLink — works even inside a strict sandbox.
+      if(!url) return;
+      app.openLink({ url }).catch(err => {
+        console.error('[openwind] openLink failed', err);
+        // Last-resort: attempt window.open just in case (will silently fail
+        // in a sandbox without allow-popups).
+        try { window.open(url, '_blank', 'noopener'); } catch(e) {}
+      });
+    }
+
+    function wireClicks(){
+      const root = document.getElementById('root');
+      // Compare-mode rows
+      root.querySelectorAll('.windows-row').forEach(tr=>{
+        tr.addEventListener('click', ()=>{
+          const idx = Number(tr.dataset.windowIdx);
+          const w = lastSc && lastSc.windows && lastSc.windows[idx];
+          if(w && w.openwind_url) openUrl(w.openwind_url);
+        });
+        tr.addEventListener('keydown', e=>{
+          if(e.key === 'Enter' || e.key === ' '){
+            e.preventDefault(); tr.click();
+          }
+        });
+      });
+      // Single-mode CTA links (any .cta or [data-openlink])
+      root.querySelectorAll('a.cta, a[data-openlink]').forEach(a=>{
+        a.addEventListener('click', e=>{
+          e.preventDefault();
+          openUrl(a.getAttribute('href'));
+        });
+      });
     }
 
     function render(result){
       const sc = result && result.structuredContent;
       if(!sc) return;
+      lastSc = sc;
       const root = document.getElementById('root');
       try {
         if(sc.mode === "multi_window") root.innerHTML = renderCompare(sc);
         else if(sc.passage) root.innerHTML = renderSingle(sc);
+        wireClicks();
       } catch(e) {
         console.error('[openwind] render failed', e);
         const url = (sc.openwind_url || (sc.windows && sc.windows[0] && sc.windows[0].openwind_url) || "https://openwind.fr/plan");
         root.innerHTML = `<div class="placeholder">
           Impossible d'afficher le plan ici.
-          <br><a class="cta" href="${escapeHtml(url)}" target="_blank" rel="noopener">Ouvrir sur openwind.fr →</a>
+          <br><a class="cta" href="${escapeHtml(url)}" rel="noopener">Ouvrir sur openwind.fr →</a>
         </div>`;
+        wireClicks();
       }
     }
 
-    const app = new App({ name: "OpenWind Plan", version: "1.0.0" });
     app.ontoolresult = render;
     try { await app.connect(); }
     catch (e) { console.error('[openwind] MCP App connect failed', e); }
