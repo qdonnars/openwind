@@ -70,7 +70,7 @@ export function ThemeToggle() {
       title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} theme`}
       aria-label={`Switch to ${mode === 'dark' ? 'light' : 'dark'} theme`}
     >
-      {mode === 'dark' ? <MoonIcon /> : <SunIcon />}
+      {mode === 'dark' ? <SunIcon /> : <MoonIcon />}
     </button>
   );
 }

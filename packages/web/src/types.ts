@@ -12,6 +12,7 @@ export interface HourlyData {
   wind_direction_10m: (number | null)[];
   wind_gusts_10m: (number | null)[];
   weather_code: (number | null)[];
+  is_day?: (number | null)[];
 }
 
 export interface ModelForecast {

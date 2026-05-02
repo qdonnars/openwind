@@ -139,10 +139,18 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
     for (const m of markersRef.current) m.remove();
     markersRef.current = [];
 
+    // Finish-flag icon for the last waypoint (Lucide-style flag).
+    const flagSvg =
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>' +
+      '<line x1="4" y1="22" x2="4" y2="15"/>' +
+      '</svg>';
+
     waypoints.forEach(([lat, lon], i) => {
       const isFirst = i === 0;
       const isLast = i === waypoints.length - 1 && waypoints.length > 1;
-      const label = isFirst ? "▶" : isLast ? "■" : String(i);
+      // Number every waypoint 1..N so labels match the sidebar legs; last gets a flag.
+      const label = isLast ? flagSvg : String(i + 1);
       const bg = isFirst ? "#2dd4bf" : isLast ? "#e84118" : "#6b7280";
       const marker = L.marker([lat, lon], {
         icon: waypointIcon(label, bg, !!onWptDelete),

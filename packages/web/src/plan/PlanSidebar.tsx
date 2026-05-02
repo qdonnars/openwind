@@ -317,34 +317,17 @@ function SweepForm({
   earliest,
   latest,
   intervalHours,
-  targetEta,
   onEarliestChange,
   onLatestChange,
   onIntervalChange,
-  onTargetEtaChange,
-  resolvedTheme,
 }: {
   earliest: string;
   latest: string;
   intervalHours: number;
-  targetEta: string;
   onEarliestChange: (iso: string) => void;
   onLatestChange: (iso: string) => void;
   onIntervalChange: (h: number) => void;
-  onTargetEtaChange: (iso: string) => void;
-  resolvedTheme: "light" | "dark";
 }) {
-  const colorScheme = resolvedTheme === "light" ? "light" : "dark";
-  const [showEta, setShowEta] = useState(targetEta !== "");
-
-  // Bound target_eta to [now, now+14d] when shown — same horizon as the slider.
-  const { minIso, maxIso } = useMemo(() => {
-    const now = new Date();
-    now.setSeconds(0, 0);
-    const max = new Date(now.getTime() + SWEEP_HORIZON_DAYS * 86_400_000);
-    return { minIso: toLocalIsoMin(now), maxIso: toLocalIsoMin(max) };
-  }, []);
-
   // Convert ISO local strings <-> hours-from-now so the slider can drive them.
   const anchor = useMemo(() => {
     const d = new Date();
@@ -365,14 +348,6 @@ function SweepForm({
   const latestHours = Math.max(earliestHours + 1, isoToHours(latest));
 
   const validation = validateSweep(earliest, latest, intervalHours);
-
-  const inputStyle = {
-    background: "var(--ow-bg-2)",
-    color: "var(--ow-fg-0)",
-    border: "1px solid var(--ow-line-2)",
-    fontFamily: "var(--ow-font-mono)",
-    colorScheme,
-  } as const;
 
   return (
     <div className="space-y-3">
@@ -415,31 +390,6 @@ function SweepForm({
         </div>
       </div>
 
-      <div>
-        <button
-          type="button"
-          onClick={() => {
-            const next = !showEta;
-            setShowEta(next);
-            if (!next) onTargetEtaChange("");
-          }}
-          className="text-[10px] underline"
-          style={{ color: "var(--ow-fg-2)" }}
-        >
-          {showEta ? "Retirer l'heure d'arrivée souhaitée" : "+ Heure d'arrivée souhaitée (option)"}
-        </button>
-        {showEta && (
-          <input
-            type="datetime-local"
-            value={targetEta}
-            min={earliest || minIso}
-            max={maxIso}
-            onChange={(e) => onTargetEtaChange(e.target.value)}
-            className="w-full rounded-lg px-3 py-1.5 text-sm font-semibold tabular-nums mt-1.5"
-            style={inputStyle}
-          />
-        )}
-      </div>
     </div>
   );
 }
@@ -580,11 +530,9 @@ interface PlanSidebarProps {
   sweepEarliest: string;
   sweepLatest: string;
   sweepIntervalHours: number;
-  sweepTargetEta: string;
   onSweepEarliestChange: (iso: string) => void;
   onSweepLatestChange: (iso: string) => void;
   onSweepIntervalChange: (h: number) => void;
-  onSweepTargetEtaChange: (iso: string) => void;
   windows: PassageWindow[] | null;
   metaWarnings: string[];
   onCompareFetch: () => void;
@@ -611,11 +559,9 @@ export function PlanSidebar({
   sweepEarliest,
   sweepLatest,
   sweepIntervalHours,
-  sweepTargetEta,
   onSweepEarliestChange,
   onSweepLatestChange,
   onSweepIntervalChange,
-  onSweepTargetEtaChange,
   windows,
   metaWarnings,
   onCompareFetch,
@@ -658,34 +604,6 @@ export function PlanSidebar({
   if (mode === "compare" || !passage || !complexity) {
     return (
       <div className="p-4 space-y-4 animate-fade-in">
-        {/* Waypoint progress */}
-        <div className="flex items-center gap-3">
-          {[0, 1].map((i) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <span
-                className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold"
-                style={{
-                  background: waypointCount > i ? (i === 0 ? "#2dd4bf" : "#e84118") : "var(--ow-bg-2)",
-                  color: waypointCount > i ? "#fff" : "var(--ow-fg-3)",
-                  border: `2px solid ${waypointCount > i ? "transparent" : "var(--ow-line-2)"}`,
-                }}
-              >
-                {i === 0 ? "▶" : "■"}
-              </span>
-              <span className="text-xs" style={{ color: waypointCount > i ? "var(--ow-fg-1)" : "var(--ow-fg-3)" }}>
-                {i === 0 ? "Départ" : "Arrivée"}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* Instruction */}
-        <p className="text-sm leading-relaxed" style={{ color: "var(--ow-fg-2)" }}>
-          {waypointCount === 0
-            ? "Cliquez sur la carte pour placer votre point de départ."
-            : "Cliquez sur la carte pour placer votre point d'arrivée."}
-        </p>
-
         {/* Mode toggle */}
         <ModeToggle value={mode} onChange={onModeChange} />
 
@@ -697,12 +615,9 @@ export function PlanSidebar({
             earliest={sweepEarliest}
             latest={sweepLatest}
             intervalHours={sweepIntervalHours}
-            targetEta={sweepTargetEta}
             onEarliestChange={onSweepEarliestChange}
             onLatestChange={onSweepLatestChange}
             onIntervalChange={onSweepIntervalChange}
-            onTargetEtaChange={onSweepTargetEtaChange}
-            resolvedTheme={resolvedTheme}
           />
         )}
 
