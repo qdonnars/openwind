@@ -61,7 +61,6 @@ from .render import build_openwind_url
 # source of truth, no duplicate widget code to maintain.
 PLAN_UI_RESOURCE_URI = "ui://openwind/plan-passage"
 PLAN_UI_MIME = "text/html;profile=mcp-app"
-PLAN_UI_FRAME_DOMAINS = ["https://openwind.fr"]
 # unpkg serves the official @modelcontextprotocol/ext-apps SDK bundle that
 # implements the ui/initialize -> ui/notifications/initialized handshake and
 # the ui/notifications/tool-result listener. Same CDN as the official
@@ -69,21 +68,18 @@ PLAN_UI_FRAME_DOMAINS = ["https://openwind.fr"]
 PLAN_UI_RESOURCE_DOMAINS = ["https://unpkg.com"]
 
 # Body of the MCP Apps UI resource. Uses the official @modelcontextprotocol/
-# ext-apps SDK from unpkg — same pattern as the qr-server / say-server /
-# threejs-server reference examples in the ext-apps repo.
+# ext-apps SDK from unpkg for the handshake (same pattern as qr-server /
+# say-server / threejs-server reference examples in the ext-apps repo).
 #
-# Why the SDK (and not hand-rolled postMessage):
-#
-# The handshake has two messages, not one:
-#   1. ``ui/initialize`` REQUEST with ``params.appInfo`` (NOT clientInfo!) —
-#      different name from the core MCP ``initialize``.
-#   2. After the host responds, the iframe MUST send the
-#      ``ui/notifications/initialized`` notification before the host considers
-#      the view ready and starts pushing ``ui/notifications/tool-result``.
-#
-# Skipping (2) — or sending ``clientInfo`` instead of ``appInfo`` — leaves the
-# host in "view-not-ready" state forever, the iframe stays blank. Easier to
-# let the SDK handle that than to hand-roll it correctly.
+# Why we render the content INLINE rather than via a nested iframe to
+# openwind.fr/plan: Claude.ai (as of 2026-05) does not honour the
+# ``frameDomains`` CSP field — the inner iframe is blocked even when our
+# resource declares ``_meta.ui.csp.frameDomains: ["https://openwind.fr"]``.
+# Inspect with the network tab: ``mcp_apps?resource-src=https://unpkg.com``
+# shows our ``resourceDomains`` got mapped to ``resource-src``, but no
+# corresponding ``frame-src`` is added → the openwind.fr load gets a CSP
+# refusal. Until that's fixed in the host, render the data directly. The
+# CTA still links to openwind.fr (target="_blank") for the full app.
 _PLAN_WIDGET_HTML = """<!doctype html>
 <html lang="fr">
 <head>
@@ -92,68 +88,197 @@ _PLAN_WIDGET_HTML = """<!doctype html>
   <meta name="color-scheme" content="light dark">
   <title>OpenWind</title>
   <style>
-    html,body{margin:0;height:100%;background:#FAF7EE;color:#1A1A1A;
-      font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
-    iframe{width:100%;height:100%;border:0;display:block}
-    .placeholder{display:flex;flex-direction:column;align-items:center;
-      justify-content:center;height:100%;padding:2rem;text-align:center;gap:.6rem}
-    .placeholder .dim{color:#777169;font-size:.9rem}
-    .placeholder a{color:#1D9E75;text-decoration:none;padding:.55rem 1rem;
-      border:1px solid #1D9E75;border-radius:8px;font-weight:600}
-    @media (prefers-color-scheme:dark){
-      html,body{background:#15140F;color:#F2F2F2}
-      .placeholder .dim{color:#888780}
-      .placeholder a{color:#2BBE93;border-color:#2BBE93}
+    :root{
+      --bg:#FAF7EE;--card:#FFFFFF;--fg0:#1A1A1A;--fg1:#3F3F3F;--fg2:#777169;
+      --line:#E2DDCD;--accent:#1D9E75;--accent-soft:#E8F4EE;
+      --c1:#2dc97a;--c2:#8fcc30;--c3:#e8c432;--c4:#e87a18;--c5:#e84118;
     }
+    @media (prefers-color-scheme:dark){
+      :root{
+        --bg:#15140F;--card:rgba(255,255,255,0.04);--fg0:#F2F2F2;--fg1:#D4D2CB;
+        --fg2:#888780;--line:rgba(255,255,255,0.10);
+        --accent:#2BBE93;--accent-soft:rgba(43,190,147,0.12);
+      }
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--bg);color:var(--fg0);
+      font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+    body{padding:1rem}
+    .root{max-width:48rem;margin:0 auto}
+    .placeholder{padding:2rem;text-align:center;color:var(--fg2)}
+    h2{margin:0 0 .35rem;font-size:1.1rem;letter-spacing:-.01em}
+    .sub{color:var(--fg2);font-size:.85rem;margin:0 0 1rem}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin:0 0 1rem}
+    .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:.6rem .7rem}
+    .stat .l{font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;
+      color:var(--fg2);font-weight:700;margin:0 0 .2rem}
+    .stat .v{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-weight:700;font-size:.95rem;color:var(--fg0)}
+    .badge{display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .6rem;
+      border-radius:8px;font-weight:700;font-size:.8rem;border-width:1px;border-style:solid}
+    .badge .dot{width:.55rem;height:.55rem;border-radius:50%}
+    .warn{background:rgba(232,196,50,.10);border:1px solid rgba(232,196,50,.35);
+      color:#a07900;padding:.5rem .7rem;border-radius:8px;font-size:.8rem;margin:.4rem 0}
+    @media (prefers-color-scheme:dark){.warn{color:#e8c432}}
+    table{width:100%;border-collapse:separate;border-spacing:0;font-size:.82rem;margin-top:.5rem}
+    th{text-align:left;font-weight:700;color:var(--fg2);font-size:.65rem;
+      text-transform:uppercase;letter-spacing:.08em;padding:.4rem .5rem;border-bottom:1px solid var(--line)}
+    td{padding:.5rem;border-bottom:1px solid var(--line);
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--fg1)}
+    .num{width:1.4rem;height:1.4rem;border-radius:50%;display:inline-flex;
+      align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.7rem}
+    .cta{display:inline-block;margin-top:1rem;padding:.55rem 1rem;background:var(--accent);
+      color:#fff !important;text-decoration:none;border-radius:8px;font-weight:700;font-size:.85rem}
+    .cta:hover{filter:brightness(1.05)}
+    .windows-row{cursor:pointer;transition:background .12s}
+    .windows-row:hover{background:var(--accent-soft)}
+    a{color:var(--accent)}
   </style>
 </head>
 <body>
-  <div id="root">
-    <div class="placeholder">
-      <p>Chargement du plan…</p>
-      <p class="dim">Si rien n'apparaît :</p>
-      <a id="fallback" href="https://openwind.fr/plan" target="_blank" rel="noopener">openwind.fr →</a>
-    </div>
+  <div id="root" class="root">
+    <div class="placeholder">Chargement du plan…</div>
   </div>
   <script type="module">
     import { App } from "https://unpkg.com/@modelcontextprotocol/ext-apps@0.4.0/app-with-deps";
 
-    function extractUrl(result) {
-      if (!result) return null;
-      const sc = result.structuredContent;
-      if (sc && typeof sc.openwind_url === 'string') return sc.openwind_url;
-      if (sc && Array.isArray(sc.windows) && sc.windows[0] && sc.windows[0].openwind_url) {
-        return sc.windows[0].openwind_url;
-      }
-      return null;
+    const CX_COLORS = {1:"#2dc97a",2:"#8fcc30",3:"#e8c432",4:"#e87a18",5:"#e84118"};
+    const SAIL = {pres:"Près",travers:"Travers",largue:"Largue",portant:"Portant"};
+
+    function escapeHtml(s){
+      return String(s).replace(/[&<>"']/g, c=>({
+        "&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"
+      }[c]));
+    }
+    function fmtTime(iso){
+      try{return new Date(iso).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});}
+      catch(e){return iso;}
+    }
+    function fmtDate(iso){
+      try{
+        const d = new Date(iso);
+        return d.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"short"})
+             + " · " + d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+      }catch(e){return iso;}
+    }
+    function fmtDur(h){
+      if(h==null) return "—";
+      const hh=Math.floor(h), mm=Math.round((h-hh)*60);
+      return mm>0 ? `${hh}h${String(mm).padStart(2,"0")}` : `${hh}h`;
+    }
+    function cxLevel(tws){
+      if(tws<10)return 1; if(tws<15)return 2; if(tws<20)return 3; if(tws<25)return 4; return 5;
+    }
+    function pointOfSail(twa){
+      const a = Math.abs(twa); // already 0..180 from server
+      if(a<60)return "Près"; if(a<100)return "Travers";
+      if(a<150)return "Largue"; return "Portant";
     }
 
-    function bindIframe(url) {
+    function badge(level, label){
+      const c = CX_COLORS[level] || CX_COLORS[3];
+      return `<span class="badge" style="background:${c}22;color:${c};border-color:${c}55">
+        <span class="dot" style="background:${c}"></span>${level}/5 — ${escapeHtml(label||"")}
+      </span>`;
+    }
+
+    function renderSingle(sc){
+      const p = sc.passage || {};
+      const cx = sc.complexity || {};
+      const segs = p.segments || [];
+      const warnings = (p.warnings||[]).concat((cx.warnings||[]).map(w=>w.message||w));
+      const url = sc.openwind_url || "https://openwind.fr/plan";
+      const stats = [
+        ["Distance", (p.distance_nm||0).toFixed(1)+" nm"],
+        ["Durée",    fmtDur(p.duration_h)],
+        ["Arrivée",  fmtTime(p.arrival_time)],
+        ["Modèle",   (p.model||"").replace(/_/g," ")],
+      ];
+      const legRows = segs.map((s,i)=>{
+        const lvl = cxLevel(s.tws_kn||0);
+        const c = CX_COLORS[lvl];
+        const bs = s.boat_speed_kn != null ? s.boat_speed_kn.toFixed(1)+" kn" : "—";
+        const tws = s.tws_kn != null ? Math.round(s.tws_kn)+" kn" : "—";
+        const hs = s.hs_m != null ? s.hs_m.toFixed(1)+" m" : "—";
+        return `<tr>
+          <td><span class="num" style="background:${c}">${i+1}</span></td>
+          <td>${fmtTime(s.end_time)}</td>
+          <td>${pointOfSail(s.twa_deg||0)}</td>
+          <td>${tws}</td>
+          <td>${hs}</td>
+          <td>${bs}</td>
+        </tr>`;
+      }).join("");
+      return `
+        <h2>Plan de passage</h2>
+        <p class="sub">${segs.length} tronçon${segs.length>1?"s":""} · ${(p.distance_nm||0).toFixed(1)} nm</p>
+        <div class="stats">${stats.map(([l,v])=>`
+          <div class="stat"><div class="l">${l}</div><div class="v">${escapeHtml(v)}</div></div>
+        `).join("")}</div>
+        ${badge(cx.level||3, cx.label||"")}
+        ${warnings.map(w=>`<div class="warn">⚠ ${escapeHtml(w)}</div>`).join("")}
+        ${segs.length ? `<table>
+          <thead><tr><th>#</th><th>Heure</th><th>Allure</th><th>Vent</th><th>Mer</th><th>Vitesse</th></tr></thead>
+          <tbody>${legRows}</tbody>
+        </table>` : ""}
+        <a class="cta" href="${escapeHtml(url)}" target="_blank" rel="noopener">Voir le plan complet sur openwind.fr →</a>
+      `;
+    }
+
+    function renderCompare(sc){
+      const windows = sc.windows || [];
+      const sweep = sc.sweep || {};
+      const meta = sc.meta_warnings || [];
+      const rows = windows.map(w=>{
+        const cs = w.conditions_summary || {};
+        const cx = w.complexity || {};
+        const c = CX_COLORS[cx.level] || CX_COLORS[3];
+        const tws = (cs.tws_min_kn != null && cs.tws_max_kn != null)
+          ? `${Math.round(cs.tws_min_kn)}-${Math.round(cs.tws_max_kn)} kn` : "—";
+        const sail = SAIL[cs.predominant_sail_angle] || cs.predominant_sail_angle || "—";
+        const url = w.openwind_url || "https://openwind.fr/plan";
+        return `<tr class="windows-row" onclick="window.open('${escapeHtml(url)}','_blank')">
+          <td>${fmtDate(w.departure)}</td>
+          <td>${fmtDur(w.duration_h)}</td>
+          <td>${fmtTime(w.arrival)}</td>
+          <td>${escapeHtml(sail)}</td>
+          <td>${tws}</td>
+          <td><span class="num" style="background:${c}">${cx.level||"?"}</span></td>
+        </tr>`;
+      }).join("");
+      return `
+        <h2>Comparaison de ${windows.length} fenêtres</h2>
+        <p class="sub">Du ${fmtDate(sweep.earliest)} au ${fmtDate(sweep.latest)} · pas de ${sweep.interval_hours||"?"}h</p>
+        ${meta.map(m=>`<div class="warn">${escapeHtml(m)}</div>`).join("")}
+        <table>
+          <thead><tr><th>Départ</th><th>Durée</th><th>ETA</th><th>Allure</th><th>Vent</th><th>⚡</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <p class="sub" style="margin-top:.75rem">Cliquez sur une ligne pour ouvrir le détail dans openwind.fr</p>
+      `;
+    }
+
+    function render(result){
+      const sc = result && result.structuredContent;
+      if(!sc) return;
       const root = document.getElementById('root');
-      const iframe = document.createElement('iframe');
-      iframe.src = url;
-      iframe.title = 'OpenWind passage plan';
-      iframe.allow = 'clipboard-write';
-      iframe.referrerPolicy = 'no-referrer';
-      root.innerHTML = '';
-      root.appendChild(iframe);
-      const fb = document.getElementById('fallback');
-      if (fb) fb.href = url;
+      try {
+        if(sc.mode === "multi_window") root.innerHTML = renderCompare(sc);
+        else if(sc.passage) root.innerHTML = renderSingle(sc);
+      } catch(e) {
+        console.error('[openwind] render failed', e);
+        const url = (sc.openwind_url || (sc.windows && sc.windows[0] && sc.windows[0].openwind_url) || "https://openwind.fr/plan");
+        root.innerHTML = `<div class="placeholder">
+          Impossible d'afficher le plan ici.
+          <br><a class="cta" href="${escapeHtml(url)}" target="_blank" rel="noopener">Ouvrir sur openwind.fr →</a>
+        </div>`;
+      }
     }
 
     const app = new App({ name: "OpenWind Plan", version: "1.0.0" });
-
-    app.ontoolresult = (result) => {
-      const url = extractUrl(result);
-      if (url) bindIframe(url);
-    };
-
-    try {
-      await app.connect();
-    } catch (e) {
-      // Stay on the placeholder + clickable fallback — better than a hang.
-      console.error('[openwind] MCP App connect failed', e);
-    }
+    app.ontoolresult = render;
+    try { await app.connect(); }
+    catch (e) { console.error('[openwind] MCP App connect failed', e); }
   </script>
 </body>
 </html>
@@ -284,16 +409,18 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
         meta={
             "ui": {
                 "csp": {
-                    # Allow the inner iframe to load openwind.fr.
-                    "frameDomains": PLAN_UI_FRAME_DOMAINS,
-                    # Allow the SDK bundle (same CDN as the official examples).
+                    # Allow the SDK bundle from unpkg (same CDN as the
+                    # official ext-apps examples). No `frameDomains` because
+                    # the widget renders inline — Claude.ai 2026-05 doesn't
+                    # honour `frameDomains` anyway, see comment on
+                    # `_PLAN_WIDGET_HTML`.
                     "resourceDomains": PLAN_UI_RESOURCE_DOMAINS,
                 }
             }
         },
     )
     def plan_widget_resource() -> str:
-        """MCP Apps UI resource — iframe wrapper for openwind.fr/plan.
+        """MCP Apps UI resource — renders the plan inline (no nested iframe).
 
         Receives the tool's ``structuredContent`` over postMessage (per the
         MCP Apps spec — the host pushes results to the iframe via a
