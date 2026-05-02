@@ -206,7 +206,8 @@ class TestPlanPassageSweep:
                 "conditions_summary", "warnings", "openwind_url"} <= w.keys()
         assert 1 <= w["complexity"]["level"] <= 5
         cs = w["conditions_summary"]
-        assert {"tws_min_kn", "tws_max_kn", "predominant_sail_angle", "hs_max_m"} <= cs.keys()
+        assert {"tws_min_kn", "tws_max_kn", "predominant_sail_angle",
+                "hs_min_m", "hs_max_m"} <= cs.keys()
         assert cs["predominant_sail_angle"] in ("pres", "travers", "largue", "portant")
 
     async def test_html_never_rendered_in_sweep(self) -> None:
