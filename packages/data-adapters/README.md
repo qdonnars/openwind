@@ -2,7 +2,7 @@
 
 Pure Python domain logic for OpenWind: marine data adapters, polars, routing, complexity scoring.
 
-Cloud-agnostic — no dependency on Gradio, FastMCP, or any deployment runtime. Reused by `openwind-mcp-core` and any future deployment wrapper.
+Cloud-agnostic no dependency on Gradio, FastMCP, or any deployment runtime. Reused by `openwind-mcp-core` and any future deployment wrapper.
 
 ## Install (dev)
 
@@ -45,7 +45,7 @@ Defaults: `k=0.05`, `p=1.75`, `floor=0.5`. Justification:
   <https://orc.org/uploads/files/ORC-VPP-Documentation-2023.pdf>
 
 - **Power `p=1.75` on Hs.** Empirical exponent commonly quoted in seakeeping for
-  added resistance vs significant wave height — between the linear regime and
+  added resistance vs significant wave height between the linear regime and
   the strict `Hs²` energy scaling that follows from integrating a
   Pierson-Moskowitz / Bretschneider spectrum × RAO. Used as the conservative
   midpoint here.
@@ -64,7 +64,7 @@ Defaults: `k=0.05`, `p=1.75`, `floor=0.5`. Justification:
   ranges reported for ~10 m cruisers in:
   - *Gerritsma, J., Onnink, R., Versluis, A. (1981), "Geometry, Resistance and
     Stability of the Delft Systematic Yacht Hull Series", Int. Shipbuilding
-    Progress 28(328) — Delft series resistance-in-waves data.*
+    Progress 28(328) Delft series resistance-in-waves data.*
   - *Keuning, J. A. & Vermeulen, K. J. (2003), "On the Influence of the
     Sailing Yacht Hull Form on the Added Resistance in Waves", 16th HISWA
     Symposium on Yacht Design.*
