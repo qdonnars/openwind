@@ -31,6 +31,7 @@ from openwind_data.routing.geometry import Point
 from openwind_data.routing.passage import (
     _build_conditions_summary,
     estimate_passage,
+    estimate_passage_for_arrival,
     estimate_passage_windows,
 )
 from openwind_mcp_core import build_server
@@ -429,6 +430,82 @@ async def _api_passage(request: Request) -> JSONResponse:
     })
 
 
+async def _api_passage_by_eta(request: Request) -> JSONResponse:
+    """ETA-driven passage planner: caller pins arrival, solver finds departure.
+
+    Body matches `_api_passage` minus `departure` and plus `target_arrival`
+    (ISO-8601, timezone-aware). Optional `tolerance_minutes` (default 10) and
+    `max_iterations` (default 4) tune the fixed-point solver.
+
+    Response shape mirrors `_api_passage` single mode and adds an `eta` block:
+        {target_arrival, iterations, residual_seconds, converged}.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid JSON body"}, status_code=422)
+
+    missing = [k for k in ("waypoints", "target_arrival", "archetype") if body.get(k) is None]
+    if missing:
+        return JSONResponse({"error": f"missing fields: {missing}"}, status_code=422)
+
+    try:
+        target_arrival = datetime.fromisoformat(body["target_arrival"])
+    except (ValueError, TypeError) as exc:
+        return JSONResponse({"error": f"invalid target_arrival: {exc}"}, status_code=422)
+
+    try:
+        waypoints = [Point(lat=float(w[0]), lon=float(w[1])) for w in body["waypoints"]]
+    except (TypeError, IndexError, ValueError) as exc:
+        return JSONResponse({"error": f"invalid waypoints: {exc}"}, status_code=422)
+
+    if len(waypoints) < 2:
+        return JSONResponse({"error": "at least 2 waypoints required"}, status_code=422)
+
+    try:
+        efficiency = float(body.get("efficiency", 0.75))
+    except (TypeError, ValueError) as exc:
+        return JSONResponse({"error": f"invalid efficiency: {exc}"}, status_code=422)
+
+    from datetime import timedelta as _td
+    kwargs: dict[str, Any] = {"efficiency": efficiency, "model": "auto"}
+    if "tolerance_minutes" in body:
+        try:
+            kwargs["tolerance"] = _td(minutes=float(body["tolerance_minutes"]))
+        except (TypeError, ValueError) as exc:
+            return JSONResponse({"error": f"invalid tolerance_minutes: {exc}"}, status_code=422)
+    if "max_iterations" in body:
+        try:
+            kwargs["max_iterations"] = int(body["max_iterations"])
+        except (TypeError, ValueError) as exc:
+            return JSONResponse({"error": f"invalid max_iterations: {exc}"}, status_code=422)
+
+    try:
+        plan = await estimate_passage_for_arrival(
+            waypoints, target_arrival, body["archetype"], **kwargs,
+        )
+    except KeyError as exc:
+        return JSONResponse({"error": f"unknown archetype: {exc}"}, status_code=422)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=422)
+    except ForecastHorizonError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=422)
+
+    complexity = score_complexity(plan.report)
+
+    return JSONResponse({
+        "passage": _to_json(plan.report),
+        "complexity": _to_json(complexity),
+        "eta": {
+            "target_arrival": plan.target_arrival.isoformat(),
+            "iterations": plan.iterations,
+            "residual_seconds": plan.residual_seconds,
+            "converged": plan.converged,
+        },
+        "forecast_updated_at": datetime.now(UTC).isoformat(),
+    })
+
+
 def main() -> None:
     server = build_server()
     server.settings.transport_security = TransportSecuritySettings(
@@ -451,6 +528,7 @@ def main() -> None:
             Route("/", _index),
             Route("/api/v1/archetypes", _api_archetypes, methods=["GET"]),
             Route("/api/v1/passage", _api_passage, methods=["POST"]),
+            Route("/api/v1/passage-by-eta", _api_passage_by_eta, methods=["POST"]),
             Mount("/", app=mcp_app),
         ],
         middleware=[

@@ -19,11 +19,13 @@ from openwind_data.routing.geometry import (
     segment_route,
 )
 from openwind_data.routing.passage import (
+    EtaPassagePlan,
     PassageReport,
     SegmentReport,
     _build_conditions_summary,
     best_vmg_upwind,
     estimate_passage,
+    estimate_passage_for_arrival,
     estimate_passage_windows,
 )
 
@@ -31,6 +33,7 @@ __all__ = [
     "EARTH_RADIUS_NM",
     "BoatPolar",
     "ComplexityScore",
+    "EtaPassagePlan",
     "PassageReport",
     "Point",
     "Segment",
@@ -39,6 +42,7 @@ __all__ = [
     "bearing",
     "best_vmg_upwind",
     "estimate_passage",
+    "estimate_passage_for_arrival",
     "estimate_passage_windows",
     "get_polar",
     "haversine_distance",
