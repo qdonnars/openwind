@@ -11,7 +11,7 @@ from openwind_data.routing.passage import PassageReport, SegmentReport
 DEPARTURE = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
 
 
-def _make_segment(tws_kn: float) -> SegmentReport:
+def _make_segment(tws_kn: float, hs_m: float | None = None) -> SegmentReport:
     return SegmentReport(
         start=Point(43.0, 5.0),
         end=Point(43.0, 5.1),
@@ -25,11 +25,19 @@ def _make_segment(tws_kn: float) -> SegmentReport:
         polar_speed_kn=6.0,
         boat_speed_kn=5.0,
         duration_h=1.0,
+        hs_m=hs_m,
     )
 
 
-def _make_passage(tws_per_segment: list[float]) -> PassageReport:
-    segs = tuple(_make_segment(t) for t in tws_per_segment)
+def _make_passage(
+    tws_per_segment: list[float],
+    hs_per_segment: list[float | None] | None = None,
+) -> PassageReport:
+    if hs_per_segment is None:
+        hs_per_segment = [None] * len(tws_per_segment)
+    segs = tuple(
+        _make_segment(t, h) for t, h in zip(tws_per_segment, hs_per_segment, strict=True)
+    )
     return PassageReport(
         archetype="cruiser_40ft",
         departure_time=DEPARTURE,
@@ -111,12 +119,18 @@ class TestWarnings:
         assert w.level == 3
         assert isinstance(w, ComplexityWarning)
         assert 0 in w.affected_segments
+        # Message reports affected route distance, not segment count.
+        assert "5 nm" in w.message
+        assert "segment" not in w.message
 
     def test_wind_warning_identifies_hot_segments(self) -> None:
         # Segments 0 and 2 calm, segment 1 hits level 5 (>=25 kn)
         s = score_complexity(_make_passage([8.0, 26.0, 8.0]))
         assert len(s.warnings) == 1
-        assert s.warnings[0].affected_segments == (1,)
+        w = s.warnings[0]
+        assert w.affected_segments == (1,)
+        # Single 5 nm segment affected → "sur 5 nm".
+        assert "5 nm" in w.message
 
     def test_sea_warning_at_level_4(self) -> None:
         s = score_complexity(_make_passage([5.0]), max_hs_m=2.5)
@@ -133,6 +147,26 @@ class TestWarnings:
         s = score_complexity(_make_passage([22.0]), max_hs_m=2.5)
         assert any(w.kind == "wind" for w in s.warnings)
         assert any(w.kind == "sea" for w in s.warnings)
+
+    def test_sea_warning_uses_per_segment_hs_when_no_override(self) -> None:
+        # Three 5 nm segments, only the middle one has Hs above the level-3
+        # threshold (>=1.0 m). Sea warning should fire and report 5 nm affected.
+        s = score_complexity(
+            _make_passage([10.0, 10.0, 10.0], hs_per_segment=[0.4, 1.6, 0.4])
+        )
+        sea_w = [w for w in s.warnings if w.kind == "sea"]
+        assert len(sea_w) == 1
+        assert sea_w[0].affected_segments == (1,)
+        assert "5 nm" in sea_w[0].message
+        assert "1.6" in sea_w[0].message  # max_hs_m derived from segments
+
+    def test_sea_warning_uses_full_route_when_only_max_hs_provided(self) -> None:
+        # No per-segment Hs but caller passes route-level max → warning falls
+        # back to the whole route distance (3 segs x 5 nm = 15 nm).
+        s = score_complexity(_make_passage([10.0, 10.0, 10.0]), max_hs_m=2.5)
+        sea_w = [w for w in s.warnings if w.kind == "sea"]
+        assert len(sea_w) == 1
+        assert "15 nm" in sea_w[0].message
 
 
 def test_empty_passage_rejected() -> None:
