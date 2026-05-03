@@ -62,6 +62,20 @@ def _lower_bound(level: int, bands: tuple[tuple[float, int, str], ...]) -> float
     return 0.0  # pragma: no cover
 
 
+def _compact_range(values: list[float], decimals: int) -> str:
+    """`"30"` for {30}, `"25-30"` for the spread, rounded to `decimals` digits.
+
+    Reporting a single max obscured how the conditions actually played out:
+    "TWS max 30 kn" reads like one moment of stress, when the affected stretch
+    might have been steady at 25-30 kn. The range is more informative for both
+    the LLM (decision-making) and the human reader.
+    """
+    rounded = sorted({round(v, decimals) for v in values})
+    if len(rounded) == 1:
+        return f"{rounded[0]:.{decimals}f}"
+    return f"{rounded[0]:.{decimals}f}-{rounded[-1]:.{decimals}f}"
+
+
 @dataclass(frozen=True, slots=True)
 class ComplexityWarning:
     kind: Literal["wind", "sea"]
@@ -126,10 +140,11 @@ def score_complexity(
         threshold = _lower_bound(wind_level, _WIND_BANDS)
         affected = tuple(i for i, s in enumerate(passage.segments) if s.tws_kn >= threshold)
         affected_nm = sum(passage.segments[i].distance_nm for i in affected)
+        tws_range = _compact_range([passage.segments[i].tws_kn for i in affected], 0)
         warnings.append(ComplexityWarning(
             kind="wind",
             level=wind_level,
-            message=f"Vent {wind_label} : TWS max {tws_max:.0f} kn sur {affected_nm:.0f} nm",
+            message=f"Vent {wind_label} : TWS {tws_range} kn sur {affected_nm:.0f} nm",
             affected_segments=affected,
         ))
     if sea_level is not None and sea_level >= 3 and max_hs_m is not None:
@@ -144,10 +159,16 @@ def score_complexity(
         if not affected_sea:
             affected_sea = tuple(range(len(passage.segments)))
         affected_sea_nm = sum(passage.segments[i].distance_nm for i in affected_sea)
+        affected_hs = [
+            passage.segments[i].hs_m
+            for i in affected_sea
+            if passage.segments[i].hs_m is not None
+        ]
+        hs_range = _compact_range(affected_hs, 1) if affected_hs else f"{max_hs_m:.1f}"
         warnings.append(ComplexityWarning(
             kind="sea",
             level=sea_level,
-            message=f"Mer {sea_label} : Hs max {max_hs_m:.1f} m sur {affected_sea_nm:.0f} nm",
+            message=f"Mer {sea_label} : Hs {hs_range} m sur {affected_sea_nm:.0f} nm",
             affected_segments=affected_sea,
         ))
 
