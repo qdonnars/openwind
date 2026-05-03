@@ -119,8 +119,10 @@ class TestWarnings:
         assert w.level == 3
         assert isinstance(w, ComplexityWarning)
         assert 0 in w.affected_segments
-        # Message reports affected route distance, not segment count.
+        # Single affected segment → no range, just the value, plus affected nm.
+        assert "TWS 18 kn" in w.message
         assert "5 nm" in w.message
+        assert "max" not in w.message
         assert "segment" not in w.message
 
     def test_wind_warning_identifies_hot_segments(self) -> None:
@@ -129,15 +131,27 @@ class TestWarnings:
         assert len(s.warnings) == 1
         w = s.warnings[0]
         assert w.affected_segments == (1,)
-        # Single 5 nm segment affected → "sur 5 nm".
+        assert "TWS 26 kn" in w.message
         assert "5 nm" in w.message
+
+    def test_wind_warning_reports_min_max_range(self) -> None:
+        # Multiple affected segments at level 5 with different TWS values →
+        # message must report the range, not a single max.
+        s = score_complexity(_make_passage([26.0, 28.0, 30.0]))
+        assert len(s.warnings) == 1
+        w = s.warnings[0]
+        assert w.kind == "wind"
+        assert w.affected_segments == (0, 1, 2)
+        assert "TWS 26-30 kn" in w.message
+        assert "15 nm" in w.message
 
     def test_sea_warning_at_level_4(self) -> None:
         s = score_complexity(_make_passage([5.0]), max_hs_m=2.5)
         sea_w = [w for w in s.warnings if w.kind == "sea"]
         assert len(sea_w) == 1
         assert sea_w[0].level == 4  # 2.5 m falls in level 4 (2–3 m band)
-        assert "2.5" in sea_w[0].message
+        assert "Hs 2.5 m" in sea_w[0].message
+        assert "max" not in sea_w[0].message
 
     def test_no_sea_warning_without_max_hs(self) -> None:
         s = score_complexity(_make_passage([18.0]))
@@ -157,15 +171,28 @@ class TestWarnings:
         sea_w = [w for w in s.warnings if w.kind == "sea"]
         assert len(sea_w) == 1
         assert sea_w[0].affected_segments == (1,)
+        assert "Hs 1.6 m" in sea_w[0].message
         assert "5 nm" in sea_w[0].message
-        assert "1.6" in sea_w[0].message  # max_hs_m derived from segments
+
+    def test_sea_warning_reports_min_max_range(self) -> None:
+        # Three segments with Hs >= 1.0 m and varying values → range expected.
+        s = score_complexity(
+            _make_passage([10.0, 10.0, 10.0], hs_per_segment=[1.2, 1.6, 1.9])
+        )
+        sea_w = [w for w in s.warnings if w.kind == "sea"]
+        assert len(sea_w) == 1
+        assert sea_w[0].affected_segments == (0, 1, 2)
+        assert "Hs 1.2-1.9 m" in sea_w[0].message
+        assert "15 nm" in sea_w[0].message
 
     def test_sea_warning_uses_full_route_when_only_max_hs_provided(self) -> None:
         # No per-segment Hs but caller passes route-level max → warning falls
-        # back to the whole route distance (3 segs x 5 nm = 15 nm).
+        # back to the whole route distance (3 segs x 5 nm = 15 nm) and reports
+        # the override value alone (no range data available).
         s = score_complexity(_make_passage([10.0, 10.0, 10.0]), max_hs_m=2.5)
         sea_w = [w for w in s.warnings if w.kind == "sea"]
         assert len(sea_w) == 1
+        assert "Hs 2.5 m" in sea_w[0].message
         assert "15 nm" in sea_w[0].message
 
 
