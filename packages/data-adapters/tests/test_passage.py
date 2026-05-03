@@ -17,7 +17,6 @@ from openwind_data.adapters.base import (
 from openwind_data.routing.archetypes import get_polar, lookup_polar
 from openwind_data.routing.geometry import Point
 from openwind_data.routing.passage import (
-    DEFAULT_ETA_TOLERANCE,
     LIGHT_WIND_THRESHOLD_KN,
     MAX_SWEEP_WINDOWS,
     MODERATE_SEA_HS_M,
@@ -799,10 +798,10 @@ class TestSeaStateWarnings:
 class TestEstimatePassageForArrival:
     """ETA-driven solver: given a target arrival, find the right departure."""
 
-    async def test_converges_under_constant_wind(self) -> None:
-        # Constant wind in time → first iteration's residual fully predicts the
-        # second iteration's correction. Should converge on iteration 2 (the
-        # initial heuristic-speed guess is off, the corrected one lands exactly).
+    async def test_arrival_lands_exactly_on_target(self) -> None:
+        # Backward resolution anchors the last segment's end_time at target,
+        # so arrival must equal target to microsecond precision (the only
+        # drift comes from cumulative timedelta arithmetic, sub-microsecond).
         adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
         target = datetime(2026, 5, 1, 14, 0, tzinfo=UTC)
         plan = await estimate_passage_for_arrival(
@@ -812,20 +811,15 @@ class TestEstimatePassageForArrival:
             adapter=adapter,
             segment_length_nm=10.0,
         )
-        assert plan.converged is True
         assert plan.target_arrival == target
-        assert abs(plan.residual_seconds) <= DEFAULT_ETA_TOLERANCE.total_seconds()
-        # Arrival lands within tolerance of target
-        assert (
-            abs((plan.report.arrival_time - target).total_seconds())
-            <= DEFAULT_ETA_TOLERANCE.total_seconds()
-        )
-        # And departure + duration = arrival (sanity)
+        assert plan.report.arrival_time == target
+        # And departure + duration ≈ arrival (sanity)
         expected_arrival = plan.report.departure_time + timedelta(hours=plan.report.duration_h)
-        assert abs((plan.report.arrival_time - expected_arrival).total_seconds()) < 1.0
+        assert abs((plan.report.arrival_time - expected_arrival).total_seconds()) < 1e-3
 
-    async def test_iteration_count_is_small(self) -> None:
-        # Constant wind → fixed-point converges in <=3 iterations.
+    async def test_segments_chain_continuously_to_target(self) -> None:
+        # End-to-end: each segment's end_time equals the next segment's
+        # start_time, the last segment's end_time equals target.
         adapter = StubAdapter(tws_kn=12.0, twd_deg=180.0)
         target = datetime(2026, 5, 1, 16, 0, tzinfo=UTC)
         plan = await estimate_passage_for_arrival(
@@ -835,8 +829,23 @@ class TestEstimatePassageForArrival:
             adapter=adapter,
             segment_length_nm=10.0,
         )
-        assert plan.iterations <= 3
-        assert plan.converged
+        for s1, s2 in pairwise(plan.report.segments):
+            assert s1.end_time == s2.start_time
+        assert plan.report.segments[-1].end_time == target
+        assert plan.report.segments[0].start_time == plan.report.departure_time
+
+    async def test_one_fetch_per_segment(self) -> None:
+        # Backward solver issues one fetch per segment, no iteration multiplier.
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        target = datetime(2026, 5, 1, 14, 0, tzinfo=UTC)
+        plan = await estimate_passage_for_arrival(
+            [MARSEILLE, PORQUEROLLES],
+            target,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=10.0,
+        )
+        assert len(adapter.calls) == len(plan.report.segments)
 
     async def test_naive_target_rejected(self) -> None:
         adapter = StubAdapter()
@@ -848,48 +857,16 @@ class TestEstimatePassageForArrival:
                 adapter=adapter,
             )
 
-    async def test_invalid_max_iterations_rejected(self) -> None:
+    async def test_invalid_efficiency_rejected(self) -> None:
         adapter = StubAdapter()
-        with pytest.raises(ValueError, match="max_iterations"):
+        with pytest.raises(ValueError, match="efficiency"):
             await estimate_passage_for_arrival(
                 [MARSEILLE, PORQUEROLLES],
                 datetime(2026, 5, 1, 14, 0, tzinfo=UTC),
                 "cruiser_40ft",
                 adapter=adapter,
-                max_iterations=0,
+                efficiency=0.0,
             )
-
-    async def test_non_positive_tolerance_rejected(self) -> None:
-        adapter = StubAdapter()
-        with pytest.raises(ValueError, match="tolerance"):
-            await estimate_passage_for_arrival(
-                [MARSEILLE, PORQUEROLLES],
-                datetime(2026, 5, 1, 14, 0, tzinfo=UTC),
-                "cruiser_40ft",
-                adapter=adapter,
-                tolerance=timedelta(0),
-            )
-
-    async def test_did_not_converge_returns_last_with_flag(self) -> None:
-        # Single iteration cannot converge from the heuristic-speed guess
-        # (HEURISTIC_SPEED_KN=6.0 vs cruiser_40ft beam-reach ~5 kn at 10 kn TWS).
-        # Force it: max_iterations=1 + tight tolerance → expect converged=False.
-        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
-        target = datetime(2026, 5, 1, 14, 0, tzinfo=UTC)
-        plan = await estimate_passage_for_arrival(
-            [MARSEILLE, PORQUEROLLES],
-            target,
-            "cruiser_40ft",
-            adapter=adapter,
-            segment_length_nm=10.0,
-            max_iterations=1,
-            tolerance=timedelta(seconds=30),
-        )
-        assert plan.converged is False
-        assert plan.iterations == 1
-        # The residual is reported in seconds, and matches target - actual.
-        actual_residual = (target - plan.report.arrival_time).total_seconds()
-        assert plan.residual_seconds == pytest.approx(actual_residual, abs=1e-6)
 
     async def test_target_arrival_with_local_tz_converted_to_utc(self) -> None:
         # A non-UTC tzinfo should be normalized; target_arrival on the result

@@ -55,10 +55,6 @@ ROUGH_SEA_HS_M = 2.5     # >= 2.5m: "forte mer" warning
 PREWARM_MIN_SPEED_KN = 2.0  # conservative floor to upper-bound passage duration for cache prewarm
 MAX_SWEEP_WINDOWS = 336  # 14 days x 24h hard cap
 
-# ETA-driven solver defaults — see `estimate_passage_for_arrival`.
-DEFAULT_ETA_TOLERANCE = timedelta(minutes=10)
-DEFAULT_ETA_MAX_ITERATIONS = 4
-
 # Wave derate — see README "References" section for sources.
 WAVE_DERATE_K = 0.05
 WAVE_DERATE_P = 1.75
@@ -164,17 +160,15 @@ class PassageReport:
 class EtaPassagePlan:
     """Result of an ETA-driven passage solve.
 
-    The solver iterates `estimate_passage` to find a departure that lands
-    arrival within `tolerance` of `target_arrival`. `residual_seconds` is
-    `target - actual`: positive means we still arrive too early, negative
-    too late. `converged` is False when the iteration cap was reached.
+    Backward-resolved: each segment's end_time is fixed (the next segment's
+    start, or `target_arrival` for the last segment), and its duration is
+    computed from the wind sampled at a heuristic mid-time. So
+    `report.arrival_time == target_arrival` exactly by construction (modulo
+    timedelta microsecond drift).
     """
 
     report: PassageReport
     target_arrival: datetime
-    iterations: int
-    residual_seconds: float
-    converged: bool
 
 
 def _closest_wind_point(points: tuple[WindPoint, ...], target: datetime) -> WindPoint:
@@ -393,6 +387,139 @@ async def _estimate_with_model(
     )
 
 
+async def _estimate_backward_with_model(
+    waypoints: list[Point],
+    target_arrival: datetime,
+    boat_archetype: str,
+    *,
+    efficiency: float,
+    segment_length_nm: float,
+    adapter: MarineDataAdapter | None,
+    model: str,
+    heuristic_speed_kn: float,
+    use_wave_correction: bool,
+) -> PassageReport:
+    """Mirror of `_estimate_with_model` anchored at arrival, solving backward.
+
+    Walks segments from last to first: each segment's end_time is fixed (the
+    next segment's start_time, or `target_arrival` for the last segment), and
+    its actual duration is computed from the wind sampled at a mid-time guess.
+    By construction, the resulting report has `arrival_time == target_arrival`
+    exactly (modulo timedelta microsecond drift), so no fixed-point iteration
+    is needed. Mid-time guesses use `heuristic_speed_kn` like the forward path,
+    same temporal-correlation argument applies.
+    """
+    polar = get_polar(boat_archetype)
+    segments = segment_route(waypoints, segment_length_nm)
+    target_utc = target_arrival.astimezone(UTC)
+
+    heuristic_speed_kn = max(heuristic_speed_kn, MIN_BOAT_SPEED_KN)
+    seg_mid_times: list[datetime] = [target_utc] * len(segments)
+    cumulative_back = timedelta(0)
+    for idx in range(len(segments) - 1, -1, -1):
+        seg_h = segments[idx].distance_nm / heuristic_speed_kn
+        seg_mid_times[idx] = target_utc - cumulative_back - timedelta(hours=seg_h / 2)
+        cumulative_back += timedelta(hours=seg_h)
+
+    seg_mid_points = [midpoint(s.start, s.end) for s in segments]
+
+    own_adapter = adapter is None
+    fetch_adapter: MarineDataAdapter = adapter or OpenMeteoAdapter()
+    try:
+        bundles = await asyncio.gather(
+            *[
+                fetch_adapter.fetch(
+                    pt.lat,
+                    pt.lon,
+                    mid - WIND_FETCH_WINDOW / 2,
+                    mid + WIND_FETCH_WINDOW / 2,
+                    models=[model],
+                )
+                for pt, mid in zip(seg_mid_points, seg_mid_times, strict=True)
+            ]
+        )
+    finally:
+        if own_adapter and hasattr(fetch_adapter, "aclose"):
+            await fetch_adapter.aclose()  # pragma: no cover
+
+    # Backward pass: walk segments in reverse, anchoring end_time at arrival.
+    reverse_reports: list[SegmentReport] = []
+    end_time = target_utc
+    min_boat_speed = float("inf")
+    for seg, mid_time, bundle in zip(
+        reversed(segments), reversed(seg_mid_times), reversed(bundles), strict=True
+    ):
+        wind_series = bundle.wind_by_model.get(model)
+        if wind_series is None or not wind_series.points:
+            raise ForecastHorizonError(model, mid_time)
+        wp = _closest_wind_point(wind_series.points, mid_time)
+        twa = normalize_twa(twd=wp.direction_deg, course=seg.bearing_deg)
+        polar_speed = lookup_polar(polar, wp.speed_kn, twa)
+        opt_twa, opt_polar_speed = best_vmg_upwind(polar, wp.speed_kn)
+        if twa < opt_twa:
+            effective_polar = opt_polar_speed * math.cos(math.radians(opt_twa - twa))
+        else:
+            effective_polar = polar_speed
+        hs_m = _closest_sea_hs(bundle.sea.points, mid_time)
+        derate = 1.0
+        if use_wave_correction and hs_m is not None:
+            derate = wave_derate(hs_m, twa)
+        boat_speed = max(effective_polar * efficiency * derate, MIN_BOAT_SPEED_KN)
+        seg_duration = timedelta(hours=seg.distance_nm / boat_speed)
+        seg_start = end_time - seg_duration
+        min_boat_speed = min(min_boat_speed, boat_speed)
+        reverse_reports.append(
+            SegmentReport(
+                start=seg.start,
+                end=seg.end,
+                distance_nm=seg.distance_nm,
+                bearing_deg=seg.bearing_deg,
+                start_time=seg_start,
+                end_time=end_time,
+                tws_kn=wp.speed_kn,
+                twd_deg=wp.direction_deg,
+                twa_deg=twa,
+                polar_speed_kn=polar_speed,
+                boat_speed_kn=boat_speed,
+                duration_h=seg_duration.total_seconds() / 3600.0,
+                hs_m=hs_m,
+                wave_derate_factor=derate,
+            )
+        )
+        end_time = seg_start
+
+    reports = list(reversed(reverse_reports))
+    departure = reports[0].start_time
+    duration = target_utc - departure
+
+    warnings: list[str] = []
+    max_tws = max(r.tws_kn for r in reports)
+    if max_tws >= STRONG_WIND_THRESHOLD_KN:
+        warnings.append(f"vent fort: TWS max {max_tws:.0f} kn (≥{STRONG_WIND_THRESHOLD_KN:.0f})")
+    if min_boat_speed < LIGHT_WIND_THRESHOLD_KN:
+        warnings.append(f"vent faible: vitesse mini {min_boat_speed:.1f} kn : passage très lent")
+    hs_values = [r.hs_m for r in reports if r.hs_m is not None]
+    if hs_values:
+        hs_max = max(hs_values)
+        if hs_max >= ROUGH_SEA_HS_M:
+            warnings.append(f"forte mer: Hs max {hs_max:.1f} m (≥{ROUGH_SEA_HS_M:.1f})")
+        elif hs_max >= MODERATE_SEA_HS_M:
+            warnings.append(f"mer formée: Hs max {hs_max:.1f} m (≥{MODERATE_SEA_HS_M:.1f})")
+
+    total_distance = sum(s.distance_nm for s in segments)
+    return PassageReport(
+        archetype=boat_archetype,
+        departure_time=departure,
+        arrival_time=target_utc,
+        duration_h=duration.total_seconds() / 3600.0,
+        distance_nm=total_distance,
+        efficiency=efficiency,
+        model=model,
+        segments=tuple(reports),
+        warnings=tuple(warnings),
+    )
+
+
 async def estimate_passage_windows(
     waypoints: list[Point],
     earliest_departure: datetime,
@@ -528,80 +655,76 @@ async def estimate_passage_for_arrival(
     target_arrival: datetime,
     boat_archetype: str,
     *,
-    tolerance: timedelta = DEFAULT_ETA_TOLERANCE,
-    max_iterations: int = DEFAULT_ETA_MAX_ITERATIONS,
     efficiency: float = 0.75,
     segment_length_nm: float = 10.0,
     adapter: MarineDataAdapter | None = None,
-    model: str = DEFAULT_MODEL,
+    model: str = AUTO_MODEL,
     heuristic_speed_kn: float = HEURISTIC_SPEED_KN,
     use_wave_correction: bool = False,
 ) -> EtaPassagePlan:
     """Inverse of `estimate_passage`: solve for a departure given a target arrival.
 
-    Fixed-point iteration: guess `departure = target_arrival - distance/heuristic_speed`,
-    simulate, shift `departure` by the residual `target - actual_arrival`, repeat
-    until `|residual| <= tolerance` or `max_iterations` is reached. Converges in
-    1-3 steps under typical Mediterranean wind variability because the wind window
-    we hit at the corrected departure is close to the previous one.
+    Single-pass backward resolution: walks segments from last to first, anchoring
+    each segment's end_time at the next one's start (or `target_arrival` for the
+    last segment) and computing its actual duration from the wind sampled at a
+    heuristic mid-time. Returns a plan whose `report.arrival_time` equals
+    `target_arrival` exactly by construction, so no iteration / tolerance /
+    convergence logic is needed.
 
     Args:
         waypoints: ordered list of route waypoints (>=2 points).
         target_arrival: timezone-aware datetime; the arrival we want to hit.
         boat_archetype: one of the registry names.
-        tolerance: residual under which a solution counts as converged.
-        max_iterations: cap on solver steps. Solutions return with `converged=False`
-            beyond this cap; caller decides whether to retry or surface as-is.
-        Other args: forwarded to `estimate_passage`.
+        efficiency: multiplier on polar speeds (see `estimate_passage`).
+        segment_length_nm: sub-segment length for weather sampling.
+        adapter: any `MarineDataAdapter` (defaults to a fresh `OpenMeteoAdapter`).
+        model: wind model name; ``"auto"`` tries AROME → ICON → GFS in order.
+        heuristic_speed_kn: speed used to lay out per-segment mid-time guesses.
+        use_wave_correction: if True, multiply boat speed by `wave_derate(Hs, TWA)`.
 
     Raises:
-        ValueError: target_arrival naive, max_iterations < 1, or tolerance <= 0.
-        ForecastHorizonError: from `estimate_passage` if the inferred departure
-            falls outside the model's forecast horizon. Caller should retry with
-            a different `model` or accept the failure.
+        ValueError: if `target_arrival` is naive.
+        ForecastHorizonError: if no model in the (auto-)chain covers the resolved
+            passage window.
     """
     if target_arrival.tzinfo is None:
         raise ValueError("target_arrival must be timezone-aware")
-    if max_iterations < 1:
-        raise ValueError("max_iterations must be >= 1")
-    if tolerance.total_seconds() <= 0:
-        raise ValueError("tolerance must be positive")
+    if not 0.0 < efficiency <= 1.0:
+        raise ValueError("efficiency must be in (0, 1]")
 
     target_utc = target_arrival.astimezone(UTC)
-    segments = segment_route(waypoints, segment_length_nm)
-    total_nm = sum(s.distance_nm for s in segments)
-    departure = target_utc - timedelta(hours=total_nm / heuristic_speed_kn)
 
-    last_report: PassageReport | None = None
-    for i in range(1, max_iterations + 1):
-        report = await estimate_passage(
-            waypoints,
-            departure,
-            boat_archetype,
-            efficiency=efficiency,
-            segment_length_nm=segment_length_nm,
-            adapter=adapter,
-            model=model,
-            heuristic_speed_kn=heuristic_speed_kn,
-            use_wave_correction=use_wave_correction,
-        )
-        last_report = report
-        residual = target_utc - report.arrival_time
-        if abs(residual) <= tolerance:
-            return EtaPassagePlan(
-                report=report,
-                target_arrival=target_utc,
-                iterations=i,
-                residual_seconds=residual.total_seconds(),
-                converged=True,
-            )
-        departure = departure + residual
+    if model == AUTO_MODEL:
+        last_err: ForecastHorizonError | None = None
+        for candidate in AUTO_FALLBACK_CHAIN:
+            try:
+                report = await _estimate_backward_with_model(
+                    waypoints,
+                    target_utc,
+                    boat_archetype,
+                    efficiency=efficiency,
+                    segment_length_nm=segment_length_nm,
+                    adapter=adapter,
+                    model=candidate,
+                    heuristic_speed_kn=heuristic_speed_kn,
+                    use_wave_correction=use_wave_correction,
+                )
+                return EtaPassagePlan(report=report, target_arrival=target_utc)
+            except ForecastHorizonError as exc:
+                last_err = exc
+                continue
+        assert last_err is not None
+        raise last_err
 
-    assert last_report is not None  # max_iterations >= 1 guarantees at least one pass
-    return EtaPassagePlan(
-        report=last_report,
-        target_arrival=target_utc,
-        iterations=max_iterations,
-        residual_seconds=(target_utc - last_report.arrival_time).total_seconds(),
-        converged=False,
+    report = await _estimate_backward_with_model(
+        waypoints,
+        target_utc,
+        boat_archetype,
+        efficiency=efficiency,
+        segment_length_nm=segment_length_nm,
+        adapter=adapter,
+        model=model,
+        heuristic_speed_kn=heuristic_speed_kn,
+        use_wave_correction=use_wave_correction,
     )
+    return EtaPassagePlan(report=report, target_arrival=target_utc)
