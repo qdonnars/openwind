@@ -622,6 +622,51 @@ class TestEstimatePassageWindows:
             assert r.duration_h > 0
             assert r.distance_nm > 0
 
+    async def test_per_window_auto_fallback_to_longer_horizon(self) -> None:
+        """When the cache-warmed model can't cover a later window, the sweep
+        retries with auto so we escalate to ICON/ECMWF/GFS instead of
+        silently dropping the window. The whole point of `model="auto"`."""
+        # Adapter where AROME is empty (zero horizon) but ICON-EU works.
+        # First window will resolve to icon_eu; later windows would still hit
+        # icon_eu's horizon in the deployed scenario, but here we model the
+        # common pattern: AROME-too-short → fallback chain finds the next.
+        adapter = HorizonLimitedStubAdapter(short_horizon_models=("meteofrance_arome_france",))
+        earliest = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
+        latest = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)  # 7 windows at 1h
+        reports = await estimate_passage_windows(
+            [MARSEILLE, PORQUEROLLES],
+            earliest,
+            latest,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
+            model="auto",
+        )
+        # All 7 windows must be covered by the fallback model — none dropped.
+        assert len(reports) == 7
+        # And every report uses the same fallback model (icon_eu, next in
+        # the auto chain after AROME).
+        assert all(r.model == "icon_eu" for r in reports)
+
+    async def test_explicit_model_skips_on_horizon_error(self) -> None:
+        """When the user pinned a specific model (no `auto`), out-of-horizon
+        windows are skipped with no fallback — explicit choice wins."""
+        # AROME-only adapter; user pins icon_eu → every window misses.
+        adapter = HorizonLimitedStubAdapter(short_horizon_models=("icon_eu",))
+        earliest = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
+        latest = datetime(2026, 5, 1, 8, 0, tzinfo=UTC)
+        # Pinning a model that has no data → first window raises, propagates.
+        with pytest.raises(ForecastHorizonError):
+            await estimate_passage_windows(
+                [MARSEILLE, PORQUEROLLES],
+                earliest,
+                latest,
+                "cruiser_40ft",
+                adapter=adapter,
+                segment_length_nm=20.0,
+                model="icon_eu",
+            )
+
     async def test_partial_skip_on_per_window_horizon_error(self) -> None:
         """Some windows hitting ForecastHorizonError must NOT fail the whole sweep.
         Caller infers skip count from len(reports) vs expected window count."""
