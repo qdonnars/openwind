@@ -26,6 +26,11 @@ export function friendlyError(raw: string): string {
   if (/sweep would produce \d+ windows/i.test(raw)) {
     return "Trop de créneaux à comparer. Réduisez la fenêtre ou augmentez le pas d'échantillonnage.";
   }
+  if (/upstream weather service did not respond in time/i.test(raw)) {
+    // Open-Meteo timed out (ReadTimeout / ConnectTimeout). Usually transient —
+    // HF Spaces' shared egress is jittery and Open-Meteo occasionally pauses.
+    return "Le service météo a mis trop de temps à répondre. Réessayez dans quelques instants.";
+  }
   if (/Erreur serveur 5\d\d/.test(raw) || /HTTP 5\d\d/.test(raw)) {
     return "Le serveur météo est indisponible. Réessayez dans quelques instants.";
   }

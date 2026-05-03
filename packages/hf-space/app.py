@@ -22,6 +22,7 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 import uvicorn
 from mcp.server.transport_security import TransportSecuritySettings
 from openwind_data.adapters.base import ForecastHorizonError
@@ -341,6 +342,11 @@ async def _api_passage(request: Request) -> JSONResponse:
             return JSONResponse({"error": str(exc)}, status_code=422)
         except ForecastHorizonError as exc:
             return JSONResponse({"error": str(exc)}, status_code=422)
+        except httpx.TimeoutException:
+            return JSONResponse(
+                {"error": "upstream weather service did not respond in time"},
+                status_code=503,
+            )
 
         # Sweep is partial-tolerant: estimate_passage_windows skips windows
         # that hit ForecastHorizonError. Compute the expected count to surface
@@ -420,6 +426,11 @@ async def _api_passage(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=422)
     except ForecastHorizonError as exc:
         return JSONResponse({"error": str(exc)}, status_code=422)
+    except httpx.TimeoutException:
+        return JSONResponse(
+            {"error": "upstream weather service did not respond in time"},
+            status_code=503,
+        )
 
     complexity = score_complexity(passage)
 
@@ -490,6 +501,14 @@ async def _api_passage_by_eta(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=422)
     except ForecastHorizonError as exc:
         return JSONResponse({"error": str(exc)}, status_code=422)
+    except httpx.TimeoutException:
+        # ETA solver does N iterations; any one of them can hit the upstream
+        # timeout. Surface a 503 so the web app shows the user a retry hint
+        # instead of a 500.
+        return JSONResponse(
+            {"error": "upstream weather service did not respond in time"},
+            status_code=503,
+        )
 
     complexity = score_complexity(plan.report)
 
