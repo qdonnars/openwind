@@ -22,6 +22,7 @@ import asyncio
 import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 
 from openwind_data.adapters.base import (
     ForecastHorizonError,
@@ -38,6 +39,7 @@ from openwind_data.adapters.openmeteo import (
 from openwind_data.routing.archetypes import BoatPolar, get_polar, lookup_polar
 from openwind_data.routing.geometry import (
     Point,
+    haversine_distance,
     midpoint,
     normalize_twa,
     segment_route,
@@ -47,18 +49,49 @@ HEURISTIC_SPEED_KN = 6.0
 WIND_FETCH_WINDOW = timedelta(hours=3)
 MIN_BOAT_SPEED_KN = 0.5  # floor to avoid division blow-up in extreme stalls
 
-STRONG_WIND_THRESHOLD_KN = 25.0
-LIGHT_WIND_THRESHOLD_KN = 4.0
-MODERATE_SEA_HS_M = 1.5  # >= 1.5m: "mer formee" warning
-ROUGH_SEA_HS_M = 2.5     # >= 2.5m: "forte mer" warning
+# Strong-wind and sea-state warnings are emitted by `score_complexity` (which
+# also reports affected route distance). Only the light-wind warning lives here
+# because complexity doesn't model boat-speed stalls.
+LIGHT_WIND_THRESHOLD_KN = 3.0  # under this min boat speed, surface "vent faible"
 
 PREWARM_MIN_SPEED_KN = 2.0  # conservative floor to upper-bound passage duration for cache prewarm
 MAX_SWEEP_WINDOWS = 336  # 14 days x 24h hard cap
+
+# Sample-cap heuristic: long passages would otherwise issue 20+ Open-Meteo
+# fetches per window. Auto-stretch segment_length_nm so we sample at most
+# MAX_SAMPLED_SEGMENTS points per route, but keep a [MIN, MAX] band so we
+# never go below ~10 nm precision (Med thermal/local winds matter at that
+# scale) nor above ~30 nm (would skip whole regimes like the mistral cutoff
+# at Cap Sicié).
+MAX_SAMPLED_SEGMENTS = 10
+MIN_SEG_LENGTH_NM = 10.0
+MAX_SEG_LENGTH_NM = 30.0
 
 # Wave derate — see README "References" section for sources.
 WAVE_DERATE_K = 0.05
 WAVE_DERATE_P = 1.75
 WAVE_DERATE_FLOOR = 0.5
+
+
+def _resolve_segment_length(
+    waypoints: list[Point], requested_nm: float
+) -> tuple[float, float | None]:
+    """Return (effective_segment_length_nm, route_total_nm_if_capped).
+
+    If the requested length would yield more than MAX_SAMPLED_SEGMENTS sample
+    points, stretch it (clamped to [MIN_SEG_LENGTH_NM, MAX_SEG_LENGTH_NM]) and
+    return the route distance so the caller can build a warning. Returns
+    ``(requested_nm, None)`` when no cap applies. Pure function of inputs, so
+    safe to call repeatedly along a code path without changing the result.
+    """
+    total = sum(haversine_distance(a, b) for a, b in pairwise(waypoints))
+    target = total / MAX_SAMPLED_SEGMENTS
+    if target <= requested_nm:
+        return requested_nm, None
+    effective = min(MAX_SEG_LENGTH_NM, max(MIN_SEG_LENGTH_NM, target))
+    if effective <= requested_nm:
+        return requested_nm, None
+    return effective, total
 
 
 def wave_derate(hs_m: float, twa_deg: float) -> float:
@@ -274,7 +307,8 @@ async def _estimate_with_model(
     use_wave_correction: bool,
 ) -> PassageReport:
     polar = get_polar(boat_archetype)
-    segments = segment_route(waypoints, segment_length_nm)
+    effective_length_nm, capped_route_nm = _resolve_segment_length(waypoints, segment_length_nm)
+    segments = segment_route(waypoints, effective_length_nm)
     departure_utc = departure_time.astimezone(UTC)
 
     heuristic_speed_kn = max(heuristic_speed_kn, MIN_BOAT_SPEED_KN)
@@ -308,7 +342,6 @@ async def _estimate_with_model(
 
     reports: list[SegmentReport] = []
     cumulative_actual = timedelta(0)
-    max_tws = 0.0
     min_boat_speed = float("inf")
     for seg, mid_time, _mid_pt, bundle in zip(
         segments, seg_mid_times, seg_mid_points, bundles, strict=True
@@ -338,7 +371,6 @@ async def _estimate_with_model(
         seg_start = departure_utc + cumulative_actual
         seg_end = seg_start + seg_duration
         cumulative_actual += seg_duration
-        max_tws = max(max_tws, wp.speed_kn)
         min_boat_speed = min(min_boat_speed, boat_speed)
         reports.append(
             SegmentReport(
@@ -360,17 +392,14 @@ async def _estimate_with_model(
         )
 
     warnings: list[str] = []
-    if max_tws >= STRONG_WIND_THRESHOLD_KN:
-        warnings.append(f"vent fort: TWS max {max_tws:.0f} kn (≥{STRONG_WIND_THRESHOLD_KN:.0f})")
+    if capped_route_nm is not None:
+        warnings.append(
+            f"trajet long ({capped_route_nm:.0f} nm) : {len(segments)} points météo "
+            f"échantillonnés (~{effective_length_nm:.0f} nm entre points) au lieu de "
+            f"{segment_length_nm:.0f} nm pour limiter les requêtes API."
+        )
     if min_boat_speed < LIGHT_WIND_THRESHOLD_KN:
-        warnings.append(f"vent faible: vitesse mini {min_boat_speed:.1f} kn : passage très lent")
-    hs_values = [s.hs_m for s in reports if s.hs_m is not None]
-    if hs_values:
-        hs_max = max(hs_values)
-        if hs_max >= ROUGH_SEA_HS_M:
-            warnings.append(f"forte mer: Hs max {hs_max:.1f} m (≥{ROUGH_SEA_HS_M:.1f})")
-        elif hs_max >= MODERATE_SEA_HS_M:
-            warnings.append(f"mer formée: Hs max {hs_max:.1f} m (≥{MODERATE_SEA_HS_M:.1f})")
+        warnings.append(f"vent faible : vitesse mini {min_boat_speed:.1f} kn, passage très lent")
 
     arrival = departure_utc + cumulative_actual
     total_distance = sum(s.distance_nm for s in segments)
@@ -410,7 +439,8 @@ async def _estimate_backward_with_model(
     same temporal-correlation argument applies.
     """
     polar = get_polar(boat_archetype)
-    segments = segment_route(waypoints, segment_length_nm)
+    effective_length_nm, capped_route_nm = _resolve_segment_length(waypoints, segment_length_nm)
+    segments = segment_route(waypoints, effective_length_nm)
     target_utc = target_arrival.astimezone(UTC)
 
     heuristic_speed_kn = max(heuristic_speed_kn, MIN_BOAT_SPEED_KN)
@@ -493,18 +523,14 @@ async def _estimate_backward_with_model(
     duration = target_utc - departure
 
     warnings: list[str] = []
-    max_tws = max(r.tws_kn for r in reports)
-    if max_tws >= STRONG_WIND_THRESHOLD_KN:
-        warnings.append(f"vent fort: TWS max {max_tws:.0f} kn (≥{STRONG_WIND_THRESHOLD_KN:.0f})")
+    if capped_route_nm is not None:
+        warnings.append(
+            f"trajet long ({capped_route_nm:.0f} nm) : {len(segments)} points météo "
+            f"échantillonnés (~{effective_length_nm:.0f} nm entre points) au lieu de "
+            f"{segment_length_nm:.0f} nm pour limiter les requêtes API."
+        )
     if min_boat_speed < LIGHT_WIND_THRESHOLD_KN:
-        warnings.append(f"vent faible: vitesse mini {min_boat_speed:.1f} kn : passage très lent")
-    hs_values = [r.hs_m for r in reports if r.hs_m is not None]
-    if hs_values:
-        hs_max = max(hs_values)
-        if hs_max >= ROUGH_SEA_HS_M:
-            warnings.append(f"forte mer: Hs max {hs_max:.1f} m (≥{ROUGH_SEA_HS_M:.1f})")
-        elif hs_max >= MODERATE_SEA_HS_M:
-            warnings.append(f"mer formée: Hs max {hs_max:.1f} m (≥{MODERATE_SEA_HS_M:.1f})")
+        warnings.append(f"vent faible : vitesse mini {min_boat_speed:.1f} kn, passage très lent")
 
     total_distance = sum(s.distance_nm for s in segments)
     return PassageReport(
@@ -574,7 +600,12 @@ async def estimate_passage_windows(
             f"(14 d x 24 h). Reduce the sweep range or increase sweep_interval_hours."
         )
 
-    segments = segment_route(waypoints, segment_length_nm)
+    # Resolve once so the prewarm samples the same mid-points the per-window
+    # estimates will hit. _resolve_segment_length is idempotent so the nested
+    # estimate_passage calls (which re-resolve from segment_length_nm) land on
+    # the same effective_length and reuse the warmed cache.
+    effective_length_nm, _ = _resolve_segment_length(waypoints, segment_length_nm)
+    segments = segment_route(waypoints, effective_length_nm)
     seg_mid_points = [midpoint(s.start, s.end) for s in segments]
     route_nm = sum(s.distance_nm for s in segments)
 

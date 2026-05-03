@@ -19,9 +19,6 @@ from openwind_data.routing.geometry import Point
 from openwind_data.routing.passage import (
     LIGHT_WIND_THRESHOLD_KN,
     MAX_SWEEP_WINDOWS,
-    MODERATE_SEA_HS_M,
-    ROUGH_SEA_HS_M,
-    STRONG_WIND_THRESHOLD_KN,
     best_vmg_upwind,
     estimate_passage,
     estimate_passage_for_arrival,
@@ -119,8 +116,8 @@ class TestEstimatePassage:
         assert all(seg.tws_kn == 10.0 for seg in report.segments)
         assert all(seg.twd_deg == 0.0 for seg in report.segments)
         assert all(seg.boat_speed_kn > 0 for seg in report.segments)
-        # No strong-wind warning at TWS=10
-        assert all("vent fort" not in w for w in report.warnings)
+        # No light-wind warning at TWS=10 (boat speed comfortably above floor)
+        assert all("vent faible" not in w for w in report.warnings)
 
     async def test_constant_wind_yields_exact_timing(self) -> None:
         # Challenge #7: single-pass approximation. Under constant wind in time,
@@ -154,7 +151,9 @@ class TestEstimatePassage:
             assert seg.polar_speed_kn == pytest.approx(expected_polar, rel=1e-9)
             assert seg.boat_speed_kn == pytest.approx(expected_polar * 0.8, rel=1e-9)
 
-    async def test_strong_wind_warning(self) -> None:
+    async def test_strong_wind_no_passage_warning(self) -> None:
+        # Strong-wind warnings now live on the complexity score (richer message
+        # with affected nm). The passage report itself emits no wind warning.
         adapter = StubAdapter(tws_kn=30.0, twd_deg=180.0)
         report = await estimate_passage(
             [Point(43.0, 5.0), Point(43.0, 5.3)],
@@ -162,12 +161,11 @@ class TestEstimatePassage:
             "cruiser_40ft",
             adapter=adapter,
         )
-        assert any("vent fort" in w for w in report.warnings)
-        assert report.segments[0].tws_kn >= STRONG_WIND_THRESHOLD_KN
+        assert all("vent fort" not in w for w in report.warnings)
 
     async def test_light_wind_warning(self) -> None:
-        # 3 kn wind clamped to grid edge (6 kn) but x 0.75 → ~3.5 kn upwind.
-        # Use upwind route to stay under threshold.
+        # Upwind in light air: cruiser_30ft @ tws=6 (grid floor), twa~0 →
+        # ~2.25 kn boat speed, below the 3.0 kn floor.
         adapter = StubAdapter(tws_kn=3.0, twd_deg=90.0)  # wind from east, route east → upwind
         report = await estimate_passage(
             [Point(43.0, 5.0), Point(43.0, 5.3)],
@@ -175,9 +173,23 @@ class TestEstimatePassage:
             "cruiser_30ft",
             adapter=adapter,
         )
-        # cruiser_30ft @ tws=6 (clamped), twa~0→clamped to 40 col → 3.0 x 0.75 = 2.25 kn
         assert any("vent faible" in w for w in report.warnings)
         assert min(s.boat_speed_kn for s in report.segments) < LIGHT_WIND_THRESHOLD_KN
+
+    async def test_light_wind_threshold_at_3_kn(self) -> None:
+        # 12 kn beam reach on cruiser_30ft → boat speed comfortably above the
+        # 3 kn floor. The previous 4 kn floor would still have stayed silent
+        # too; this test pins the new threshold.
+        adapter = StubAdapter(tws_kn=12.0, twd_deg=180.0)  # wind south, route east → beam reach
+        report = await estimate_passage(
+            [Point(43.0, 5.0), Point(43.0, 5.3)],
+            DEPARTURE,
+            "cruiser_30ft",
+            adapter=adapter,
+        )
+        assert LIGHT_WIND_THRESHOLD_KN == 3.0
+        assert all("vent faible" not in w for w in report.warnings)
+        assert min(s.boat_speed_kn for s in report.segments) >= LIGHT_WIND_THRESHOLD_KN
 
     async def test_fetches_one_bundle_per_segment(self) -> None:
         adapter = StubAdapter(tws_kn=12.0, twd_deg=0.0)
@@ -234,6 +246,66 @@ class TestEstimatePassage:
             assert s1.end_time == s2.start_time
         assert report.segments[0].start_time == DEPARTURE
         assert report.segments[-1].end_time == report.arrival_time
+
+
+class TestSampleCap:
+    """Long routes auto-stretch segment_length_nm to cap API fetches."""
+
+    async def test_short_route_no_cap_no_warning(self) -> None:
+        # Marseille → Porquerolles ~41 nm: 4 segments at default 10 nm.
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+        )
+        assert len(report.segments) <= 5
+        assert all("trajet long" not in w for w in report.warnings)
+
+    async def test_long_route_caps_to_ten_points_and_warns(self) -> None:
+        # Marseille → Ajaccio-ish ~170 nm. Default L=10 would give ~17 points;
+        # cap should stretch to ~17 nm and yield ~10 segments.
+        ajaccio = Point(41.92, 8.74)
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        report = await estimate_passage(
+            [MARSEILLE, ajaccio],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+        )
+        assert len(report.segments) <= 11  # may overshoot by 1 due to per-leg ceil
+        assert any("trajet long" in w for w in report.warnings)
+        # Each fetch maps to one sampled point — confirms API budget cap holds.
+        assert len(adapter.calls) == len(report.segments)
+
+    async def test_very_long_route_clamped_at_max_seg(self) -> None:
+        # Synthetic ~600 nm leg → target=60 nm > MAX_SEG (30 nm). Effective L=30,
+        # so segments ~ ceil(600/30) = 20, not 10.
+        far = Point(43.30, 18.0)  # ~600 nm east of Marseille
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        report = await estimate_passage(
+            [MARSEILLE, far],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+        )
+        assert 15 <= len(report.segments) <= 25
+        assert any("trajet long" in w for w in report.warnings)
+
+    async def test_user_explicit_long_segment_not_overridden(self) -> None:
+        # If caller already asks for a coarser segment than the cap target,
+        # respect it (no cap, no warning).
+        ajaccio = Point(41.92, 8.74)
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
+        report = await estimate_passage(
+            [MARSEILLE, ajaccio],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=25.0,
+        )
+        assert all("trajet long" not in w for w in report.warnings)
 
 
 class TestWaveDerate:
@@ -757,37 +829,13 @@ class TestSeaStateAlwaysSurfaced:
             assert seg.hs_m is None
 
 
-class TestSeaStateWarnings:
-    async def test_calm_sea_no_warning(self) -> None:
-        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=0.5)
-        report = await estimate_passage(
-            [MARSEILLE, PORQUEROLLES], DEPARTURE, "cruiser_40ft",
-            adapter=adapter, segment_length_nm=20.0,
-        )
-        assert not any("mer formée" in w or "forte mer" in w for w in report.warnings)
+class TestSeaStatePassageWarningsRemoved:
+    """Sea-state warnings live on the complexity score now, not the passage
+    report. The passage's `warnings` field stays free of mer/forte-mer entries
+    so the UI can render them once via complexity without dedup."""
 
-    async def test_moderate_sea_warning(self) -> None:
-        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=MODERATE_SEA_HS_M + 0.2)
-        report = await estimate_passage(
-            [MARSEILLE, PORQUEROLLES], DEPARTURE, "cruiser_40ft",
-            adapter=adapter, segment_length_nm=20.0,
-        )
-        assert any("mer formée" in w for w in report.warnings)
-        # Should not also trigger forte mer at 1.7m
-        assert not any("forte mer" in w for w in report.warnings)
-
-    async def test_rough_sea_warning(self) -> None:
-        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=ROUGH_SEA_HS_M + 0.5)
-        report = await estimate_passage(
-            [MARSEILLE, PORQUEROLLES], DEPARTURE, "cruiser_40ft",
-            adapter=adapter, segment_length_nm=20.0,
-        )
-        assert any("forte mer" in w for w in report.warnings)
-        # Forte mer takes precedence; mer formée should not also fire
-        assert not any("mer formée" in w for w in report.warnings)
-
-    async def test_no_sea_data_no_warning(self) -> None:
-        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=None)
+    async def test_no_sea_warning_on_passage_even_when_rough(self) -> None:
+        adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=3.0)
         report = await estimate_passage(
             [MARSEILLE, PORQUEROLLES], DEPARTURE, "cruiser_40ft",
             adapter=adapter, segment_length_nm=20.0,
