@@ -477,13 +477,14 @@ async def estimate_passage_windows(
             ]
         )
 
-        # Sweep remaining departure windows sequentially. Per-window tolerance:
-        # if a single departure raises ForecastHorizonError (e.g. its mid-time
-        # extends past the resolved model's horizon), skip it and continue 
-        # the user gets partial results instead of a hard failure on the whole
-        # sweep. The caller compares expected window count vs len(reports) and
-        # surfaces a meta-warning. ValueError / KeyError still bubble (those
-        # are caller-side bugs).
+        # Sweep remaining departure windows sequentially. The first window's
+        # resolved model is the cache-warmed default; later windows that fall
+        # past its horizon retry with the AUTO chain so we escalate to
+        # ICON-EU / ECMWF / GFS instead of dropping them. Cost: a non-cached
+        # fetch per fallback window (Open-Meteo is keyless and fast). When
+        # the user pinned a specific model (model != "auto"), we respect that
+        # and skip out-of-horizon windows — explicit choice wins.
+        # ValueError / KeyError still bubble (caller-side bugs).
         current = earliest_utc + timedelta(hours=sweep_interval_hours)
         while current <= latest_utc:
             try:
@@ -499,7 +500,21 @@ async def estimate_passage_windows(
                 )
                 reports.append(report)
             except ForecastHorizonError:
-                pass
+                if model == AUTO_MODEL and resolved_model != AUTO_FALLBACK_CHAIN[-1]:
+                    try:
+                        report = await estimate_passage(
+                            waypoints,
+                            current,
+                            boat_archetype,
+                            efficiency=efficiency,
+                            segment_length_nm=segment_length_nm,
+                            adapter=fetch_adapter,
+                            model=AUTO_MODEL,
+                            use_wave_correction=use_wave_correction,
+                        )
+                        reports.append(report)
+                    except ForecastHorizonError:
+                        pass  # No model in the chain covers it (e.g., past GFS's ~16 d).
             current += timedelta(hours=sweep_interval_hours)
     finally:
         if own_adapter and hasattr(fetch_adapter, "aclose"):
