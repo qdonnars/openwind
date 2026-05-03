@@ -478,22 +478,13 @@ async def _api_passage_by_eta(request: Request) -> JSONResponse:
     except (TypeError, ValueError) as exc:
         return JSONResponse({"error": f"invalid efficiency: {exc}"}, status_code=422)
 
-    from datetime import timedelta as _td
-    kwargs: dict[str, Any] = {"efficiency": efficiency, "model": "auto"}
-    if "tolerance_minutes" in body:
-        try:
-            kwargs["tolerance"] = _td(minutes=float(body["tolerance_minutes"]))
-        except (TypeError, ValueError) as exc:
-            return JSONResponse({"error": f"invalid tolerance_minutes: {exc}"}, status_code=422)
-    if "max_iterations" in body:
-        try:
-            kwargs["max_iterations"] = int(body["max_iterations"])
-        except (TypeError, ValueError) as exc:
-            return JSONResponse({"error": f"invalid max_iterations: {exc}"}, status_code=422)
-
     try:
         plan = await estimate_passage_for_arrival(
-            waypoints, target_arrival, body["archetype"], **kwargs,
+            waypoints,
+            target_arrival,
+            body["archetype"],
+            efficiency=efficiency,
+            model="auto",
         )
     except KeyError as exc:
         return JSONResponse({"error": f"unknown archetype: {exc}"}, status_code=422)
@@ -502,9 +493,6 @@ async def _api_passage_by_eta(request: Request) -> JSONResponse:
     except ForecastHorizonError as exc:
         return JSONResponse({"error": str(exc)}, status_code=422)
     except httpx.TimeoutException:
-        # ETA solver does N iterations; any one of them can hit the upstream
-        # timeout. Surface a 503 so the web app shows the user a retry hint
-        # instead of a 500.
         return JSONResponse(
             {"error": "upstream weather service did not respond in time"},
             status_code=503,
@@ -515,12 +503,7 @@ async def _api_passage_by_eta(request: Request) -> JSONResponse:
     return JSONResponse({
         "passage": _to_json(plan.report),
         "complexity": _to_json(complexity),
-        "eta": {
-            "target_arrival": plan.target_arrival.isoformat(),
-            "iterations": plan.iterations,
-            "residual_seconds": plan.residual_seconds,
-            "converged": plan.converged,
-        },
+        "eta": {"target_arrival": plan.target_arrival.isoformat()},
         "forecast_updated_at": datetime.now(UTC).isoformat(),
     })
 

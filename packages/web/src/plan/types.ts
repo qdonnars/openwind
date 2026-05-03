@@ -62,9 +62,6 @@ export interface PassageResponse {
 
 export interface EtaSolveMeta {
   target_arrival: string;       // ISO-8601 UTC
-  iterations: number;
-  residual_seconds: number;     // target - actual; positive = arrived too early
-  converged: boolean;
 }
 
 export interface PassageByEtaResponse extends PassageResponse {

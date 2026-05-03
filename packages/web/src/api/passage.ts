@@ -96,8 +96,6 @@ export async function fetchPassageByEta(params: {
   targetArrival: string;
   archetype: string;
   efficiency?: number;
-  toleranceMinutes?: number;
-  maxIterations?: number;
 }): Promise<PassageByEtaResponse> {
   const body: Record<string, unknown> = {
     waypoints: params.waypoints,
@@ -105,8 +103,6 @@ export async function fetchPassageByEta(params: {
     archetype: params.archetype,
     efficiency: params.efficiency ?? 0.75,
   };
-  if (params.toleranceMinutes !== undefined) body["tolerance_minutes"] = params.toleranceMinutes;
-  if (params.maxIterations !== undefined) body["max_iterations"] = params.maxIterations;
 
   const res = await fetch(`${API_BASE}/api/v1/passage-by-eta`, {
     method: "POST",
