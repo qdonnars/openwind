@@ -20,7 +20,7 @@ export function WindCell({ speed, gusts, direction, selected, isNow, isDayStart,
     return (
       <td
         role="cell"
-        className={`wind-cell ow-null-cell min-w-[36px] lg:min-w-[44px] h-10 lg:h-14 text-center text-xs align-middle cursor-pointer ${nowBorder} ${daySepClass} ${selectedStyle}`}
+        className={`wind-cell ow-null-cell min-w-[32px] lg:min-w-[56px] h-10 lg:h-14 text-center text-xs align-middle cursor-pointer ${nowBorder} ${daySepClass} ${selectedStyle}`}
         onClick={onSelect}
       >
         —
@@ -38,13 +38,13 @@ export function WindCell({ speed, gusts, direction, selected, isNow, isDayStart,
   return (
     <td
       role="cell"
-      className={`wind-cell min-w-[36px] lg:min-w-[44px] h-10 lg:h-14 text-center align-middle p-0 cursor-pointer ${nowBorder} ${daySepClass} ${selectedStyle}`}
+      className={`wind-cell min-w-[32px] lg:min-w-[56px] h-10 lg:h-14 text-center align-middle p-0 cursor-pointer ${nowBorder} ${daySepClass} ${selectedStyle}`}
       style={{ backgroundColor: bg, color }}
       onClick={onSelect}
       aria-label={`${Math.round(speed)} knots${gusts != null ? `, gusts ${Math.round(gusts)}` : ""}${direction != null ? `, direction ${direction}°` : ""}`}
     >
       <div className="flex flex-col items-center justify-center leading-none gap-[2px]">
-        {/* Row 1: arrow + speed */}
+        {/* Row 1: arrow + speed (+ unit on desktop) */}
         <div className="flex items-center gap-0.5">
           {direction != null && (
             <svg
@@ -59,6 +59,9 @@ export function WindCell({ speed, gusts, direction, selected, isNow, isDayStart,
           )}
           <span className="text-[17px] lg:text-[16px] font-bold tabular-nums leading-none">
             {Math.round(speed)}
+            <span className="hidden lg:inline ml-0.5 text-[10px] font-medium opacity-60">
+              kn
+            </span>
           </span>
         </div>
         {/* Row 2: gust */}

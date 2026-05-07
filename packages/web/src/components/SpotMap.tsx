@@ -1,15 +1,17 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { Spot, ModelForecast } from "../types";
+import type { Spot, ModelForecast, MarineHourly, MetricView } from "../types";
 import { QUICK_SPOTS } from "../spots";
 import { useTheme } from "../design/theme";
 
-// Spot-map wind arrows are drawn into a single 300×300 SVG anchored at the spot
-// (centre = 150,150). Each forecast contributes one arrow + one label.
+// Spot-map arrows are drawn into a single 300×300 SVG anchored at the spot
+// (centre = 150,150). For ``wind``, each forecast contributes one arrow + label.
+// For ``waves`` and ``currents``, a single arrow is drawn from the Open-Meteo
+// Marine source. ``tides`` is scalar — no arrow.
 //
 // Labels naturally sit just past each arrow tip, in the arrow's direction. When
-// two models predict similar directions their tips (and labels) collide. We run
+// two arrows predict similar directions their tips (and labels) collide. We run
 // a small force-based relaxation pass: each pair of overlapping labels pushes
 // the other away until none overlap (or we hit max iterations). Labels that
 // drift away from their tip get a thin leader line back to it.
@@ -23,8 +25,10 @@ type ArrowItem = {
   // natural label centre (before relaxation) — used to decide if a leader line is needed
   natLblX: number;
   natLblY: number;
-  speed: number;
-  modelName: string;
+  // top label, e.g. "15" (wind kn), "0.5" (Hs m), "1.5" (current kn)
+  displayText: string;
+  // bottom caption, e.g. "AROME", "Hs m", "kn"
+  caption: string;
   color: string;
 };
 
@@ -109,8 +113,10 @@ function labelMarkup(it: ArrowItem): string {
   const shadow = it.color === "#ffffff"
     ? "0 0 3px #000,0 0 6px #000"
     : "0 0 3px #fff,0 0 5px #fff";
-  return `<text x="${it.lblX}" y="${it.lblY}" text-anchor="middle" dominant-baseline="middle" font-size="18" font-weight="700" fill="${it.color}" style="text-shadow:${shadow}">${Math.round(it.speed)}</text>
-    <text x="${it.lblX}" y="${it.lblY + 20}" text-anchor="middle" dominant-baseline="middle" font-size="13" fill="#fff" style="text-shadow:0 0 3px #000,0 0 5px #000">${it.modelName}</text>`;
+  const caption = it.caption
+    ? `<text x="${it.lblX}" y="${it.lblY + 20}" text-anchor="middle" dominant-baseline="middle" font-size="13" fill="#fff" style="text-shadow:0 0 3px #000,0 0 5px #000">${it.caption}</text>`
+    : "";
+  return `<text x="${it.lblX}" y="${it.lblY}" text-anchor="middle" dominant-baseline="middle" font-size="18" font-weight="700" fill="${it.color}" style="text-shadow:${shadow}">${it.displayText}</text>${caption}`;
 }
 
 async function reverseGeocode(lat: number, lon: number): Promise<string> {
@@ -143,6 +149,8 @@ interface SpotMapProps {
   onRemoveSpot: (spot: Spot) => void;
   onRenameSpot: (spot: Spot, name: string) => void;
   forecasts: ModelForecast[];
+  marine: MarineHourly | null;
+  metric: MetricView;
   selectedHour: string | null;
 }
 
@@ -158,6 +166,8 @@ export function SpotMap({
   onRemoveSpot,
   onRenameSpot,
   forecasts,
+  marine,
+  metric,
   selectedHour,
 }: SpotMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -427,7 +437,8 @@ export function SpotMap({
     mapRef.current.panTo([current.latitude, current.longitude], { animate: true });
   }, [current, customSpots, syncMarkers]);
 
-  // Wind arrows
+  // Metric-aware arrows: wind = one per model, waves/currents = one (single
+  // Open-Meteo Marine source), tides = none (scalar).
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -437,31 +448,82 @@ export function SpotMap({
       arrowLayerRef.current = null;
     }
 
-    if (!selectedHour || forecasts.length === 0) return;
+    if (!selectedHour) return;
 
-    const items: ArrowItem[] = [];
-    for (const forecast of forecasts) {
-      const timeIdx = forecast.hourly.time.indexOf(selectedHour);
-      if (timeIdx === -1) continue;
-      const dir = forecast.hourly.wind_direction_10m[timeIdx];
-      const spd = forecast.hourly.wind_speed_10m[timeIdx];
-      if (dir == null || spd == null) continue;
-      const color = resolvedTheme === "light" ? "#64748b" : "#ffffff";
-      const rad = ((dir + 180) * Math.PI) / 180;
-      const length = Math.min(72 + spd * 4.8, 240);
+    const color = resolvedTheme === "light" ? "#64748b" : "#ffffff";
+
+    // (rad, length) → tip + natural label position. Builds a fully-positioned
+    // ArrowItem so the relaxation step can move the label without recomputing
+    // geometry.
+    const buildItem = (
+      rad: number,
+      length: number,
+      displayText: string,
+      caption: string,
+    ): ArrowItem => {
       const tipX = SPOT_CX + Math.sin(rad) * length;
       const tipY = SPOT_CY - Math.cos(rad) * length;
       const natLblX = tipX + Math.sin(rad) * 26;
       const natLblY = tipY - Math.cos(rad) * 26;
-      items.push({
+      return {
         rad, tipX, tipY,
         lblX: natLblX, lblY: natLblY,
         natLblX, natLblY,
-        speed: spd,
-        modelName: forecast.modelName,
-        color,
-      });
+        displayText, caption, color,
+      };
+    };
+
+    const items: ArrowItem[] = [];
+    if (metric === "wind") {
+      // One arrow per model. Direction is "from" → +180 to point downwind.
+      for (const forecast of forecasts) {
+        const timeIdx = forecast.hourly.time.indexOf(selectedHour);
+        if (timeIdx === -1) continue;
+        const dir = forecast.hourly.wind_direction_10m[timeIdx];
+        const spd = forecast.hourly.wind_speed_10m[timeIdx];
+        if (dir == null || spd == null) continue;
+        const rad = ((dir + 180) * Math.PI) / 180;
+        const length = Math.min(72 + spd * 4.8, 240);
+        items.push(buildItem(rad, length, String(Math.round(spd)), forecast.modelName));
+      }
+    } else if (metric === "waves" && marine) {
+      const timeIdx = marine.time.indexOf(selectedHour);
+      if (timeIdx !== -1) {
+        const dir = marine.wave_direction_deg[timeIdx];
+        const hs = marine.wave_height_m[timeIdx];
+        if (dir != null && hs != null) {
+          // wave_direction is "from" (Open-Meteo convention) → +180 downwave.
+          const rad = ((dir + 180) * Math.PI) / 180;
+          // Hs typically 0–4 m; scale so a 2 m sea reads visually like a 20 kn
+          // wind on the wind layer.
+          const length = Math.min(72 + hs * 50, 240);
+          // Top label: Hs with unit attached so the number reads as a height
+          // ("0.2m") rather than an abstract value. Caption: dominant period
+          // in seconds — sailors read this together to gauge swell vs chop.
+          const period = marine.wave_period_s[timeIdx];
+          const caption = period != null ? `${period.toFixed(0)}s` : "Hs";
+          items.push(buildItem(rad, length, `${hs.toFixed(1)}m`, caption));
+        }
+      }
+    } else if (metric === "currents" && marine) {
+      const timeIdx = marine.time.indexOf(selectedHour);
+      if (timeIdx !== -1) {
+        const spd = marine.current_speed_kn[timeIdx];
+        const dir = marine.current_direction_to_deg[timeIdx];
+        if (spd != null && dir != null) {
+          // current_direction is already "to" — no flip.
+          const rad = (dir * Math.PI) / 180;
+          // Visual scale tuned to nav impact: 1 kn = 5 kn-of-wind length,
+          // 4 kn = 20 kn-of-wind length. Avoids over-dramatising the
+          // sub-1-knot values that are typical Mediterranean baseline.
+          const length = Math.min(60 + spd * 25, 180);
+          // Single-line label "0.8 kn" — currents have no secondary axis
+          // to show below (unlike waves with period), so collapse to one line.
+          items.push(buildItem(rad, length, `${spd.toFixed(1)} kn`, ""));
+        }
+      }
     }
+    // metric === "tides": no arrow (scalar), fall through to no-render.
 
     if (items.length === 0) return;
     relaxLabels(items);
@@ -484,7 +546,7 @@ export function SpotMap({
       interactive: false,
       pane: "windArrows",
     }).addTo(map);
-  }, [selectedHour, forecasts, current, resolvedTheme]);
+  }, [selectedHour, forecasts, marine, metric, current, resolvedTheme]);
 
   return (
     <div className="w-full h-full relative">

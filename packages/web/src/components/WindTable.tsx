@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { ModelForecast } from "../types";
 import { TimelineHeader } from "./TimelineHeader";
 import { WindCell } from "./WindCell";
-import { useTimezone, type TimezoneMode } from "../hooks/useTimezone";
+import { useTimezone } from "../hooks/useTimezone";
 import { nowParisHourPrefix } from "../utils/format";
 
 const MODEL_STEP: Record<string, number> = {
@@ -61,58 +61,6 @@ function buildTimeIndex(times: string[]): Map<string, number> {
   return map;
 }
 
-const BEAUFORT_LABELS = [
-  "calm", "1–3", "4–6", "7–10", "11–15", "16–19", "20–24", "25–30", "31+",
-];
-
-function BeaufortLegend({ timezoneMode, onCycleTz }: { timezoneMode: TimezoneMode; onCycleTz: () => void }) {
-  const localTzCity =
-    Intl.DateTimeFormat().resolvedOptions().timeZone.split("/").pop()?.replace(/_/g, " ") ?? "Local";
-  const tzLabel =
-    timezoneMode === "local" ? localTzCity : timezoneMode === "utc" ? "UTC" : "Boat";
-  const tzTitle =
-    timezoneMode === "local"
-      ? `Local time (${Intl.DateTimeFormat().resolvedOptions().timeZone}) — click to switch to UTC`
-      : timezoneMode === "utc"
-      ? "UTC — click to switch to Boat (Europe/Paris)"
-      : "Boat time (Europe/Paris) — click to switch to Local";
-
-  return (
-    <div className="hidden sm:flex items-end gap-1 px-3 py-2 border-t overflow-x-auto" style={{ borderColor: 'var(--ow-line)' }}>
-      {Array.from({ length: 9 }, (_, i) => (
-        <div key={i} className="flex flex-col items-center shrink-0">
-          <div
-            className="w-6 h-4 rounded-sm flex items-center justify-center text-[9px] font-bold leading-none"
-            style={{ backgroundColor: `var(--ow-w-${i})`, color: `var(--ow-cell-text-${i})` }}
-          >
-            B{i}
-          </div>
-          <span className="text-[8px] mt-0.5 whitespace-nowrap" style={{ color: 'var(--ow-fg-2)' }}>{BEAUFORT_LABELS[i]}</span>
-        </div>
-      ))}
-      <div className="flex-1 min-w-2" />
-      <a
-        href="https://open-meteo.com/"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="shrink-0 text-[10px] mr-2 mb-0.5 transition-colors"
-        style={{ color: 'var(--ow-fg-3)' }}
-      >
-        Open-Meteo (CC BY 4.0)
-      </a>
-      <button
-        onClick={onCycleTz}
-        title={tzTitle}
-        aria-label={`Timezone: ${tzLabel}. Click to cycle.`}
-        className="shrink-0 text-[10px] font-semibold px-2 py-1 rounded-md transition-colors mb-0.5"
-        style={{ color: 'var(--ow-accent)', background: 'var(--ow-accent-soft)', border: '1px solid var(--ow-accent-line)' }}
-      >
-        {tzLabel}
-      </button>
-    </div>
-  );
-}
-
 function SkeletonTable() {
   return (
     <div className="px-3 py-4 space-y-3 animate-fade-in">
@@ -141,7 +89,7 @@ export function WindTable({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolledEnd, setScrolledEnd] = useState(false);
   const [visibleDay, setVisibleDay] = useState("");
-  const [timezoneMode, cycleTz] = useTimezone();
+  const [timezoneMode] = useTimezone();
 
   const masterTimeline = useMemo(() => {
     const resolution = autoResolution(forecasts);
@@ -270,7 +218,6 @@ export function WindTable({
           </table>
         </div>
       </div>
-      <BeaufortLegend timezoneMode={timezoneMode} onCycleTz={cycleTz} />
     </div>
   );
 }

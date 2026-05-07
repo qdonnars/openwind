@@ -47,6 +47,7 @@ body {
   scroll-snap-align: start;
 }
 
+
 /* Scroll fade indicator */
 .scroll-container {
   position: relative;
