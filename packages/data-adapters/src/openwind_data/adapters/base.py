@@ -1,8 +1,36 @@
+"""Marine forecast types and adapter Protocol.
+
+Direction conventions (mixed by physical phenomenon — mirrors meteorological and
+oceanographic standards, do not normalise):
+
+- Wind direction (``WindPoint.direction_deg``): "from" — meteo standard (TWD).
+  0° = wind blowing from the north.
+- Wave direction (``SeaPoint.wave_direction_deg``): "from" — same as wind.
+- Ocean current direction (``SeaPoint.current_direction_to_deg``): "to" —
+  oceanographic / nautical standard. 0° = current setting toward the north.
+
+Any code comparing wind vs current bearings (e.g. wind-against-current scoring)
+must explicitly normalise via ``(wind_from + 180) % 360`` to compare like with
+like. Mixing them silently is a bug.
+
+Speeds are in knots throughout the domain. Adapters convert at ingestion.
+
+Relevance thresholds (``CURRENT_*``, ``TIDE_*``) match the user-visible filter:
+currents and tide range only surface in the UI / MCP output when they exceed
+these values per leg. Tuned for the French coast (Med < threshold typically;
+Atlantic above on most legs).
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
+
+CURRENT_RELEVANCE_THRESHOLD_KN = 0.3
+TIDE_RANGE_RELEVANCE_THRESHOLD_M = 0.5
+WIND_AGAINST_CURRENT_WARNING_THRESHOLD_KN = 1.5
+WIND_AGAINST_CURRENT_OPPOSITION_DEG = 120.0
 
 
 class ForecastHorizonError(RuntimeError):
@@ -40,6 +68,9 @@ class SeaPoint:
     wave_direction_deg: float | None
     wind_wave_height_m: float | None
     swell_wave_height_m: float | None
+    current_speed_kn: float | None = None
+    current_direction_to_deg: float | None = None
+    tide_height_m: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

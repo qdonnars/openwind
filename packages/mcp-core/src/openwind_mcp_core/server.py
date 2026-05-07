@@ -376,9 +376,9 @@ uses unless overridden by tool parameters.
 ## Boat speed adjustments
 
 - Efficiency factor (default 0.75): ORC polars are theoretical maxima;
-  real cruising loses ~25% (sail trim, comfort margins, helm, untracked
-  currents). Override per call: 0.85 racing, 0.65 loaded family cruising,
-  0.55 heavy seas / fouled hull.
+  real cruising loses ~25% (sail trim, comfort margins, helm). Override
+  per call: 0.85 racing, 0.65 loaded family cruising, 0.55 heavy seas /
+  fouled hull.
 
 - VMG / tacking correction: when route TWA is below the boat's optimal
   upwind angle (typically ~42-48 deg), the simulator assumes the sailor
@@ -390,7 +390,14 @@ uses unless overridden by tool parameters.
 - Wave derate (opt-in): max(0.5, 1 - 0.05 * Hs^1.75 * cos^2(TWA/2)).
   Off by default; sea state feeds the warning bar instead of slowing.
 
-- Minimum boat speed: 0.5 kn floor to avoid blow-up in extreme stalls.
+- Currents: SOG = STW + (current projected on bearing). Projection uses
+  the oceanographic "going to" convention. Source: Open-Meteo Marine
+  (SMOC, 8 km global). Adequate for open-water planning, insufficient
+  for narrow passes (Goulet de Brest, Raz de Sein, Raz Blanchard) where
+  a SHOM atlas remains required for fine navigation.
+
+- Minimum boat speed / SOG: 0.5 kn floor to avoid blow-up in extreme
+  stalls or strongly opposing currents.
 
 ## Timing
 
@@ -407,14 +414,27 @@ and returns one entry per window. Weather is fetched once (cache prewarm),
 simulations are in-memory. Hard cap: 14 d x 24 h = 336 windows. The LLM
 picks qualitatively (no server-side ranking).
 
-## Mediterranean defaults
+## Regional defaults
 
-- Tides ignored (< 40 cm, negligible vs forecast uncertainty).
-- Currents ignored (Liguro-Provencal too weak / variable for V1).
-- Wind model: AROME 1.3 km (<= 48 h horizon, captures thermals and local
-  winds). Auto-falls back to ICON-EU (<= 5 d) -> ECMWF IFS 0.25 deg
-  (<= 10 d) -> GFS (<= 16 d).
-- Wave model: Open-Meteo Marine (significant Hs, period, direction).
+- Wind model: AROME 1.3 km (<= 48 h horizon, captures thermals and
+  local winds, covers French Atlantic + Mediterranean). Auto-falls back
+  to ICON-EU (<= 5 d) -> ECMWF IFS 0.25 deg (<= 10 d) -> GFS (<= 16 d).
+- Wave / current / tide model: Open-Meteo Marine (Hs / period / direction,
+  ocean current velocity + direction, sea level height MSL).
+- Surfacing thresholds: currents reported when >= 0.3 kt; tide range
+  reported when >= 0.5 m. Below these, the data is omitted as noise.
+- Mediterranean: tides typically < 40 cm and currents typically below
+  0.3 kt, so most legs surface only wind + waves.
+- Atlantic: tidal range exceeds 10 m on the Manche; tidal currents
+  exceed 5 kt in narrow passes — these become first-class signals.
+
+## Wind-against-current
+
+When current >= 1.5 kt and the wind setting (twd + 180 deg) is opposed
+to the current setting by more than 120 deg, the leg is flagged ("mer
+hachee probable") and the overall complexity level is bumped by +1
+(capped at 5). Mirrors nautical practice: chop builds when wind blows
+into a contrary tide.
 
 ## What is NOT modelled (V1)
 
@@ -425,7 +445,9 @@ picks qualitatively (no server-side ranking).
 """
 
 
-def _build_window_dict(report: Any, score: Any, waypoints_raw: list[dict[str, float]]) -> dict[str, Any]:
+def _build_window_dict(
+    report: Any, score: Any, waypoints_raw: list[dict[str, float]]
+) -> dict[str, Any]:
     dep_iso = report.departure_time.isoformat()
     warnings = list(report.warnings) + [w.message for w in score.warnings]
     return {
@@ -721,14 +743,18 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
                 adapter=fetch_adapter,
                 model=model,
             )
-            windows = [_build_window_dict(r, _score_complexity(r, max_hs_m=max_hs_m), waypoints) for r in reports]
+            windows = [
+                _build_window_dict(r, _score_complexity(r, max_hs_m=max_hs_m), waypoints)
+                for r in reports
+            ]
 
             meta_warnings: list[str] = []
             if target_eta is not None:
                 target_utc = datetime.fromisoformat(target_eta).astimezone(UTC)
                 tolerance = timedelta(hours=2)
                 filtered = [
-                    w for w in windows
+                    w
+                    for w in windows
                     if abs((datetime.fromisoformat(w["arrival"]) - target_utc).total_seconds())
                     <= tolerance.total_seconds()
                 ]

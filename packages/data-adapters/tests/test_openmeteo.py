@@ -57,6 +57,90 @@ async def test_fetch_returns_bundle_with_default_model(
 
 
 @respx.mock
+async def test_marine_request_includes_currents_and_tide_vars(
+    forecast_marseille_arome, marine_porquerolles
+):
+    """Marine endpoint must request currents and tide height alongside waves
+    so the UI can surface the Currents/Tides pills when relevant. Counted
+    against Open-Meteo's 10-variable-per-call limit: 8/10 used.
+    """
+    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=forecast_marseille_arome))
+    marine_route = respx.get(MARINE_URL).mock(
+        return_value=httpx.Response(200, json=marine_porquerolles)
+    )
+
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
+    start, end = _start_end()
+    await adapter.fetch(lat=43.30, lon=5.35, start=start, end=end)
+
+    requested = marine_route.calls.last.request.url.params["hourly"].split(",")
+    assert "ocean_current_velocity" in requested
+    assert "ocean_current_direction" in requested
+    assert "sea_level_height_msl" in requested
+    assert len(requested) <= 10
+
+
+@respx.mock
+async def test_parse_sea_converts_current_to_knots_and_keeps_tide_in_meters(
+    forecast_marseille_arome, marine_porquerolles
+):
+    """Open-Meteo Marine returns ocean_current_velocity in km/h by default
+    (no length_unit override passed). Domain is in knots, so the adapter
+    converts at ingestion using 1 kn = 1.852 km/h. Tide height stays in
+    meters (no conversion).
+    """
+    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=forecast_marseille_arome))
+    respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=marine_porquerolles))
+
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
+    start, end = _start_end()
+    bundle = await adapter.fetch(lat=43.30, lon=5.35, start=start, end=end)
+
+    sea0 = bundle.sea.points[0]
+    # Fixture: 0.05 km/h → 0.05 / 1.852 ≈ 0.0270 kn (Med, well below the
+    # 0.3 kn relevance threshold — currents pill should stay hidden).
+    assert sea0.current_speed_kn == pytest.approx(0.0270, abs=1e-3)
+    assert sea0.current_direction_to_deg == 135.0
+    assert sea0.tide_height_m == -0.10
+
+    # Med fixture is intentionally below both relevance thresholds — sanity
+    # check so future fixture edits don't accidentally cross them.
+    max_current = max(p.current_speed_kn for p in bundle.sea.points)
+    assert max_current < 0.3
+    tides = [p.tide_height_m for p in bundle.sea.points]
+    assert (max(tides) - min(tides)) < 0.5
+
+
+@respx.mock
+async def test_parse_sea_handles_missing_current_and_tide_fields(
+    forecast_marseille_arome, marine_porquerolles
+):
+    """Defense against Open-Meteo grids without SMOC coverage (e.g. lakes,
+    inland points): if currents/tide arrays are absent or shorter than time,
+    the parser must fill with None rather than raising.
+    """
+    payload = dict(marine_porquerolles)
+    hourly = dict(payload["hourly"])
+    hourly.pop("ocean_current_velocity", None)
+    hourly.pop("ocean_current_direction", None)
+    hourly.pop("sea_level_height_msl", None)
+    payload["hourly"] = hourly
+
+    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=forecast_marseille_arome))
+    respx.get(MARINE_URL).mock(return_value=httpx.Response(200, json=payload))
+
+    adapter = OpenMeteoAdapter(http_min_interval_s=0)
+    start, end = _start_end()
+    bundle = await adapter.fetch(lat=43.30, lon=5.35, start=start, end=end)
+
+    sea0 = bundle.sea.points[0]
+    assert sea0.current_speed_kn is None
+    assert sea0.current_direction_to_deg is None
+    assert sea0.tide_height_m is None
+    assert sea0.wave_height_m is not None  # waves still parse
+
+
+@respx.mock
 async def test_fetch_passes_arome_as_default_model_param(
     forecast_marseille_arome, marine_porquerolles
 ):
