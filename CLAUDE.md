@@ -2,10 +2,12 @@
 
 ## Mission
 
-Open-source Mediterranean sailing planner powered by an MCP server and a public web app.
+Open-source sailing planner for the French coastline (Atlantic + Mediterranean), powered by an MCP server and a public web app.
 The user describes their trip in natural language to an MCP client (e.g. Claude Desktop, or any other).
 The client orchestrates marine data fetches, estimates passage time and complexity via MCP tools,
 and renders a precomputed plan in the standalone web app.
+
+Primary scope: French Atlantic coast (Manche + Atlantique) and Mediterranean. Both regions are first-class.
 
 The web app is **strictly standalone** — it never proposes "talk to an assistant". Conversational entry happens client-side.
 
@@ -31,11 +33,14 @@ We could re-deploy on Fly.io, Modal, or self-hosted by writing a different wrapp
 - Wind speeds always in **knots**, never km/h
 - Wind directions in TWD/TWA/AWA/AWS conventions, document explicitly when used
 - True heading vs magnetic heading — V1 uses true throughout
+- **AROME** is the default high-resolution model (1.3 km, covers Atlantic French coast + Mediterranean, captures thermal and local winds). When `models` not specified, return AROME first / use AROME for passage estimation.
+- Tides and currents: surfaced from Open-Meteo Marine (SMOC, 8 km global) and reported only when materially relevant per leg (currents ≥ 0.3 kt, tidal range ≥ 0.5 m). High-precision MARC atlases (250 m) for critical Atlantic passes are a later enhancement.
 - Mediterranean specifics:
-  - Tides negligible (< 40 cm), ignored in V1
-  - Tidal currents not significant; permanent currents (Liguro-Provençal) ignored in V1
-  - **AROME** is the default high-resolution model (1.3 km, captures thermal and local winds). When `models` not specified, return AROME first / use AROME for passage estimation.
+  - Tides typically < 40 cm and currents typically < 0.3 kt → most legs will not surface tide/current data, by design
   - Local wind names: mistral (NW), tramontane (NW), sirocco (SE), marin (SE-S), levante (E), libeccio (SW)
+- Atlantic specifics:
+  - Tidal range can exceed 10 m (Manche), tidal currents > 5 kt in narrow passes (Goulet de Brest, Raz de Sein, Raz Blanchard) — tide and current data are first-class
+  - Open-Meteo SMOC at 8 km is sufficient for open-water planning but **insufficient for narrow passes** — flag this in user-facing copy
 
 ## Data sources of record
 

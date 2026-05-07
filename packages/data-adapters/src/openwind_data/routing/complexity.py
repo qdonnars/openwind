@@ -17,6 +17,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from openwind_data.adapters.base import (
+    WIND_AGAINST_CURRENT_OPPOSITION_DEG,
+    WIND_AGAINST_CURRENT_WARNING_THRESHOLD_KN,
+)
 from openwind_data.routing.passage import PassageReport
 
 # (upper_bound_exclusive, level, label). Last bucket has math.inf.
@@ -78,7 +82,7 @@ def _compact_range(values: list[float], decimals: int) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ComplexityWarning:
-    kind: Literal["wind", "sea"]
+    kind: Literal["wind", "sea", "current"]
     level: int  # 1..5 — same scale as the axis that triggered it
     message: str
     affected_segments: tuple[int, ...]  # indices into PassageReport.segments
@@ -96,6 +100,7 @@ class ComplexityScore:
     hs_max_m: float | None
     rationale: str
     warnings: tuple[ComplexityWarning, ...] = ()
+    wind_against_current: bool = False  # True when at least one segment triggered the bump
 
 
 def score_complexity(
@@ -141,17 +146,18 @@ def score_complexity(
         affected = tuple(i for i, s in enumerate(passage.segments) if s.tws_kn >= threshold)
         affected_nm = sum(passage.segments[i].distance_nm for i in affected)
         tws_range = _compact_range([passage.segments[i].tws_kn for i in affected], 0)
-        warnings.append(ComplexityWarning(
-            kind="wind",
-            level=wind_level,
-            message=f"Vent {wind_label} : TWS {tws_range} kn sur {affected_nm:.0f} nm",
-            affected_segments=affected,
-        ))
+        warnings.append(
+            ComplexityWarning(
+                kind="wind",
+                level=wind_level,
+                message=f"Vent {wind_label} : TWS {tws_range} kn sur {affected_nm:.0f} nm",
+                affected_segments=affected,
+            )
+        )
     if sea_level is not None and sea_level >= 3 and max_hs_m is not None:
         threshold = _lower_bound(sea_level, _SEA_BANDS)
         affected_sea = tuple(
-            i for i, s in enumerate(passage.segments)
-            if s.hs_m is not None and s.hs_m >= threshold
+            i for i, s in enumerate(passage.segments) if s.hs_m is not None and s.hs_m >= threshold
         )
         # If max_hs_m came from a route-level override (no per-segment Hs on the
         # passage), default the affected span to the whole route so the warning
@@ -160,17 +166,56 @@ def score_complexity(
             affected_sea = tuple(range(len(passage.segments)))
         affected_sea_nm = sum(passage.segments[i].distance_nm for i in affected_sea)
         affected_hs = [
-            passage.segments[i].hs_m
-            for i in affected_sea
-            if passage.segments[i].hs_m is not None
+            passage.segments[i].hs_m for i in affected_sea if passage.segments[i].hs_m is not None
         ]
         hs_range = _compact_range(affected_hs, 1) if affected_hs else f"{max_hs_m:.1f}"
-        warnings.append(ComplexityWarning(
-            kind="sea",
-            level=sea_level,
-            message=f"Mer {sea_label} : Hs {hs_range} m sur {affected_sea_nm:.0f} nm",
-            affected_segments=affected_sea,
-        ))
+        warnings.append(
+            ComplexityWarning(
+                kind="sea",
+                level=sea_level,
+                message=f"Mer {sea_label} : Hs {hs_range} m sur {affected_sea_nm:.0f} nm",
+                affected_segments=affected_sea,
+            )
+        )
+
+    # Wind-against-current detection: a segment triggers when current ≥ 1.5 kt
+    # AND wind_to (twd + 180) is opposed to current_to by ≥ 120°. Mediterranean
+    # legs almost never qualify; Atlantic tidal passes (Goulet de Brest, Raz de
+    # Sein) routinely do. Triggers a +1 bump on the overall level (cap 5) plus
+    # an explicit warning so the LLM/UI can flag the chop, mirroring nautical
+    # practice.
+    wac_indices: list[int] = []
+    wac_currents: list[float] = []
+    for i, s in enumerate(passage.segments):
+        if s.current_speed_kn is None or s.current_direction_to_deg is None:
+            continue
+        if s.current_speed_kn < WIND_AGAINST_CURRENT_WARNING_THRESHOLD_KN:
+            continue
+        wind_to = (s.twd_deg + 180.0) % 360.0
+        delta = abs(((wind_to - s.current_direction_to_deg + 540.0) % 360.0) - 180.0)
+        if delta >= WIND_AGAINST_CURRENT_OPPOSITION_DEG:
+            wac_indices.append(i)
+            wac_currents.append(s.current_speed_kn)
+
+    wind_against_current = bool(wac_indices)
+    if wind_against_current:
+        bumped_level = min(5, level + 1)
+        affected_wac = tuple(wac_indices)
+        affected_wac_nm = sum(passage.segments[i].distance_nm for i in affected_wac)
+        cur_range = _compact_range(wac_currents, 1)
+        warnings.append(
+            ComplexityWarning(
+                kind="current",
+                level=bumped_level,
+                message=(
+                    f"Vent contre courant : courant {cur_range} kt opposé sur "
+                    f"{affected_wac_nm:.0f} nm, mer hachée probable"
+                ),
+                affected_segments=affected_wac,
+            )
+        )
+        rationale = f"{rationale}, vent contre courant"
+        level = bumped_level
 
     return ComplexityScore(
         level=level,
@@ -183,4 +228,5 @@ def score_complexity(
         hs_max_m=max_hs_m,
         rationale=rationale,
         warnings=tuple(warnings),
+        wind_against_current=wind_against_current,
     )

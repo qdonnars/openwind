@@ -42,7 +42,16 @@ AUTO_FALLBACK_CHAIN: tuple[str, ...] = (
 API_MAX_FUTURE_DAYS = 14
 
 _WIND_VARS = "wind_speed_10m,wind_direction_10m,wind_gusts_10m"
-_MARINE_VARS = "wave_height,wave_period,wave_direction,wind_wave_height,swell_wave_height"
+_MARINE_VARS = (
+    "wave_height,wave_period,wave_direction,wind_wave_height,swell_wave_height,"
+    "ocean_current_velocity,ocean_current_direction,sea_level_height_msl"
+)
+
+# Open-Meteo Marine returns ocean_current_velocity in **km/h by default** (the
+# ``length_unit`` parameter would switch to m/s on ``metric``, but we don't
+# pass it). Convert at ingestion to keep the domain in knots — 1 nautical mile
+# = 1852 m by definition, so 1 kn = 1.852 km/h.
+_KMH_TO_KN = 1 / 1.852
 
 CACHE_TTL = timedelta(minutes=30)
 # Lat/lon rounding for cache key — 2dp ≈ 1.1 km, matches AROME native grid (~1.3 km).
@@ -259,9 +268,7 @@ def _raise_for_status_with_horizon(
         except ValueError:
             payload = {}
         reason = str(payload.get("reason", ""))
-        if "out of allowed range" in reason and (
-            "start_date" in reason or "end_date" in reason
-        ):
+        if "out of allowed range" in reason and ("start_date" in reason or "end_date" in reason):
             raise ForecastHorizonError(model, requested_time)
     resp.raise_for_status()
 
@@ -319,11 +326,21 @@ def _parse_sea(data: dict[str, Any], start: datetime, end: datetime) -> SeaSerie
     d = hourly.get("wave_direction") or []
     wwh = hourly.get("wind_wave_height") or []
     swh = hourly.get("swell_wave_height") or []
+    cur_v = hourly.get("ocean_current_velocity") or []
+    cur_d = hourly.get("ocean_current_direction") or []
+    tide = hourly.get("sea_level_height_msl") or []
+    n = len(times)
+    cur_v = list(cur_v) + [None] * (n - len(cur_v))
+    cur_d = list(cur_d) + [None] * (n - len(cur_d))
+    tide = list(tide) + [None] * (n - len(tide))
     points: list[SeaPoint] = []
-    for t, h_, p_, d_, wwh_, swh_ in zip(times, h, p, d, wwh, swh, strict=True):
+    for t, h_, p_, d_, wwh_, swh_, cv_, cd_, tide_ in zip(
+        times, h, p, d, wwh, swh, cur_v, cur_d, tide, strict=True
+    ):
         ts = _parse_iso_utc(t)
         if not (start <= ts <= end):
             continue
+        cv_kn = None if cv_ is None else float(cv_) * _KMH_TO_KN
         points.append(
             SeaPoint(
                 time=ts,
@@ -332,6 +349,9 @@ def _parse_sea(data: dict[str, Any], start: datetime, end: datetime) -> SeaSerie
                 wave_direction_deg=_opt_float(d_),
                 wind_wave_height_m=_opt_float(wwh_),
                 swell_wave_height_m=_opt_float(swh_),
+                current_speed_kn=cv_kn,
+                current_direction_to_deg=_opt_float(cd_),
+                tide_height_m=_opt_float(tide_),
             )
         )
     return SeaSeries(points=tuple(points))

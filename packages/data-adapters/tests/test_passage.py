@@ -39,10 +39,14 @@ class StubAdapter:
         tws_kn: float = 10.0,
         twd_deg: float = 0.0,
         hs_m: float | None = None,
+        current_kn: float | None = None,
+        current_to_deg: float | None = None,
     ) -> None:
         self.tws_kn = tws_kn
         self.twd_deg = twd_deg
         self.hs_m = hs_m
+        self.current_kn = current_kn
+        self.current_to_deg = current_to_deg
         self.calls: list[tuple[float, float, datetime, datetime]] = []
 
     async def fetch(
@@ -69,7 +73,10 @@ class StubAdapter:
             t = t + timedelta(hours=1)
         wind = {m: WindSeries(model=m, points=tuple(points)) for m in models}
         sea_points: list[SeaPoint] = []
-        if self.hs_m is not None:
+        emit_sea = (
+            self.hs_m is not None or self.current_kn is not None or self.current_to_deg is not None
+        )
+        if emit_sea:
             t = start
             while t <= end:
                 sea_points.append(
@@ -80,6 +87,8 @@ class StubAdapter:
                         wave_direction_deg=None,
                         wind_wave_height_m=None,
                         swell_wave_height_m=None,
+                        current_speed_kn=self.current_kn,
+                        current_direction_to_deg=self.current_to_deg,
                     )
                 )
                 t = t + timedelta(hours=1)
@@ -508,6 +517,7 @@ class TestBestVmgUpwind:
 
     def test_all_archetypes_return_positive(self) -> None:
         from openwind_data.routing.archetypes import list_archetypes
+
         for archetype in list_archetypes():
             _, opt_speed = best_vmg_upwind(archetype, 10.0)
             assert opt_speed > 0.0, f"{archetype.name} returned zero speed"
@@ -642,8 +652,12 @@ class TestEstimatePassageWindows:
         adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
         t = datetime(2026, 5, 1, 8, 0, tzinfo=UTC)
         reports = await estimate_passage_windows(
-            [MARSEILLE, PORQUEROLLES], t, t, "cruiser_40ft",
-            adapter=adapter, segment_length_nm=20.0,
+            [MARSEILLE, PORQUEROLLES],
+            t,
+            t,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
         )
         assert len(reports) == 1
         assert reports[0].departure_time == t
@@ -654,7 +668,10 @@ class TestEstimatePassageWindows:
         latest = earliest + timedelta(days=15)  # 360 windows > 336 cap
         with pytest.raises(ValueError, match=str(MAX_SWEEP_WINDOWS)):
             await estimate_passage_windows(
-                [MARSEILLE, PORQUEROLLES], earliest, latest, "cruiser_40ft",
+                [MARSEILLE, PORQUEROLLES],
+                earliest,
+                latest,
+                "cruiser_40ft",
                 adapter=adapter,
             )
 
@@ -675,18 +692,26 @@ class TestEstimatePassageWindows:
         latest = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
         with pytest.raises(ValueError):
             await estimate_passage_windows(
-                [MARSEILLE, PORQUEROLLES], earliest, latest, "cruiser_40ft",
+                [MARSEILLE, PORQUEROLLES],
+                earliest,
+                latest,
+                "cruiser_40ft",
                 adapter=adapter,
             )
 
     async def test_all_windows_are_passagereports(self) -> None:
         from openwind_data.routing.passage import PassageReport
+
         adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
         earliest = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
         latest = datetime(2026, 5, 1, 8, 0, tzinfo=UTC)
         reports = await estimate_passage_windows(
-            [MARSEILLE, PORQUEROLLES], earliest, latest, "cruiser_40ft",
-            adapter=adapter, segment_length_nm=20.0,
+            [MARSEILLE, PORQUEROLLES],
+            earliest,
+            latest,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
         )
         for r in reports:
             assert isinstance(r, PassageReport)
@@ -742,11 +767,18 @@ class TestEstimatePassageWindows:
         """Some windows hitting ForecastHorizonError must NOT fail the whole sweep.
         Caller infers skip count from len(reports) vs expected window count."""
         from openwind_data.adapters.base import (
-            ForecastBundle as _FB, SeaSeries as _SS, WindSeries as _WS,
+            ForecastBundle as _FB,
+        )
+        from openwind_data.adapters.base import (
+            SeaSeries as _SS,
+        )
+        from openwind_data.adapters.base import (
+            WindSeries as _WS,
         )
 
         class FlakyAdapter(StubAdapter):
             """Returns empty wind for the 3rd fetch onward (mid-times past 2nd window)."""
+
             def __init__(self) -> None:
                 super().__init__(tws_kn=10.0, twd_deg=0.0)
                 self.fetch_count = 0
@@ -763,10 +795,15 @@ class TestEstimatePassageWindows:
                 self.fetch_count += 1
                 if self.fetch_count >= self.fail_at_call:
                     return _FB(
-                        lat=lat, lon=lon, start=start, end=end,
-                        wind_by_model={(models or ["meteofrance_arome_france"])[0]: _WS(
-                            model=(models or ["meteofrance_arome_france"])[0], points=()
-                        )},
+                        lat=lat,
+                        lon=lon,
+                        start=start,
+                        end=end,
+                        wind_by_model={
+                            (models or ["meteofrance_arome_france"])[0]: _WS(
+                                model=(models or ["meteofrance_arome_france"])[0], points=()
+                            )
+                        },
                         sea=_SS(points=()),
                         requested_at=start,
                     )
@@ -776,8 +813,12 @@ class TestEstimatePassageWindows:
         earliest = datetime(2026, 5, 1, 6, 0, tzinfo=UTC)
         latest = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)  # 7 windows at 1h
         reports = await estimate_passage_windows(
-            [MARSEILLE, PORQUEROLLES], earliest, latest, "cruiser_40ft",
-            adapter=adapter, segment_length_nm=20.0,
+            [MARSEILLE, PORQUEROLLES],
+            earliest,
+            latest,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
         )
         # First window must succeed (resolved before flakiness kicks in).
         assert len(reports) >= 1
@@ -829,6 +870,64 @@ class TestSeaStateAlwaysSurfaced:
             assert seg.hs_m is None
 
 
+class TestCurrentSog:
+    """Currents are projected on the segment bearing to compute SOG, which
+    drives duration. Following currents shorten the passage, opposing currents
+    lengthen it. With no current data, SOG falls back to STW (legacy behavior).
+    """
+
+    async def test_following_current_shortens_passage(self) -> None:
+        # Course east (~90°), current setting east (90°) → fully aligned.
+        # SOG = boat_speed + current → faster passage than no-current baseline.
+        baseline = StubAdapter(tws_kn=12.0, twd_deg=180.0)  # no current
+        following = StubAdapter(tws_kn=12.0, twd_deg=180.0, current_kn=2.0, current_to_deg=90.0)
+        route = [Point(43.0, 5.0), Point(43.0, 6.0)]  # ~44 nm bearing ~90°
+        baseline_report = await estimate_passage(
+            route, DEPARTURE, "cruiser_40ft", adapter=baseline, segment_length_nm=20.0
+        )
+        following_report = await estimate_passage(
+            route, DEPARTURE, "cruiser_40ft", adapter=following, segment_length_nm=20.0
+        )
+        assert following_report.duration_h < baseline_report.duration_h
+        for seg in following_report.segments:
+            assert seg.current_speed_kn == pytest.approx(2.0)
+            assert seg.sog_kn is not None and seg.sog_kn > seg.boat_speed_kn
+
+    async def test_opposing_current_lengthens_passage(self) -> None:
+        # Course east, current setting west (270°) → fully opposed.
+        # SOG = boat_speed - current → slower passage.
+        baseline = StubAdapter(tws_kn=12.0, twd_deg=180.0)
+        opposing = StubAdapter(tws_kn=12.0, twd_deg=180.0, current_kn=2.0, current_to_deg=270.0)
+        route = [Point(43.0, 5.0), Point(43.0, 6.0)]
+        baseline_report = await estimate_passage(
+            route, DEPARTURE, "cruiser_40ft", adapter=baseline, segment_length_nm=20.0
+        )
+        opposing_report = await estimate_passage(
+            route, DEPARTURE, "cruiser_40ft", adapter=opposing, segment_length_nm=20.0
+        )
+        assert opposing_report.duration_h > baseline_report.duration_h
+        for seg in opposing_report.segments:
+            assert seg.sog_kn is not None and seg.sog_kn < seg.boat_speed_kn
+
+    async def test_no_current_data_preserves_legacy_timing(self) -> None:
+        # Sanity: when the adapter doesn't supply current fields, sog_kn is
+        # None and duration matches the pre-currents formula exactly.
+        adapter = StubAdapter(tws_kn=12.0, twd_deg=180.0)
+        report = await estimate_passage(
+            [Point(43.0, 5.0), Point(43.0, 6.0)],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
+        )
+        for seg in report.segments:
+            assert seg.current_speed_kn is None
+            assert seg.current_direction_to_deg is None
+            assert seg.sog_kn is None
+        expected_h = sum(s.distance_nm / s.boat_speed_kn for s in report.segments)
+        assert report.duration_h == pytest.approx(expected_h, abs=1e-6)
+
+
 class TestSeaStatePassageWarningsRemoved:
     """Sea-state warnings live on the complexity score now, not the passage
     report. The passage's `warnings` field stays free of mer/forte-mer entries
@@ -837,8 +936,11 @@ class TestSeaStatePassageWarningsRemoved:
     async def test_no_sea_warning_on_passage_even_when_rough(self) -> None:
         adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0, hs_m=3.0)
         report = await estimate_passage(
-            [MARSEILLE, PORQUEROLLES], DEPARTURE, "cruiser_40ft",
-            adapter=adapter, segment_length_nm=20.0,
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=20.0,
         )
         assert not any("mer" in w.lower() for w in report.warnings)
 

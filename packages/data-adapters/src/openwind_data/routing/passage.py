@@ -170,10 +170,13 @@ class SegmentReport:
     twd_deg: float
     twa_deg: float
     polar_speed_kn: float
-    boat_speed_kn: float
-    duration_h: float
+    boat_speed_kn: float  # STW post-derate post-efficiency, through water
+    duration_h: float  # actual duration over ground (uses sog_kn when current is modelled)
     hs_m: float | None = None
     wave_derate_factor: float = 1.0
+    current_speed_kn: float | None = None
+    current_direction_to_deg: float | None = None
+    sog_kn: float | None = None  # over-ground speed; None when no current data
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,6 +218,40 @@ def _closest_sea_hs(points: tuple[SeaPoint, ...], target: datetime) -> float | N
     if not valid:
         return None
     return min(valid, key=lambda p: abs((p.time - target).total_seconds())).wave_height_m
+
+
+def _closest_sea_point(points: tuple[SeaPoint, ...], target: datetime) -> SeaPoint | None:
+    """Return the SeaPoint closest in time to ``target``, or None if empty.
+
+    Unlike ``_closest_sea_hs``, no per-field filtering: caller reads whichever
+    fields are populated (Hs, currents, tide). Open-Meteo Marine returns all
+    fields together at valid grid points, so the field-by-field None case is a
+    grid-coverage edge (inland, very high lat).
+    """
+    if not points:
+        return None
+    return min(points, key=lambda p: abs((p.time - target).total_seconds()))
+
+
+def _apply_current(
+    boat_speed_kn: float,
+    bearing_deg: float,
+    current_speed_kn: float | None,
+    current_direction_to_deg: float | None,
+) -> float | None:
+    """SOG = STW + (current projected on bearing). Returns None when current
+    data is absent so callers can preserve no-current semantics.
+
+    Convention: ``current_direction_to_deg`` is "going to" (oceanographic), so a
+    current setting along the bearing adds to STW. Floored at MIN_BOAT_SPEED_KN
+    to keep duration finite when a strong opposing current would otherwise
+    reverse SOG — the wind-against-current warning surfaces the qualitative
+    issue.
+    """
+    if current_speed_kn is None or current_direction_to_deg is None:
+        return None
+    along = current_speed_kn * math.cos(math.radians(bearing_deg - current_direction_to_deg))
+    return max(boat_speed_kn + along, MIN_BOAT_SPEED_KN)
 
 
 async def estimate_passage(
@@ -360,14 +397,19 @@ async def _estimate_with_model(
             effective_polar = opt_polar_speed * math.cos(math.radians(opt_twa - twa))
         else:
             effective_polar = polar_speed
-        # Always surface Hs from the bundle so callers see sea state, even if
-        # wave correction is off. Derate only applies when explicitly requested.
-        hs_m = _closest_sea_hs(bundle.sea.points, mid_time)
+        # Always surface Hs and currents from the bundle so callers see sea
+        # state and ground-track corrections, even if wave correction is off.
+        sea_pt = _closest_sea_point(bundle.sea.points, mid_time)
+        hs_m = sea_pt.wave_height_m if sea_pt else None
+        cur_kn = sea_pt.current_speed_kn if sea_pt else None
+        cur_to = sea_pt.current_direction_to_deg if sea_pt else None
         derate = 1.0
         if use_wave_correction and hs_m is not None:
             derate = wave_derate(hs_m, twa)
         boat_speed = max(effective_polar * efficiency * derate, MIN_BOAT_SPEED_KN)
-        seg_duration = timedelta(hours=seg.distance_nm / boat_speed)
+        sog = _apply_current(boat_speed, seg.bearing_deg, cur_kn, cur_to)
+        ground_speed = sog if sog is not None else boat_speed
+        seg_duration = timedelta(hours=seg.distance_nm / ground_speed)
         seg_start = departure_utc + cumulative_actual
         seg_end = seg_start + seg_duration
         cumulative_actual += seg_duration
@@ -388,6 +430,9 @@ async def _estimate_with_model(
                 duration_h=seg_duration.total_seconds() / 3600.0,
                 hs_m=hs_m,
                 wave_derate_factor=derate,
+                current_speed_kn=cur_kn,
+                current_direction_to_deg=cur_to,
+                sog_kn=sog,
             )
         )
 
@@ -490,12 +535,17 @@ async def _estimate_backward_with_model(
             effective_polar = opt_polar_speed * math.cos(math.radians(opt_twa - twa))
         else:
             effective_polar = polar_speed
-        hs_m = _closest_sea_hs(bundle.sea.points, mid_time)
+        sea_pt = _closest_sea_point(bundle.sea.points, mid_time)
+        hs_m = sea_pt.wave_height_m if sea_pt else None
+        cur_kn = sea_pt.current_speed_kn if sea_pt else None
+        cur_to = sea_pt.current_direction_to_deg if sea_pt else None
         derate = 1.0
         if use_wave_correction and hs_m is not None:
             derate = wave_derate(hs_m, twa)
         boat_speed = max(effective_polar * efficiency * derate, MIN_BOAT_SPEED_KN)
-        seg_duration = timedelta(hours=seg.distance_nm / boat_speed)
+        sog = _apply_current(boat_speed, seg.bearing_deg, cur_kn, cur_to)
+        ground_speed = sog if sog is not None else boat_speed
+        seg_duration = timedelta(hours=seg.distance_nm / ground_speed)
         seg_start = end_time - seg_duration
         min_boat_speed = min(min_boat_speed, boat_speed)
         reverse_reports.append(
@@ -514,6 +564,9 @@ async def _estimate_backward_with_model(
                 duration_h=seg_duration.total_seconds() / 3600.0,
                 hs_m=hs_m,
                 wave_derate_factor=derate,
+                current_speed_kn=cur_kn,
+                current_direction_to_deg=cur_to,
+                sog_kn=sog,
             )
         )
         end_time = seg_start
@@ -627,10 +680,14 @@ async def estimate_passage_windows(
         reports: list[PassageReport] = [first]
 
         # Prewarm cache for the entire sweep horizon so all remaining calls are hits.
-        prewarm_end = latest_utc + timedelta(hours=route_nm / PREWARM_MIN_SPEED_KN) + WIND_FETCH_WINDOW
+        prewarm_end = (
+            latest_utc + timedelta(hours=route_nm / PREWARM_MIN_SPEED_KN) + WIND_FETCH_WINDOW
+        )
         await asyncio.gather(
             *[
-                fetch_adapter.fetch(pt.lat, pt.lon, earliest_utc, prewarm_end, models=[resolved_model])
+                fetch_adapter.fetch(
+                    pt.lat, pt.lon, earliest_utc, prewarm_end, models=[resolved_model]
+                )
                 for pt in seg_mid_points
             ]
         )
