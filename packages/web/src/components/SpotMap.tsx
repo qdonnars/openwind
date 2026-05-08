@@ -142,7 +142,9 @@ async function reverseGeocode(lat: number, lon: number): Promise<string> {
 }
 
 interface SpotMapProps {
-  current: Spot;
+  // null when the user has just removed their active spot — keep the map
+  // viewport where it is rather than yanking back to a default center.
+  current: Spot | null;
   customSpots: Spot[];
   onSelectSpot: (spot: Spot) => void;
   onAddSpot: (spot: Spot) => void;
@@ -220,10 +222,13 @@ export function SpotMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
+    const initialCenter: [number, number] = current
+      ? [current.latitude, current.longitude]
+      : [43.3, 5.35];
     const map = L.map(containerRef.current, {
       zoomControl: false,
       attributionControl: false,
-    }).setView([current.latitude, current.longitude], 10);
+    }).setView(initialCenter, 10);
 
     const variant = resolvedTheme === "light" ? "light_all" : "dark_all";
     const tile = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${variant}/{z}/{x}/{y}{r}.png`, {
@@ -327,6 +332,7 @@ export function SpotMap({
     for (const spot of [...QUICK_SPOTS, ...customSpots]) {
       const key = spotKey(spot);
       const active =
+        current != null &&
         spot.latitude === current.latitude &&
         spot.longitude === current.longitude;
       const isCustom = customSpots.some((s) => spotKey(s) === key);
@@ -392,6 +398,7 @@ export function SpotMap({
     for (const spot of allSpots) {
       const key = spotKey(spot);
       const active =
+        current != null &&
         spot.latitude === current.latitude &&
         spot.longitude === current.longitude;
       const style = {
@@ -434,7 +441,11 @@ export function SpotMap({
     syncMarkers();
     // Pan to the active spot but keep the user's current zoom — clicking a
     // marker shouldn't yank them out of a wide overview or a tight zoom-in.
-    mapRef.current.panTo([current.latitude, current.longitude], { animate: true });
+    // If the user just removed their active spot (current == null), don't
+    // pan at all — preserve their viewport instead of reverting to a default.
+    if (current) {
+      mapRef.current.panTo([current.latitude, current.longitude], { animate: true });
+    }
   }, [current, customSpots, syncMarkers]);
 
   // Metric-aware arrows: wind = one per model, waves/currents = one (single
@@ -448,7 +459,7 @@ export function SpotMap({
       arrowLayerRef.current = null;
     }
 
-    if (!selectedHour) return;
+    if (!selectedHour || !current) return;
 
     const color = resolvedTheme === "light" ? "#64748b" : "#ffffff";
 
