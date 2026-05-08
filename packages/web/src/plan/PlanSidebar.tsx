@@ -555,7 +555,7 @@ function LegList({ legs, archetypeLabel }: { legs: AggregatedLeg[]; archetypeLab
         className="px-4 pb-1.5 text-[9px]"
         style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}
       >
-        <span className="ml-[34px]">allure · vent · mer · distance</span>
+        <span className="ml-[34px]">allure · vent · vagues · distance</span>
         <span className="float-right">vitesse cible</span>
       </div>
       <div style={{ borderTop: "1px solid var(--ow-line)" }}>
