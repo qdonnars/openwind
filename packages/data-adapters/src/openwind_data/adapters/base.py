@@ -71,6 +71,10 @@ class SeaPoint:
     current_speed_kn: float | None = None
     current_direction_to_deg: float | None = None
     tide_height_m: float | None = None
+    # Provenance label for currents and tide_height: e.g. "openmeteo_smoc"
+    # for the global Mercator product, "marc_finis_250m" / "marc_atlne_2km"
+    # for the PREVIMER atlases. ``None`` when no current/tide data populated.
+    current_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

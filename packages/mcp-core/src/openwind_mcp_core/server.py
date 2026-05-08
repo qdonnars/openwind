@@ -31,6 +31,7 @@ by design (see PR #74 for the full reasoning).
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -38,6 +39,8 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from openwind_data.adapters.base import MarineDataAdapter
 from openwind_data.adapters.openmeteo import AUTO_MODEL, OpenMeteoAdapter
+from openwind_data.currents.marc_atlas import MarcAtlasRegistry
+from openwind_data.currents.router import CompositeMarineAdapter
 from openwind_data.routing import (
     Point,
     _build_conditions_summary,
@@ -391,10 +394,17 @@ uses unless overridden by tool parameters.
   Off by default; sea state feeds the warning bar instead of slowing.
 
 - Currents: SOG = STW + (current projected on bearing). Projection uses
-  the oceanographic "going to" convention. Source: Open-Meteo Marine
-  (SMOC, 8 km global). Adequate for open-water planning, insufficient
-  for narrow passes (Goulet de Brest, Raz de Sein, Raz Blanchard) where
-  a SHOM atlas remains required for fine navigation.
+  the oceanographic "going to" convention. Cascade source priority:
+  MARC PREVIMER atlases (Ifremer, 250 m on critical Atlantic passes;
+  700 m on the Manche / Bay of Biscay shelf; 2 km on the wider North-East
+  Atlantic) when the waypoint falls inside a covered emprise; otherwise
+  Open-Meteo Marine (SMOC, 8 km global). Each leg surfaces a
+  ``current_source`` field so the caller knows which product applied
+  (e.g. ``marc_finis_250m``, ``marc_manga_700m``, ``openmeteo_smoc``).
+  MARC delivers harmonic prediction (tidal + 2008-2009 mean residual)
+  and excludes short-term wind-driven surge, which Open-Meteo SMOC
+  captures globally. Even the MARC atlases do not replace a SHOM tide
+  atlas or paper chart for fine navigation in a narrow pass.
 
 - Minimum boat speed / SOG: 0.5 kn floor to avoid blow-up in extreme
   stalls or strongly opposing currents.
@@ -442,6 +452,17 @@ into a contrary tide.
 - No coastal acceleration zones (caller adds intermediate waypoints).
 - No port/starboard polar asymmetry, no spinnaker-specific curves.
 - No hull condition modelling beyond the `efficiency` knob.
+
+## Data attributions
+
+- Wind: Open-Meteo Forecast API (CC BY 4.0). AROME by Meteo-France.
+- Sea state and global currents: Open-Meteo Marine API (Mercator SMOC).
+- High-resolution French tide / current atlases: PREVIMER MARC project
+  (Ifremer + SHOM cofinancement EU). Cite when republishing predictions
+  derived from MARC: Pineau-Guillou Lucia (2013), "PREVIMER -
+  Validation des atlas de composantes harmoniques de hauteurs et
+  courants de maree", Rapport Ifremer, 89 p.
+  http://archimer.ifremer.fr/doc/00157/26801/
 """
 
 
@@ -472,10 +493,25 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
 
     Args:
         adapter: optional `MarineDataAdapter` used by data-fetching tools.
-            Defaults to a process-wide `OpenMeteoAdapter`. Override in tests.
+            Defaults to a `CompositeMarineAdapter` that wraps a fresh
+            `OpenMeteoAdapter` and the MARC PREVIMER atlases discovered
+            under ``MARC_ATLAS_DIR`` (or falls back to Open-Meteo only when
+            no MARC dataset is available locally). Override in tests.
     """
     server: FastMCP = FastMCP("openwind")
-    fetch_adapter: MarineDataAdapter = adapter or OpenMeteoAdapter()
+    if adapter is not None:
+        fetch_adapter: MarineDataAdapter = adapter
+    else:
+        upstream = OpenMeteoAdapter()
+        marc_dir = os.environ.get("MARC_ATLAS_DIR")
+        if marc_dir:
+            registry = MarcAtlasRegistry.from_directory(marc_dir)
+            if registry.atlases:
+                fetch_adapter = CompositeMarineAdapter(upstream=upstream, marc=registry)
+            else:
+                fetch_adapter = upstream
+        else:
+            fetch_adapter = upstream
 
     @server.resource(
         PLAN_UI_RESOURCE_URI,
