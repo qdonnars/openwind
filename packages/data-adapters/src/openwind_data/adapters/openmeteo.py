@@ -341,6 +341,9 @@ def _parse_sea(data: dict[str, Any], start: datetime, end: datetime) -> SeaSerie
         if not (start <= ts <= end):
             continue
         cv_kn = None if cv_ is None else float(cv_) * _KMH_TO_KN
+        # Tag SMOC currents with provenance so downstream code (router,
+        # SegmentReport) can distinguish them from MARC PREVIMER overrides.
+        smoc_source = "openmeteo_smoc" if cv_kn is not None or tide_ is not None else None
         points.append(
             SeaPoint(
                 time=ts,
@@ -352,6 +355,7 @@ def _parse_sea(data: dict[str, Any], start: datetime, end: datetime) -> SeaSerie
                 current_speed_kn=cv_kn,
                 current_direction_to_deg=_opt_float(cd_),
                 tide_height_m=_opt_float(tide_),
+                current_source=smoc_source,
             )
         )
     return SeaSeries(points=tuple(points))

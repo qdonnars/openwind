@@ -177,6 +177,11 @@ class SegmentReport:
     current_speed_kn: float | None = None
     current_direction_to_deg: float | None = None
     sog_kn: float | None = None  # over-ground speed; None when no current data
+    # Provenance of current/tide data: ``"openmeteo_smoc"`` for the global
+    # 8 km Mercator product, ``"marc_<atlas>_<res>m"`` (e.g.
+    # ``"marc_finis_250m"``) when MARC PREVIMER atlas data overrides Open-Meteo
+    # in covered zones. ``None`` when no current data is available.
+    current_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,6 +408,7 @@ async def _estimate_with_model(
         hs_m = sea_pt.wave_height_m if sea_pt else None
         cur_kn = sea_pt.current_speed_kn if sea_pt else None
         cur_to = sea_pt.current_direction_to_deg if sea_pt else None
+        cur_src = sea_pt.current_source if sea_pt else None
         derate = 1.0
         if use_wave_correction and hs_m is not None:
             derate = wave_derate(hs_m, twa)
@@ -433,6 +439,7 @@ async def _estimate_with_model(
                 current_speed_kn=cur_kn,
                 current_direction_to_deg=cur_to,
                 sog_kn=sog,
+                current_source=cur_src,
             )
         )
 
@@ -539,6 +546,7 @@ async def _estimate_backward_with_model(
         hs_m = sea_pt.wave_height_m if sea_pt else None
         cur_kn = sea_pt.current_speed_kn if sea_pt else None
         cur_to = sea_pt.current_direction_to_deg if sea_pt else None
+        cur_src = sea_pt.current_source if sea_pt else None
         derate = 1.0
         if use_wave_correction and hs_m is not None:
             derate = wave_derate(hs_m, twa)
@@ -565,6 +573,7 @@ async def _estimate_backward_with_model(
                 hs_m=hs_m,
                 wave_derate_factor=derate,
                 current_speed_kn=cur_kn,
+                current_source=cur_src,
                 current_direction_to_deg=cur_to,
                 sog_kn=sog,
             )
