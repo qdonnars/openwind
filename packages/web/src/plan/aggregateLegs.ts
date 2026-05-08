@@ -117,9 +117,16 @@ export function aggregateLegs(
   }
   legStarts.push(segments.length);
 
-  return legStarts.slice(0, -1).map((start, li) => {
+  // Skip empty leg ranges (can happen when waypoints have grown beyond the
+  // rendered route, e.g. user adds a waypoint past the destination before
+  // recomputing — segments still reflect the old route, so the new leg has
+  // no covering segments). Without this guard, segs[0] below dereferences
+  // undefined and the page crashes.
+  return legStarts.slice(0, -1).flatMap((start, li): AggregatedLeg[] => {
     const segs = segments.slice(start, legStarts[li + 1]);
+    if (segs.length === 0) return [];
     const totalDist = segs.reduce((s, seg) => s + seg.distance_nm, 0);
+    if (totalDist <= 0) return [];
     const wsum = (pick: (s: SegmentReport) => number): number =>
       segs.reduce((acc, seg) => acc + pick(seg) * seg.distance_nm, 0) / totalDist;
 
@@ -164,7 +171,7 @@ export function aggregateLegs(
       ? tpSegs.reduce((s, seg) => s + (seg.wave_period_s as number) * seg.distance_nm, 0) / tpTotalDist
       : null;
 
-    return {
+    return [{
       distance_nm: totalDist,
       start_time: segs[0].start_time,
       end_time: segs[segs.length - 1].end_time,
@@ -189,6 +196,6 @@ export function aggregateLegs(
       current_speed_kn,
       current_direction_to_deg,
       current_relative,
-    };
+    }];
   });
 }

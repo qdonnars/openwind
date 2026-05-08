@@ -74,6 +74,30 @@ function App() {
     };
   }, [spot]);
 
+  // First-visit geolocation: if the user has no saved spots and we landed on
+  // the Marseille fallback, ask the browser for their position. Granted →
+  // center on them and load forecasts there. Denied / error → silent, keep
+  // the default. Returning users with custom spots keep their chosen spot.
+  useEffect(() => {
+    if (customSpots.length > 0) return;
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setSpot({
+          name: "Ma position",
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+      },
+      () => {
+        // Permission denied or unavailable — keep RADE_MARSEILLE.
+      },
+      { timeout: 8000, maximumAge: 5 * 60 * 1000 },
+    );
+  // Run once on mount; the customSpots check covers the returning-user case.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // If the active view's data becomes irrelevant for the new spot (e.g. moving
   // from Atlantic to Med drops Tides/Currents below threshold), fall back to Wind.
   const showWaves = isWavesRelevant(marine);
@@ -87,8 +111,6 @@ function App() {
 
   const isDefault = spot != null && spot.latitude === RADE_MARSEILLE.latitude && spot.longitude === RADE_MARSEILLE.longitude && !isCustom(spot);
   const canSave = spot != null && !isCustom(spot) && !isDefault;
-
-  const mapCenter: Spot = spot ?? RADE_MARSEILLE;
 
   return (
     <div
@@ -106,7 +128,7 @@ function App() {
           around the data cells. */}
       <div className="flex-1 min-h-0 relative">
         <SpotMap
-          current={mapCenter}
+          current={spot}
           customSpots={customSpots}
           onSelectSpot={setSpot}
           onAddSpot={(s) => { addSpot(s); setSpot(s); }}
