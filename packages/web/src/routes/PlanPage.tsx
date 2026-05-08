@@ -3,9 +3,7 @@ import { parsePlanUrl, isParsedOk, buildPlanUrl } from "../plan/parseUrl";
 import { PlanMap, type PlanMapHandle } from "../plan/PlanMap";
 import { PlanSidebar } from "../plan/PlanSidebar";
 import { fetchPassage, fetchPassageByEta, fetchPassageWindows, fetchArchetypes, friendlyError } from "../api/passage";
-import { ThemeToggle } from "../design/theme";
-import { SpotSearch } from "../components/SpotSearch";
-import { InfoButton } from "../components/InfoButton";
+import { Header } from "../components/Header";
 import type { PassageReport, ComplexityScore, Archetype, PassageWindow } from "../plan/types";
 import {
   loadLastSimulation,
@@ -207,39 +205,6 @@ function CompactDrawer({
         })}
       </div>
     </div>
-  );
-}
-
-// ── CopyLinkButton ────────────────────────────────────────────────────────────
-
-function CopyLinkButton() {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-    } catch {
-      const el = document.createElement("textarea");
-      el.value = window.location.href;
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand("copy");
-      document.body.removeChild(el);
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-  return (
-    <button
-      onClick={copy}
-      className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-      style={{
-        background: copied ? "var(--ow-accent-soft)" : "var(--ow-bg-2)",
-        color: copied ? "var(--ow-accent)" : "var(--ow-fg-1)",
-        border: "1px solid var(--ow-line-2)",
-      }}
-    >
-      {copied ? "Copié ✓" : "🔗"}
-    </button>
   );
 }
 
@@ -689,22 +654,9 @@ export function PlanPage() {
       className="h-screen flex flex-col overflow-hidden"
       style={{ background: "var(--ow-bg-0)", color: "var(--ow-fg-0)" }}
     >
-      {/* Header */}
-      <header
-        className="shrink-0 h-12 flex items-center px-3 gap-2 border-b"
-        style={{ background: "var(--ow-bg-1)", borderColor: "var(--ow-line)" }}
-      >
-        <div className="flex-1 flex justify-center px-1">
-          <SpotSearch
-            onSelect={(spot) => mapRef.current?.recenter(spot.latitude, spot.longitude)}
-          />
-        </div>
-        <div className="flex items-center gap-1">
-          <CopyLinkButton />
-          <InfoButton />
-          <ThemeToggle />
-        </div>
-      </header>
+      <Header
+        onSelectSpot={(spot) => mapRef.current?.recenter(spot.latitude, spot.longitude)}
+      />
 
       {/* Body */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row">

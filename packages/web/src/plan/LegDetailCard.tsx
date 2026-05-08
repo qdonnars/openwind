@@ -130,17 +130,24 @@ function WaveMark({ angleDeg, color }: { angleDeg: number; color: string }) {
   const ux = dx / len, uy = dy / len;
   const nx = -uy, ny = ux;
   const amp = 3.2;
-  const N = 18;
+  // Reserve a straight section just before the tip so the arrowhead reads as
+  // a clean chevron (not jammed into the last sinusoid bump).
+  const TAIL_STRAIGHT = 10;
+  const wavyEnd = len - TAIL_STRAIGHT;
+  const N = 16;
   const points: string[] = [];
   for (let i = 0; i <= N; i++) {
     const t = i / N;
-    const ax = tailX + ux * len * t;
-    const ay = tailY + uy * len * t;
-    const o = Math.sin(t * Math.PI * 3) * amp;
-    points.push(`${ax + nx * o},${ay + ny * o}`);
+    const dist = wavyEnd * t;
+    const o = Math.sin(t * Math.PI * 3) * amp * (1 - t * 0.5); // taper amp toward the tip
+    points.push(`${tailX + ux * dist + nx * o},${tailY + uy * dist + ny * o}`);
   }
-  // Arrowhead at the inner end (tip) so the wave reads as "coming toward the boat".
-  const HEAD = 6, WING = 3.5;
+  // Continue with a straight segment to the tip.
+  points.push(`${tipX},${tipY}`);
+
+  // Arrowhead at the tip — drawn along the radial direction, so it lands on
+  // the straight tail section above and reads as a clean ▶.
+  const HEAD = 7, WING = 4;
   const hx1 = tipX - ux * HEAD + nx * WING;
   const hy1 = tipY - uy * HEAD + ny * WING;
   const hx2 = tipX - ux * HEAD - nx * WING;
@@ -265,11 +272,27 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
     COLORS.currentTravers;
 
   // Each force gets its own label outside the dial at its own angle.
+  // Wind & wave are spread by construction (30° angular offset). The current's
+  // angle is independent though — if it lands within 30° of either, push the
+  // current label radially outward so labels never share screen space. Keeps
+  // the angular position truthful (label still points at the real flow
+  // direction); only the distance from the dial changes.
+  const angularGap = (a: number, b: number): number => {
+    const d = ((a - b + 540) % 360) - 180;
+    return Math.abs(d);
+  };
+  let currentLabelR = LABEL_R;
+  if (currentAngle != null) {
+    const tooCloseToWind = angularGap(currentAngle, windAngle) < 30;
+    const tooCloseToWave = angularGap(currentAngle, waveAngle) < 30;
+    if (tooCloseToWind || tooCloseToWave) currentLabelR = LABEL_R + 28;
+  }
+
   const [windLx, windLy] = polarXY(windAngle, LABEL_R);
   const windLabel = labelLayout(windAngle);
   const [waveLx, waveLy] = polarXY(waveAngle, LABEL_R);
   const waveLabel = labelLayout(waveAngle);
-  const [curLx, curLy] = currentAngle != null ? polarXY(currentAngle, LABEL_R) : [0, 0];
+  const [curLx, curLy] = currentAngle != null ? polarXY(currentAngle, currentLabelR) : [0, 0];
   const curLabel = currentAngle != null ? labelLayout(currentAngle) : { anchor: "middle" as const, dx: 0 };
 
   return (
