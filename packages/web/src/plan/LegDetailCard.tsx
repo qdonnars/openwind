@@ -310,29 +310,26 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
         </span>
       </div>
 
-      {/* Build-up of the speed: polaire (+) / mer (−) / courant (±) */}
+      {/* Build-up of the speed: polaire (+) / mer (−) / courant (±).
+          Each row picks up the matching arrow color from the boat diagram so
+          the eye links the number to its glyph. */}
       <div
         className="text-[10px] tabular-nums leading-snug mb-2"
-        style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}
+        style={{ fontFamily: "var(--ow-font-mono)" }}
       >
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-baseline gap-2" style={{ color: COLORS.wind }}>
           <span className="w-10 tabular-nums">{fmtSigned1(leg.polar_after_eff_kn)}</span>
           <span>polaire</span>
         </div>
         {hasWaves && Math.abs(leg.wave_delta_kn) > 0.05 && (
-          <div className="flex items-baseline gap-2">
-            <span className="w-10 tabular-nums" style={{ color: "var(--ow-warn)" }}>{fmtSigned1(leg.wave_delta_kn)}</span>
+          <div className="flex items-baseline gap-2" style={{ color: COLORS.waves }}>
+            <span className="w-10 tabular-nums">{fmtSigned1(leg.wave_delta_kn)}</span>
             <span>mer</span>
           </div>
         )}
         {leg.current_delta_kn != null && Math.abs(leg.current_delta_kn) > 0.05 && (
-          <div className="flex items-baseline gap-2">
-            <span
-              className="w-10 tabular-nums"
-              style={{ color: leg.current_delta_kn >= 0 ? "var(--ow-ok)" : "var(--ow-warn)" }}
-            >
-              {fmtSigned1(leg.current_delta_kn)}
-            </span>
+          <div className="flex items-baseline gap-2" style={{ color: currentColor }}>
+            <span className="w-10 tabular-nums">{fmtSigned1(leg.current_delta_kn)}</span>
             <span>courant</span>
           </div>
         )}
