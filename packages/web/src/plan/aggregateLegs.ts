@@ -58,6 +58,29 @@ function twaToPointOfSail(twa: number): string {
   return "Arrière";
 }
 
+// Inclusive-exclusive segment ranges per user-waypoint leg. Shared between
+// the sidebar (drives the click-to-expand list) and the map (drives the
+// highlight overlay when a leg is selected).
+export function computeLegSegmentRanges(
+  segments: { start: { lat: number; lon: number } }[],
+  waypoints: [number, number][],
+): Array<[number, number]> {
+  if (waypoints.length < 2 || segments.length === 0) return [];
+  const legStarts: number[] = [0];
+  for (let w = 1; w < waypoints.length - 1; w++) {
+    const [wlat, wlon] = waypoints[w];
+    let best = legStarts[legStarts.length - 1] + 1;
+    let bestD = Infinity;
+    for (let i = best; i < segments.length; i++) {
+      const d = Math.hypot(segments[i].start.lat - wlat, segments[i].start.lon - wlon);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    legStarts.push(best);
+  }
+  legStarts.push(segments.length);
+  return legStarts.slice(0, -1).map((s, i) => [s, legStarts[i + 1]]);
+}
+
 function twaToSeaDirection(twa: number): "face" | "travers" | "arrière" {
   // 3-bucket split (vs 4 for point_of_sail) — sailors call out sea state in
   // coarser terms than sail trim.

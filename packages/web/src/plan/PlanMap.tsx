@@ -17,6 +17,8 @@ interface PlanMapProps {
   onWptAdd?: (afterIdx: number, lat: number, lon: number) => void;
   onWptDelete?: (idx: number) => void;
   onMapClick?: (lat: number, lon: number) => void;
+  /** Inclusive-exclusive range of segment indices to highlight (selected leg). */
+  highlightedSegmentRange?: [number, number] | null;
 }
 
 function waypointIcon(label: string, bg: string, deletable: boolean): L.DivIcon {
@@ -32,13 +34,14 @@ function waypointIcon(label: string, bg: string, deletable: boolean): L.DivIcon 
 }
 
 export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
-  { waypoints, segments, isStale, onWptMove, onWptAdd, onWptDelete, onMapClick }: PlanMapProps,
+  { waypoints, segments, isStale, onWptMove, onWptAdd, onWptDelete, onMapClick, highlightedSegmentRange }: PlanMapProps,
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const polylinesRef = useRef<L.Polyline[]>([]);
+  const highlightLineRef = useRef<L.Polyline | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const dragLineRef = useRef<L.Polyline | null>(null);
   const livePositionsRef = useRef<[number, number][]>(waypoints);
@@ -262,6 +265,36 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
       polylinesRef.current.push(line);
     });
   }, [waypoints, segments, isStale]);
+
+  // Selected-leg highlight overlay — drawn on top of the colored segments,
+  // using the brand accent color so it pops against the wind palette.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (highlightLineRef.current) {
+      highlightLineRef.current.remove();
+      highlightLineRef.current = null;
+    }
+    if (!highlightedSegmentRange || !segments || segments.length === 0) return;
+    const [s, e] = highlightedSegmentRange;
+    if (s < 0 || e <= s || s >= segments.length) return;
+    const slice = segments.slice(s, Math.min(e, segments.length));
+    if (slice.length === 0) return;
+    const path: L.LatLngExpression[] = [
+      L.latLng(slice[0].start.lat, slice[0].start.lon),
+      ...slice.map((seg) => L.latLng(seg.end.lat, seg.end.lon)),
+    ];
+    const accent = resolvedTheme === "light" ? "#0f766e" : "#2dd4bf";
+    const overlay = L.polyline(path, {
+      color: accent,
+      weight: 10,
+      opacity: 0.85,
+      lineCap: "round",
+      lineJoin: "round",
+    }).addTo(map);
+    overlay.bringToFront();
+    highlightLineRef.current = overlay;
+  }, [highlightedSegmentRange, segments, resolvedTheme]);
 
   return <div ref={containerRef} className="w-full h-full" />;
 });

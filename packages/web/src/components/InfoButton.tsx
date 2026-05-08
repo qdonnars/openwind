@@ -1,0 +1,83 @@
+import { useEffect, useState } from "react";
+import { InfoPanel } from "./InfoPanel";
+
+function InfoIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="11" x2="12" y2="17" />
+      <line x1="12" y1="7" x2="12.01" y2="7" />
+    </svg>
+  );
+}
+
+function InfoModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[1000] flex items-end lg:items-center justify-center animate-fade-in"
+      onClick={onClose}
+      style={{ background: "rgba(0,0,0,0.6)" }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="À propos d'OpenWind"
+    >
+      <div
+        className="relative w-full lg:max-w-2xl max-h-[92vh] overflow-y-auto rounded-t-2xl lg:rounded-2xl shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--ow-bg-0)",
+          border: "1px solid var(--ow-line)",
+        }}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Fermer"
+          className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center text-base font-semibold transition-colors"
+          style={{
+            background: "var(--ow-bg-1)",
+            color: "var(--ow-fg-1)",
+            border: "1px solid var(--ow-line)",
+          }}
+        >
+          ✕
+        </button>
+        <InfoPanel />
+      </div>
+    </div>
+  );
+}
+
+export function InfoButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        aria-label="À propos d'OpenWind"
+        title="À propos"
+        className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+        style={{
+          background: "var(--ow-accent-soft)",
+          color: "var(--ow-accent)",
+          border: "1px solid var(--ow-accent-line)",
+        }}
+      >
+        <InfoIcon />
+      </button>
+      {open && <InfoModal onClose={() => setOpen(false)} />}
+    </>
+  );
+}

@@ -78,6 +78,20 @@ export function InfoPanel() {
             (SMOC pour les courants), CC BY 4.0
           </li>
           <li>
+            Atlas haute résolution courants &amp; marée (Atlantique, passes
+            critiques) :{" "}
+            <a
+              href="https://marc.ifremer.fr/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+              style={{ color: "var(--ow-accent)" }}
+            >
+              IFREMER MARC PREVIMER
+            </a>{" "}
+            (250 m / 2 km)
+          </li>
+          <li>
             Cartographie :{" "}
             <a
               href="https://www.openstreetmap.org/"

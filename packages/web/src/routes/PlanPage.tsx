@@ -5,6 +5,7 @@ import { PlanSidebar } from "../plan/PlanSidebar";
 import { fetchPassage, fetchPassageByEta, fetchPassageWindows, fetchArchetypes, friendlyError } from "../api/passage";
 import { ThemeToggle } from "../design/theme";
 import { SpotSearch } from "../components/SpotSearch";
+import { InfoButton } from "../components/InfoButton";
 import type { PassageReport, ComplexityScore, Archetype, PassageWindow } from "../plan/types";
 import {
   loadLastSimulation,
@@ -14,7 +15,7 @@ import {
 } from "../plan/lastSimulation";
 import { ModeToggle, type PlanMode, type TimeAnchor } from "../plan/ModeToggle";
 import { cxLevel, CX_COLORS } from "../plan/types";
-import { aggregateLegs } from "../plan/aggregateLegs";
+import { aggregateLegs, computeLegSegmentRanges } from "../plan/aggregateLegs";
 
 // ── local helpers (mobile components) ────────────────────────────────────────
 
@@ -439,6 +440,11 @@ export function PlanPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [sweepInterval, setSweepInterval] = useState<number>(3);
+  // Selected leg for the sidebar's expanded "Comment c'est calculé" — also
+  // drives the highlight overlay on the map. Cleared whenever the route or
+  // its segments change so we never highlight stale ranges.
+  const [selectedLegIdx, setSelectedLegIdx] = useState<number | null>(null);
+  useEffect(() => { setSelectedLegIdx(null); }, [waypoints, passage]);
   const [windows, setWindows] = useState<PassageWindow[] | null>(null);
   const [metaWarnings, setMetaWarnings] = useState<string[]>([]);
 
@@ -695,6 +701,7 @@ export function PlanPage() {
         </div>
         <div className="flex items-center gap-1">
           <CopyLinkButton />
+          <InfoButton />
           <ThemeToggle />
         </div>
       </header>
@@ -712,6 +719,11 @@ export function PlanPage() {
             onWptAdd={waypoints.length >= 2 ? handleWptAdd : undefined}
             onWptDelete={handleWptDelete}
             onMapClick={handleMapClick}
+            highlightedSegmentRange={
+              selectedLegIdx != null && passage
+                ? computeLegSegmentRanges(passage.segments as { start: { lat: number; lon: number } }[], waypoints)[selectedLegIdx] ?? null
+                : null
+            }
           />
           {/* Back-to-explore FAB — mirrors the compass FAB on the home map */}
           <a
@@ -772,6 +784,8 @@ export function PlanPage() {
             metaWarnings={metaWarnings}
             onCompareFetch={doFetchWindows}
             onWindowSelect={handleWindowSelect}
+            selectedLegIdx={selectedLegIdx}
+            onSelectedLegChange={setSelectedLegIdx}
           />
         </ResizableDesktopSidebar>
       </div>
@@ -820,6 +834,8 @@ export function PlanPage() {
             metaWarnings={metaWarnings}
             onCompareFetch={doFetchWindows}
             onWindowSelect={handleWindowSelect}
+            selectedLegIdx={selectedLegIdx}
+            onSelectedLegChange={setSelectedLegIdx}
           />
         )}
       </ResizableMobileDrawer>

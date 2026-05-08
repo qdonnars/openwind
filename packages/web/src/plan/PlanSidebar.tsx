@@ -536,8 +536,15 @@ function LegRow({
   );
 }
 
-function LegList({ legs }: { legs: AggregatedLeg[] }) {
-  const [openIdx, setOpenIdx] = useState<number | null>(null);
+function LegList({
+  legs,
+  openIdx,
+  onOpenChange,
+}: {
+  legs: AggregatedLeg[];
+  openIdx: number | null;
+  onOpenChange: (idx: number | null) => void;
+}) {
   return (
     <div>
       <div
@@ -563,7 +570,7 @@ function LegList({ legs }: { legs: AggregatedLeg[] }) {
             leg={leg}
             index={i}
             expanded={openIdx === i}
-            onToggle={() => setOpenIdx((cur) => (cur === i ? null : i))}
+            onToggle={() => onOpenChange(openIdx === i ? null : i)}
           />
         ))}
       </div>
@@ -604,6 +611,9 @@ interface PlanSidebarProps {
   metaWarnings: string[];
   onCompareFetch: () => void;
   onWindowSelect?: (w: PassageWindow) => void;
+  /** Selected leg index in the filled view (drives the map highlight). */
+  selectedLegIdx: number | null;
+  onSelectedLegChange: (idx: number | null) => void;
 }
 
 export function PlanSidebar({
@@ -635,6 +645,8 @@ export function PlanSidebar({
   metaWarnings,
   onCompareFetch,
   onWindowSelect,
+  selectedLegIdx,
+  onSelectedLegChange,
 }: PlanSidebarProps) {
   const { resolvedTheme } = useTheme();
   const sweepValid = mode === "compare"
@@ -905,7 +917,13 @@ export function PlanSidebar({
       {/* Legs — click any row to see the build-up */}
       {(() => {
         const legs = aggregateLegs(passage.segments, waypoints, passage.efficiency);
-        return <LegList legs={legs} />;
+        return (
+          <LegList
+            legs={legs}
+            openIdx={selectedLegIdx}
+            onOpenChange={onSelectedLegChange}
+          />
+        );
       })()}
 
       {/* Footer */}

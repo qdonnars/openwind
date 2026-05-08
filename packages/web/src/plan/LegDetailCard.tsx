@@ -13,16 +13,14 @@ const CENTER = SIZE / 2;
 const COMPASS_R = 104;
 const ARROW_TAIL_R = 100;
 const ARROW_TIP_R = 58;
-const CURRENT_TAIL_R = 38;
-const CURRENT_TIP_R = 92;
 const LABEL_R = 122;
 
 const COLORS = {
   wind: "var(--ow-fg-0)",
   waves: "var(--ow-warn)",
   currentPortant: "var(--ow-ok)",
-  currentContraire: "#fb923c", // distinct from waves' amber so the eye doesn't merge them
-  currentTravers: "var(--ow-fg-1)",
+  currentContraire: "#fb923c",  // distinct from waves' amber
+  currentTravers: "#3b82f6",    // blue-500 — clearly visible in both themes (grey washed out in light)
 };
 
 // 0° = up (12 o'clock), increasing clockwise. Returns [x, y] in SVG coords.
@@ -41,39 +39,84 @@ function labelLayout(angleDeg: number): { anchor: "start" | "middle" | "end"; dx
     : { anchor: "end", dx: -4 };
 }
 
-function ForceArrow({
+// Double-shaft arrow for the wind — two parallel lines so the eye can pick
+// it out among the wavy line and the current flow field. The shaft stops a
+// few px short of the tip so the lines don't poke through the arrowhead.
+function WindArrow({
   fromR,
   toR,
   angleDeg,
   color,
-  width = 2,
 }: {
   fromR: number;
   toR: number;
   angleDeg: number;
   color: string;
-  width?: number;
 }) {
   const [x1, y1] = polarXY(angleDeg, fromR);
   const [x2, y2] = polarXY(angleDeg, toR);
   const dirRad = Math.atan2(y2 - y1, x2 - x1);
-  const head = 7;
-  const wing = 4;
+  const perpRad = dirRad + Math.PI / 2;
+  const off = 2.6;
+  const ox = Math.cos(perpRad) * off;
+  const oy = Math.sin(perpRad) * off;
+  const tipBack = 8;
+  const sx = x2 - Math.cos(dirRad) * tipBack;
+  const sy = y2 - Math.sin(dirRad) * tipBack;
+  const head = 10, wing = 5.5;
   const hx1 = x2 - Math.cos(dirRad) * head + Math.sin(dirRad) * wing;
   const hy1 = y2 - Math.sin(dirRad) * head - Math.cos(dirRad) * wing;
   const hx2 = x2 - Math.cos(dirRad) * head - Math.sin(dirRad) * wing;
   const hy2 = y2 - Math.sin(dirRad) * head + Math.cos(dirRad) * wing;
   return (
-    <g>
-      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={width} strokeLinecap="round" />
-      <path
-        d={`M ${hx1} ${hy1} L ${x2} ${y2} L ${hx2} ${hy2}`}
-        stroke={color}
-        strokeWidth={width}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    <g stroke={color} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <line x1={x1 + ox} y1={y1 + oy} x2={sx + ox} y2={sy + oy} />
+      <line x1={x1 - ox} y1={y1 - oy} x2={sx - ox} y2={sy - oy} />
+      <path d={`M ${hx1} ${hy1} L ${x2} ${y2} L ${hx2} ${hy2}`} />
+    </g>
+  );
+}
+
+// Current flow field — short fine arrows distributed around the boat, all
+// pointing in the direction the water flows. Visually evokes a river current
+// (the user's red drawing).
+function CurrentFlowField({ flowAngleDeg, color }: { flowAngleDeg: number; color: string }) {
+  const flowRad = ((flowAngleDeg - 90) * Math.PI) / 180;
+  const fx = Math.cos(flowRad), fy = Math.sin(flowRad);
+  const px = -fy, py = fx; // perpendicular unit
+  const lineLen = 38;       // longer than before so the field reads as flow, not many small arrows
+  const HEAD = 4, WING = 2.2; // smaller arrowhead so the flow stays subtle
+  const positions: Array<[number, number]> = [];
+  // 2 rows of 3 lines either side of the boat — quieter than the prior 3×3 grid.
+  const perpOffsets = [-58, 58];
+  const alongOffsets = [-46, 0, 46];
+  for (const a of alongOffsets) {
+    for (const p of perpOffsets) {
+      positions.push([CENTER + fx * a + px * p, CENTER + fy * a + py * p]);
+    }
+  }
+
+  return (
+    <g stroke={color} strokeWidth="1" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.5">
+      {positions.map(([cx, cy], i) => {
+        const distC = Math.hypot(cx - CENTER, cy - CENTER);
+        if (distC > COMPASS_R - 4) return null;
+        if (distC < 30) return null; // keep clear of the hull
+        const tailX = cx - fx * lineLen / 2;
+        const tailY = cy - fy * lineLen / 2;
+        const tipX = cx + fx * lineLen / 2;
+        const tipY = cy + fy * lineLen / 2;
+        const hx1 = tipX - fx * HEAD + px * WING;
+        const hy1 = tipY - fy * HEAD + py * WING;
+        const hx2 = tipX - fx * HEAD - px * WING;
+        const hy2 = tipY - fy * HEAD - py * WING;
+        return (
+          <g key={i}>
+            <line x1={tailX} y1={tailY} x2={tipX} y2={tipY} />
+            <path d={`M ${hx1} ${hy1} L ${tipX} ${tipY} L ${hx2} ${hy2}`} />
+          </g>
+        );
+      })}
     </g>
   );
 }
@@ -96,7 +139,18 @@ function WaveMark({ angleDeg, color }: { angleDeg: number; color: string }) {
     const o = Math.sin(t * Math.PI * 3) * amp;
     points.push(`${ax + nx * o},${ay + ny * o}`);
   }
-  return <polyline points={points.join(" ")} stroke={color} strokeWidth="1.7" fill="none" strokeLinecap="round" />;
+  // Arrowhead at the inner end (tip) so the wave reads as "coming toward the boat".
+  const HEAD = 6, WING = 3.5;
+  const hx1 = tipX - ux * HEAD + nx * WING;
+  const hy1 = tipY - uy * HEAD + ny * WING;
+  const hx2 = tipX - ux * HEAD - nx * WING;
+  const hy2 = tipY - uy * HEAD - ny * WING;
+  return (
+    <g stroke={color} strokeWidth="1.7" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points={points.join(" ")} />
+      <path d={`M ${hx1} ${hy1} L ${tipX} ${tipY} L ${hx2} ${hy2}`} />
+    </g>
+  );
 }
 
 // Top-down hull silhouette — pointed bow up, flat transom at the bottom.
@@ -157,17 +211,23 @@ function CardinalMarkers() {
   );
 }
 
-function LegendItem({ color, swatch, label }: { color: string; swatch: "arrow" | "wave"; label: string }) {
+function LegendItem({ color, swatch, label }: { color: string; swatch: "arrow" | "windDouble" | "wave"; label: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-[10px]" style={{ color: "var(--ow-fg-1)" }}>
-      {swatch === "arrow" ? (
-        <svg width="20" height="8" viewBox="0 0 20 8" aria-hidden="true">
-          <line x1="2" y1="4" x2="14" y2="4" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
-          <path d="M 11 1 L 16 4 L 11 7" stroke={color} strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      {swatch === "windDouble" ? (
+        <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true">
+          <line x1="2" y1="3" x2="13" y2="3" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+          <line x1="2" y1="7" x2="13" y2="7" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+          <path d="M 13 1 L 18 5 L 13 9" stroke={color} strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : swatch === "arrow" ? (
+        <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true">
+          <line x1="2" y1="5" x2="14" y2="5" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+          <path d="M 11 2 L 16 5 L 11 8" stroke={color} strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ) : (
-        <svg width="20" height="8" viewBox="0 0 20 8" aria-hidden="true">
-          <path d="M 1 4 Q 5 0 9 4 T 17 4" stroke={color} strokeWidth="1.6" fill="none" strokeLinecap="round" />
+        <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true">
+          <path d="M 1 5 Q 5 1 9 5 T 17 5" stroke={color} strokeWidth="1.6" fill="none" strokeLinecap="round" />
         </svg>
       )}
       <span>{label}</span>
@@ -178,9 +238,14 @@ function LegendItem({ color, swatch, label }: { color: string; swatch: "arrow" |
 // ── Main component ────────────────────────────────────────────────────────────
 export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
   // Absolute compass bearings — boat is rotated to its actual heading and
-  // every force sits at its true direction on the North-up dial.
-  const windAngle = leg.twd_avg_deg;     // wind comes FROM this compass bearing
-  const waveAngle = leg.twd_avg_deg + 6; // small offset; Med assumption (wind = waves)
+  // every force sits at its true direction on the North-up dial. Waves
+  // track wind in our current Med model; we offset the wave marker by a
+  // fixed 30° so the two arrows never share a shaft. Robust by construction:
+  // 30° is the minimum gap that keeps labels (≈ 50-60 px wide at LABEL_R)
+  // from overlapping at 12 pt. Picking the offset away from the boat's bow
+  // also avoids stacking wave on top of the boat hull.
+  const windAngle = leg.twd_avg_deg;
+  const waveAngle = leg.twd_avg_deg + 30;
   const tws = Math.round(leg.tws_avg_kn);
   const windLine =
     leg.gust_max_kn != null && leg.gust_max_kn > tws + 1
@@ -199,10 +264,11 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
     leg.current_relative === "contraire" ? COLORS.currentContraire :
     COLORS.currentTravers;
 
-  // Combined wind+wave label sits outside the dial at the wind direction
-  // (waves track wind in our current model). Stacked rows, color-coded.
-  const [windWaveLx, windWaveLy] = polarXY(windAngle, LABEL_R);
+  // Each force gets its own label outside the dial at its own angle.
+  const [windLx, windLy] = polarXY(windAngle, LABEL_R);
   const windLabel = labelLayout(windAngle);
+  const [waveLx, waveLy] = polarXY(waveAngle, LABEL_R);
+  const waveLabel = labelLayout(waveAngle);
   const [curLx, curLy] = currentAngle != null ? polarXY(currentAngle, LABEL_R) : [0, 0];
   const curLabel = currentAngle != null ? labelLayout(currentAngle) : { anchor: "middle" as const, dx: 0 };
 
@@ -261,63 +327,67 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
             <BoatHull />
           </g>
 
-          {/* Wind arrow — drawn thicker than the rest so it reads first */}
-          <ForceArrow fromR={ARROW_TAIL_R} toR={ARROW_TIP_R} angleDeg={windAngle} color={COLORS.wind} width={3} />
+          {/* Wind arrow (double-shaft, distinctive) */}
+          <WindArrow fromR={ARROW_TAIL_R} toR={ARROW_TIP_R} angleDeg={windAngle} color={COLORS.wind} />
 
-          {/* Waves wavy line, slightly offset so it doesn't overlap the wind shaft */}
-          {hasWaves && <WaveMark angleDeg={waveAngle} color={COLORS.waves} />}
-
-          {/* Combined wind + wave label, stacked rows, single anchor outside the dial */}
+          {/* Wind label at wind direction */}
           <text
-            x={windWaveLx + windLabel.dx}
-            y={windWaveLy - (hasWaves ? 10 : 0)}
+            x={windLx + windLabel.dx}
+            y={windLy}
             textAnchor={windLabel.anchor}
             dominantBaseline="middle"
             fontSize="12"
             fill={COLORS.wind}
             style={{ fontFamily: "var(--ow-font-mono)", fontWeight: 700 }}
           >
-            <tspan>{windLine}</tspan>
-            <tspan x={windWaveLx + windLabel.dx} dy="13" fill={COLORS.waves} fontWeight="600">
-              {hasWaves ? waveLine : ""}
-            </tspan>
+            {windLine}
           </text>
 
-          {/* Current arrow (water flows toward `current_direction_to_deg`) */}
+          {/* Waves wavy line at wave direction (offset 30° from wind so they
+              never share a shaft), with its own label */}
+          {hasWaves && (
+            <>
+              <WaveMark angleDeg={waveAngle} color={COLORS.waves} />
+              <text
+                x={waveLx + waveLabel.dx}
+                y={waveLy}
+                textAnchor={waveLabel.anchor}
+                dominantBaseline="middle"
+                fontSize="12"
+                fill={COLORS.waves}
+                style={{ fontFamily: "var(--ow-font-mono)", fontWeight: 700 }}
+              >
+                {waveLine}
+              </text>
+            </>
+          )}
+
+          {/* Current flow field — short fine arrows around the boat */}
           {currentAngle != null && (
             <>
-              <ForceArrow fromR={CURRENT_TAIL_R} toR={CURRENT_TIP_R} angleDeg={currentAngle} color={currentColor} />
+              <CurrentFlowField flowAngleDeg={currentAngle} color={currentColor} />
               <text
                 x={curLx + curLabel.dx}
                 y={curLy}
                 textAnchor={curLabel.anchor}
                 dominantBaseline="middle"
-                fontSize="11"
+                fontSize="12"
                 fill={currentColor}
-                style={{ fontFamily: "var(--ow-font-mono)", fontWeight: 600 }}
+                style={{ fontFamily: "var(--ow-font-mono)", fontWeight: 700 }}
               >
-                <tspan>{leg.current_speed_kn?.toFixed(1) ?? "—"} kn</tspan>
-                <tspan x={curLx + curLabel.dx} dy="12" fill="var(--ow-fg-2)" fontWeight="500">
-                  {leg.current_relative ?? ""}
-                </tspan>
+                {leg.current_speed_kn?.toFixed(1) ?? "—"} kn
               </text>
             </>
           )}
         </svg>
       </div>
 
-      {/* Color legend — current entry only when a current is actually drawn */}
+      {/* Color legend — only the forces we're drawing */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center mt-1 mb-1">
-        <LegendItem color={COLORS.wind} swatch="arrow" label="Vent" />
+        <LegendItem color={COLORS.wind} swatch="windDouble" label="Vent" />
         {hasWaves && <LegendItem color={COLORS.waves} swatch="wave" label="Vagues" />}
-        {currentAngle != null && leg.current_relative === "portant" && (
-          <LegendItem color={COLORS.currentPortant} swatch="arrow" label="Courant portant" />
-        )}
-        {currentAngle != null && leg.current_relative === "contraire" && (
-          <LegendItem color={COLORS.currentContraire} swatch="arrow" label="Courant contraire" />
-        )}
-        {currentAngle != null && leg.current_relative === "travers" && (
-          <LegendItem color={COLORS.currentTravers} swatch="arrow" label="Courant travers" />
+        {currentAngle != null && (
+          <LegendItem color={currentColor} swatch="arrow" label="Courant" />
         )}
       </div>
     </div>
