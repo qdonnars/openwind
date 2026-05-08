@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { useTheme } from "../design/theme";
 import type { PassageReport, ComplexityScore, SegmentReport, Archetype, PassageWindow } from "./types";
-import { aggregateLegs } from "./aggregateLegs";
+import { aggregateLegs, type AggregatedLeg } from "./aggregateLegs";
 import { cxLevel, CX_COLORS } from "./types";
 import { WindowsTable } from "./WindowsTable";
 import { ModeToggle, TimeAnchorToggle, type PlanMode, type TimeAnchor } from "./ModeToggle";
+import { LegDetailCard } from "./LegDetailCard";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -526,6 +527,98 @@ function ArchetypeSelector({
   );
 }
 
+// ── LegList ──────────────────────────────────────────────────────────────────
+// Click-to-expand list of legs, with the "Comment c'est calculé" build-up
+// rendered inline for the open leg.
+
+function LegRow({
+  leg,
+  index,
+  expanded,
+  archetypeLabel,
+  onToggle,
+}: {
+  leg: AggregatedLeg;
+  index: number;
+  expanded: boolean;
+  archetypeLabel: string;
+  onToggle: () => void;
+}) {
+  const cx = cxLevel((leg.tws_min + leg.tws_max) / 2);
+  const tws = Math.round(leg.tws_avg_kn);
+  return (
+    <div style={{ borderBottom: "1px solid var(--ow-line)", background: expanded ? "var(--ow-bg-2)" : "transparent" }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left"
+        aria-expanded={expanded}
+      >
+        <span
+          className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-bold tabular-nums"
+          style={{ background: CX_COLORS[cx], color: "#0B1D14", fontFamily: "var(--ow-font-mono)" }}
+        >
+          {index + 1}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold truncate" style={{ color: "var(--ow-fg-0)" }}>
+            Tronçon {index + 1}
+          </div>
+          <div className="text-[10px] mt-0.5 tabular-nums" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
+            {leg.distance_nm.toFixed(1)} nm · {leg.point_of_sail} · {tws} kn
+          </div>
+        </div>
+        <span className="text-[11px] tabular-nums shrink-0" style={{ color: "var(--ow-fg-1)", fontFamily: "var(--ow-font-mono)" }}>
+          {new Date(leg.end_time).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+        </span>
+        <span
+          aria-hidden="true"
+          className="inline-flex"
+          style={{
+            color: expanded ? "var(--ow-accent)" : "var(--ow-fg-3)",
+            transform: expanded ? "rotate(180deg)" : "none",
+            transition: "transform 150ms ease, color 150ms ease",
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 6l5 5 5-5" />
+          </svg>
+        </span>
+      </button>
+      {expanded && <LegDetailCard leg={leg} archetypeLabel={archetypeLabel} />}
+    </div>
+  );
+}
+
+function LegList({ legs, archetypeLabel }: { legs: AggregatedLeg[]; archetypeLabel: string }) {
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+  return (
+    <div>
+      <div
+        className="flex items-center justify-between px-4 pt-3 pb-1.5 text-[10px] uppercase tracking-widest font-bold"
+        style={{ color: "var(--ow-fg-2)" }}
+      >
+        Segments
+        <span className="text-[9px] font-medium normal-case tracking-normal" style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}>
+          cliquez pour détailler
+        </span>
+      </div>
+      <div style={{ borderTop: "1px solid var(--ow-line)" }}>
+        {legs.map((leg, i) => (
+          <LegRow
+            key={i}
+            leg={leg}
+            index={i}
+            expanded={openIdx === i}
+            archetypeLabel={archetypeLabel}
+            onToggle={() => setOpenIdx((cur) => (cur === i ? null : i))}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── PlanSidebar ───────────────────────────────────────────────────────────────
 
 interface PlanSidebarProps {
@@ -787,49 +880,16 @@ export function PlanSidebar({
         </div>
       )}
 
-      {/* Legs — one row per user waypoint segment */}
+      {/* Legs — click any row to see the "Comment c'est calculé" build-up */}
       {(() => {
-        const legs = aggregateLegs(passage.segments, waypoints);
+        const legs = aggregateLegs(passage.segments, waypoints, passage.efficiency);
+        const archetype = archetypes.find((a) => a.slug === currentArchetypeSlug);
+        const archetypeLabel = archetype?.name ?? currentArchetypeSlug;
+        // LegList has its own padding; cancel the page's px-4 so the rows
+        // stretch edge-to-edge like the design.
         return (
-          <div>
-            <div className="flex items-center gap-2 mb-1 px-1 text-[9px]" style={{ color: "var(--ow-fg-3)" }}>
-              <span className="w-5 shrink-0" />
-              <span className="flex-1 grid grid-cols-5 gap-1">
-                <span>Heure</span>
-                <span>Allure</span>
-                <span>Vent</span>
-                <span>Mer</span>
-                <span className="text-right">Vitesse</span>
-              </span>
-            </div>
-            <div className="space-y-1">
-              {legs.map((leg, i) => {
-                const cx = cxLevel((leg.tws_min + leg.tws_max) / 2);
-                const windLabel = Math.round(leg.tws_min) === Math.round(leg.tws_max)
-                  ? `${Math.round(leg.tws_min)} kn`
-                  : `${Math.round(leg.tws_min)}–${Math.round(leg.tws_max)} kn`;
-                const seaLabel = leg.hs_avg_m == null
-                  ? "—"
-                  : `${leg.hs_avg_m.toFixed(1)}m ${leg.sea_direction}`;
-                return (
-                  <div key={i} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs" style={{ background: "var(--ow-bg-2)" }}>
-                    <span
-                      className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]"
-                      style={{ background: CX_COLORS[cx], color: "#fff" }}
-                    >
-                      {i + 1}
-                    </span>
-                    <div className="flex-1 grid grid-cols-5 gap-1 tabular-nums" style={{ fontFamily: "var(--ow-font-mono)" }}>
-                      <span style={{ color: "var(--ow-fg-1)" }}>{fmtTime(leg.end_time)}</span>
-                      <span style={{ color: "var(--ow-fg-0)" }}>{leg.point_of_sail}</span>
-                      <span style={{ color: "var(--ow-fg-1)" }}>{windLabel}</span>
-                      <span style={{ color: "var(--ow-fg-1)" }}>{seaLabel}</span>
-                      <span className="text-right" style={{ color: "var(--ow-fg-0)" }}>{leg.boat_speed_kn.toFixed(1)} kn</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          <div className="-mx-4">
+            <LegList legs={legs} archetypeLabel={archetypeLabel} />
           </div>
         );
       })()}

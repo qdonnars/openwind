@@ -182,6 +182,8 @@ class SegmentReport:
     # ``"marc_finis_250m"``) when MARC PREVIMER atlas data overrides Open-Meteo
     # in covered zones. ``None`` when no current data is available.
     current_source: str | None = None
+    gust_kn: float | None = None
+    wave_period_s: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,6 +408,7 @@ async def _estimate_with_model(
         # state and ground-track corrections, even if wave correction is off.
         sea_pt = _closest_sea_point(bundle.sea.points, mid_time)
         hs_m = sea_pt.wave_height_m if sea_pt else None
+        tp_s = sea_pt.wave_period_s if sea_pt else None
         cur_kn = sea_pt.current_speed_kn if sea_pt else None
         cur_to = sea_pt.current_direction_to_deg if sea_pt else None
         cur_src = sea_pt.current_source if sea_pt else None
@@ -440,6 +443,8 @@ async def _estimate_with_model(
                 current_direction_to_deg=cur_to,
                 sog_kn=sog,
                 current_source=cur_src,
+                gust_kn=wp.gust_kn,
+                wave_period_s=tp_s,
             )
         )
 
@@ -544,6 +549,7 @@ async def _estimate_backward_with_model(
             effective_polar = polar_speed
         sea_pt = _closest_sea_point(bundle.sea.points, mid_time)
         hs_m = sea_pt.wave_height_m if sea_pt else None
+        tp_s = sea_pt.wave_period_s if sea_pt else None
         cur_kn = sea_pt.current_speed_kn if sea_pt else None
         cur_to = sea_pt.current_direction_to_deg if sea_pt else None
         cur_src = sea_pt.current_source if sea_pt else None
@@ -576,6 +582,8 @@ async def _estimate_backward_with_model(
                 current_source=cur_src,
                 current_direction_to_deg=cur_to,
                 sog_kn=sog,
+                gust_kn=wp.gust_kn,
+                wave_period_s=tp_s,
             )
         )
         end_time = seg_start
