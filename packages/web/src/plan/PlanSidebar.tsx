@@ -933,7 +933,7 @@ export function PlanSidebar({
 
       {/* Hero stats + segment bar */}
       <div className="px-4 py-3.5" style={{ borderBottom: "1px solid var(--ow-line)" }}>
-        <HeroStats passage={passage} complexity={complexity} />
+        <HeroStats passage={passage} />
       </div>
 
       {/* Warnings */}
