@@ -88,8 +88,6 @@ function App() {
   const isDefault = spot != null && spot.latitude === RADE_MARSEILLE.latitude && spot.longitude === RADE_MARSEILLE.longitude && !isCustom(spot);
   const canSave = spot != null && !isCustom(spot) && !isDefault;
 
-  const mapCenter: Spot = spot ?? RADE_MARSEILLE;
-
   return (
     <div
       className="h-screen flex flex-col overflow-hidden"
@@ -106,7 +104,7 @@ function App() {
           around the data cells. */}
       <div className="flex-1 min-h-0 relative">
         <SpotMap
-          current={mapCenter}
+          current={spot}
           customSpots={customSpots}
           onSelectSpot={setSpot}
           onAddSpot={(s) => { addSpot(s); setSpot(s); }}
