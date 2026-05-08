@@ -543,13 +543,20 @@ function LegList({ legs, archetypeLabel }: { legs: AggregatedLeg[]; archetypeLab
   return (
     <div>
       <div
-        className="flex items-center justify-between px-4 pt-3 pb-1.5 text-[10px] uppercase tracking-widest font-bold"
+        className="flex items-center justify-between px-4 pt-3 pb-1 text-[10px] uppercase tracking-widest font-bold"
         style={{ color: "var(--ow-fg-2)" }}
       >
         Segments
         <span className="text-[9px] font-medium normal-case tracking-normal" style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}>
           cliquez pour détailler
         </span>
+      </div>
+      <div
+        className="px-4 pb-1.5 text-[9px]"
+        style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}
+      >
+        <span className="ml-[34px]">allure · vent · mer · distance</span>
+        <span className="float-right">vitesse cible</span>
       </div>
       <div style={{ borderTop: "1px solid var(--ow-line)" }}>
         {legs.map((leg, i) => (
