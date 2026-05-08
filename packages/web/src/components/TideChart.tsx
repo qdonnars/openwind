@@ -105,8 +105,13 @@ export function TideChart({
     return () => el.removeEventListener("scroll", checkScrollEnd);
   }, [checkScrollEnd]);
 
-  // Tide curve geometry
-  const tides = marine.tide_height_m;
+  // Tide curve geometry. Prefer the chart-datum (ZH) series when MARC covers
+  // the spot — that's what nautical charts and SHOM annuals display, and it's
+  // always ≥ 0 so users don't see negative heights at low tide.
+  const useZh = marine.tide_height_zh_m != null;
+  const tides = useZh ? (marine.tide_height_zh_m as (number | null)[]) : marine.tide_height_m;
+  const refLabel = useZh ? "ZH" : "MSL";
+  const unitLabel = useZh ? "m ZH" : "m";
   const valid = tides.filter((v): v is number => v != null);
   const hasData = valid.length >= 2;
   const tideMin = hasData ? Math.min(...valid) : -1;
@@ -191,7 +196,7 @@ export function TideChart({
                       className="text-[8px] font-medium"
                       style={{ color: "var(--ow-fg-2)" }}
                     >
-                      m
+                      {unitLabel}
                     </span>
                   </div>
                 </td>
@@ -238,19 +243,38 @@ export function TideChart({
                       ) : null,
                     )}
 
-                    {/* Mean-water-level reference line (zero of the dataset) — only
-                        when 0 is inside the displayed range so it actually shows up. */}
+                    {/* Reference line (zero of the dataset). In ZH mode this is
+                        chart datum / lowest astronomical tide; in MSL mode it's
+                        mean sea level. Drawn only when 0 is inside the displayed
+                        range. */}
                     {tideMin <= 0 && tideMax >= 0 && (
-                      <line
-                        x1={0}
-                        y1={yForTide(0)}
-                        x2={svgWidth}
-                        y2={yForTide(0)}
-                        stroke="var(--ow-fg-3)"
-                        strokeWidth={1}
-                        strokeDasharray="3 3"
-                        opacity={0.4}
-                      />
+                      <>
+                        <line
+                          x1={0}
+                          y1={yForTide(0)}
+                          x2={svgWidth}
+                          y2={yForTide(0)}
+                          stroke="var(--ow-fg-3)"
+                          strokeWidth={1}
+                          strokeDasharray="3 3"
+                          opacity={0.4}
+                        />
+                        <text
+                          x={4}
+                          y={yForTide(0) - 3}
+                          fontSize="9"
+                          fill="var(--ow-fg-2)"
+                          opacity={0.7}
+                          style={{
+                            paintOrder: "stroke",
+                            stroke: "var(--ow-bg-0)",
+                            strokeWidth: 3,
+                            strokeLinejoin: "round",
+                          }}
+                        >
+                          {refLabel}
+                        </text>
+                      </>
                     )}
 
                     {hasData && (
@@ -292,7 +316,9 @@ export function TideChart({
                         const onRight = selectedIdx <= tides.length - 4;
                         const labelX = onRight ? sx + 9 : sx - 9;
                         const labelAnchor = onRight ? "start" : "end";
-                        const labelText = `${sh >= 0 ? "+" : ""}${sh.toFixed(2)} m`;
+                        const labelText = useZh
+                          ? `${sh.toFixed(2)} m`
+                          : `${sh >= 0 ? "+" : ""}${sh.toFixed(2)} m`;
                         return (
                           <>
                             <line
@@ -339,7 +365,9 @@ export function TideChart({
                       const x = xForIdx(e.idx);
                       const y = yForTide(h);
                       const time = formatHour(masterTimeline[e.idx], timezoneMode);
-                      const heightLabel = `${h >= 0 ? "+" : ""}${h.toFixed(2)} m`;
+                      const heightLabel = useZh
+                        ? `${h.toFixed(2)} m`
+                        : `${h >= 0 ? "+" : ""}${h.toFixed(2)} m`;
                       const labelY = e.type === "high" ? y - 10 : y + 18;
                       return (
                         <g key={`ext-${e.idx}`}>

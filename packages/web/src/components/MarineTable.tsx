@@ -17,18 +17,27 @@ interface RowConfig {
   unit: string;
 }
 
-const ROWS_PER_METRIC: Record<MarineMetric, RowConfig[]> = {
-  waves: [
-    { kind: "hs", label: "Hs", unit: "m" },
-    { kind: "wave_dir", label: "Dir", unit: "°" },
-    { kind: "wave_period", label: "T", unit: "s" },
-  ],
-  tides: [{ kind: "tide", label: "Tide", unit: "m" }],
-  currents: [
-    { kind: "current", label: "Curr.", unit: "kn" },
-    { kind: "current_dir", label: "Dir", unit: "°" },
-  ],
-};
+function rowsForMetric(
+  metric: MarineMetric,
+  marine: MarineHourly,
+): RowConfig[] {
+  const tideUnit = marine.tide_height_zh_m != null ? "m ZH" : "m";
+  switch (metric) {
+    case "waves":
+      return [
+        { kind: "hs", label: "Hs", unit: "m" },
+        { kind: "wave_dir", label: "Dir", unit: "°" },
+        { kind: "wave_period", label: "T", unit: "s" },
+      ];
+    case "tides":
+      return [{ kind: "tide", label: "Tide", unit: tideUnit }];
+    case "currents":
+      return [
+        { kind: "current", label: "Curr.", unit: "kn" },
+        { kind: "current_dir", label: "Dir", unit: "°" },
+      ];
+  }
+}
 
 const CELL_W = 36;
 
@@ -195,16 +204,23 @@ function MarineCell({
       break;
     }
     case "tide": {
-      value = marine.tide_height_m[timeIdx];
+      // Prefer the ZH (chart-datum) series when MARC covers — always ≥ 0,
+      // matches what nautical charts display. Fall back to MSL elsewhere.
+      const zh = marine.tide_height_zh_m;
+      const useZh = zh != null;
+      const series = useZh ? zh : marine.tide_height_m;
+      value = series[timeIdx];
       if (value != null) {
         level = tidesLevel(Math.abs(value));
-        display = (value >= 0 ? "+" : "") + value.toFixed(1);
+        display = useZh
+          ? value.toFixed(1)
+          : (value >= 0 ? "+" : "") + value.toFixed(1);
         if (prevTide != null) {
           const delta = value - prevTide;
           if (delta > 0.01) trend = 1;
           else if (delta < -0.01) trend = -1;
         }
-        aria = `Tide ${display} m${trend > 0 ? ", rising" : trend < 0 ? ", falling" : ""}`;
+        aria = `Tide ${display} m${useZh ? " ZH" : ""}${trend > 0 ? ", rising" : trend < 0 ? ", falling" : ""}`;
       }
       break;
     }
@@ -424,7 +440,11 @@ export function MarineTable({
     return () => el.removeEventListener("scroll", checkScrollEnd);
   }, [checkScrollEnd]);
 
-  const rows = ROWS_PER_METRIC[metric];
+  const rows = rowsForMetric(metric, marine);
+  // The series powering the rising/falling indicator follows the same source
+  // as the displayed cell (ZH when MARC covers, MSL otherwise). Linear shift
+  // doesn't change the sign of deltas, but we keep the references consistent.
+  const tideSeries = marine.tide_height_zh_m ?? marine.tide_height_m;
 
   return (
     <div className="animate-fade-in">
@@ -474,7 +494,7 @@ export function MarineTable({
                     const prevIdx = prevT != null ? timeIndex.get(prevT) : undefined;
                     const prevTide =
                       row.kind === "tide" && prevIdx != null
-                        ? marine.tide_height_m[prevIdx]
+                        ? tideSeries[prevIdx]
                         : null;
                     return (
                       <MarineCell
