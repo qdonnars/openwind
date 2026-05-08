@@ -338,9 +338,20 @@ def compute_z0_hydro(
         a2d, p2d = constants_per_cell[rn]
         amp_mat[:, j] = a2d.ravel()[flat_idx]
         phase_mat[:, j] = p2d.ravel()[flat_idx]
-    bad_cell = ~np.all(np.isfinite(amp_mat) & np.isfinite(phase_mat), axis=1)
-    amp_mat[bad_cell] = 0.0
-    phase_mat[bad_cell] = 0.0
+    # Per-cell NaN handling: replace any NaN with 0 (constituent contributes
+    # nothing to the prediction at that cell). A cell is only flagged ``bad``
+    # — and its z0 set to NaN — when M2 is missing (no usable tide signal at
+    # all). Earlier versions required ALL constituents to be finite, which
+    # bizarrely excluded otherwise-valid coastal cells where one minor
+    # constituent had a NaN due to grid edge effects.
+    nan_mask = ~(np.isfinite(amp_mat) & np.isfinite(phase_mat))
+    amp_mat[nan_mask] = 0.0
+    phase_mat[nan_mask] = 0.0
+    if "M2" in {cn for _, cn in keep}:
+        m2_col = next(j for j, (_, cn) in enumerate(keep) if cn == "M2")
+        bad_cell = nan_mask[:, m2_col]
+    else:
+        bad_cell = np.zeros(n_cells, dtype=bool)
 
     n_samples = nodal_cycle_years * 365 * 24 // sample_hours
     base = datetime(2010, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
