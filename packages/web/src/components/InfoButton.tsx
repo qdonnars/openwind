@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { InfoPanel } from "./InfoPanel";
 
 function InfoIcon() {
@@ -25,7 +26,9 @@ function InfoModal({ onClose }: { onClose: () => void }) {
     };
   }, [onClose]);
 
-  return (
+  // Portal the overlay to <body> so its z-index isn't trapped by a parent
+  // stacking context (the header uses backdrop-blur-lg, which creates one).
+  return createPortal(
     <div
       className="fixed inset-0 z-[1000] flex items-end lg:items-center justify-center animate-fade-in"
       onClick={onClose}
@@ -56,7 +59,8 @@ function InfoModal({ onClose }: { onClose: () => void }) {
         </button>
         <InfoPanel />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
