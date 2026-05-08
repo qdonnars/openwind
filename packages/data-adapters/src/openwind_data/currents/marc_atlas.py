@@ -108,13 +108,19 @@ def _tile_path(atlas: AtlasMeta, lat: float, lon: float) -> Path:
     )
 
 
-def _nearest_cell_in_tile(df: pl.DataFrame, lat: float, lon: float) -> int | None:
-    """Return index of metric-nearest cell, or None if the tile is empty.
+def _nearest_cell_in_tile(
+    df: pl.DataFrame, lat: float, lon: float, required_col: str | None = None
+) -> int | None:
+    """Return index of metric-nearest cell, or None if no valid cell qualifies.
 
     Uses local-tangent-plane distance: degrees-lon are scaled by cos(lat) so
-    we don't bias toward longitudinal neighbours at high latitude. This
-    matters for the cell-distance threshold check (a 0.05° lon-only neighbour
-    at 48°N is 3.7 km away, not 5.5 km that an angular-only metric implies).
+    we don't bias toward longitudinal neighbours at high latitude. When
+    ``required_col`` is given, only cells with a finite value in that column
+    are considered — this matters for currents because MARC's Arakawa C-grid
+    offsets U and V by half a step from XE, so the metric-nearest XE cell can
+    have an on-land U face (NaN) even when XE itself is valid sea. ~50 cells
+    in FINIS exhibit this; routing through a slightly further cell with
+    finite U/V is a sub-resolution shift, well within harmonic precision.
     """
     lats = df["lat"].to_numpy()
     lons = df["lon"].to_numpy()
@@ -122,6 +128,11 @@ def _nearest_cell_in_tile(df: pl.DataFrame, lat: float, lon: float) -> int | Non
         return None
     cos_lat = np.cos(np.deg2rad(lat))
     d2 = ((lats - lat) ** 2) + ((lons - lon) * cos_lat) ** 2
+    if required_col is not None and required_col in df.columns:
+        valid = np.isfinite(df[required_col].to_numpy())
+        if not valid.any():
+            return None
+        d2 = np.where(valid, d2, np.inf)
     return int(np.argmin(d2))
 
 
@@ -171,24 +182,29 @@ class MarcAtlasRegistry:
     # Tolerance for "the nearest cell is close enough to be considered valid".
     # Coverage polygons are bbox-only at build time, so the bbox can extend
     # beyond actual sea cells (e.g. ATLNE bbox includes parts of the Med where
-    # the model has no valid cells). We require the nearest cell to be within
-    # ~1.5x the atlas resolution, expressed in degrees at the query lat.
+    # the model has no valid cells).
     _MAX_CELL_DISTANCE_M = 5000.0  # 5 km, generous
 
-    def _cell_within_distance(
-        self, atlas: AtlasMeta, df: pl.DataFrame, lat: float, lon: float
+    def _cell_with_finite(
+        self,
+        atlas: AtlasMeta,
+        df: pl.DataFrame,
+        lat: float,
+        lon: float,
+        required_col: str | None = None,
     ) -> int | None:
-        idx = _nearest_cell_in_tile(df, lat, lon)
+        """Return idx of the nearest cell within distance threshold whose
+        ``required_col`` is finite (when given). Returns None if the closest
+        valid cell is beyond max(5 km, 5x atlas resolution) of the query.
+        """
+        idx = _nearest_cell_in_tile(df, lat, lon, required_col=required_col)
         if idx is None:
             return None
-        cell_lat = float(df["lat"][idx])
-        cell_lon = float(df["lon"][idx])
-        # Convert degrees to metres at the query latitude.
+        cell_lat = float(df["lat"].to_numpy()[idx])
+        cell_lon = float(df["lon"].to_numpy()[idx])
         dlat_m = (cell_lat - lat) * 111_000
         dlon_m = (cell_lon - lon) * 111_000 * np.cos(np.deg2rad(lat))
         d_m = np.hypot(dlat_m, dlon_m)
-        # Allow up to max(5 km, 5x resolution) — generous so we don't reject
-        # legitimate MARC cells across small gaps in coverage.
         threshold = max(self._MAX_CELL_DISTANCE_M, 5.0 * atlas.resolution_m)
         return idx if d_m <= threshold else None
 
@@ -207,33 +223,49 @@ class MarcAtlasRegistry:
             df = _read_tile(str(_tile_path(atlas, lat, lon)))
             if df is None or df.height == 0:
                 continue
-            if self._cell_within_distance(atlas, df, lat, lon) is not None:
+            # Use the unfiltered metric-nearest as the coverage signal; the
+            # variable-specific lookup happens at predict time.
+            if self._cell_with_finite(atlas, df, lat, lon, required_col=None) is not None:
                 return atlas
         return None
 
     def cell_at(self, lat: float, lon: float) -> CellPrediction | None:
-        """Return the nearest valid cell across the best covering atlas, or None."""
+        """Return the nearest cells (per-variable) across the best covering atlas.
+
+        MARC's Arakawa C-grid stores XE / U / V on offset half-step grids.
+        The metric-nearest XE cell may have an on-land U or V face (NaN);
+        in that case we fall back to the nearest cell whose U / V is finite.
+        Anchor lat/lon and z0 come from the height cell.
+        """
         atlas = self.covers(lat, lon)
         if atlas is None:
             return None
-        path = _tile_path(atlas, lat, lon)
-        df = _read_tile(str(path))
+        df = _read_tile(str(_tile_path(atlas, lat, lon)))
         if df is None or df.height == 0:
             return None
-        idx = self._cell_within_distance(atlas, df, lat, lon)
-        if idx is None:
+        # Per-variable nearest cell with finite data. M2 is the canonical
+        # proxy (always present in every MARC atlas).
+        h_idx = self._cell_with_finite(atlas, df, lat, lon, required_col="M2_h_amp")
+        u_idx = self._cell_with_finite(atlas, df, lat, lon, required_col="M2_u_amp")
+        v_idx = self._cell_with_finite(atlas, df, lat, lon, required_col="M2_v_amp")
+        anchor = h_idx if h_idx is not None else (u_idx if u_idx is not None else v_idx)
+        if anchor is None:
             return None
-        cell_lat = float(df["lat"][idx])
-        cell_lon = float(df["lon"][idx])
-        z0_hydro = df.get_column("z0_hydro_m")[idx] if "z0_hydro_m" in df.columns else None
+        cell_lat = float(df["lat"].to_numpy()[anchor])
+        cell_lon = float(df["lon"].to_numpy()[anchor])
+        z0_hydro = (
+            df.get_column("z0_hydro_m").to_numpy()[anchor] if "z0_hydro_m" in df.columns else None
+        )
         return CellPrediction(
             atlas_name=atlas.name,
             lat=cell_lat,
             lon=cell_lon,
-            z0_hydro_m=float(z0_hydro) if z0_hydro is not None and np.isfinite(z0_hydro) else None,
-            h_constants=_extract_constants(df, idx, "h"),
-            u_constants=_extract_constants(df, idx, "u"),
-            v_constants=_extract_constants(df, idx, "v"),
+            z0_hydro_m=(
+                float(z0_hydro) if z0_hydro is not None and np.isfinite(z0_hydro) else None
+            ),
+            h_constants=_extract_constants(df, h_idx, "h") if h_idx is not None else {},
+            u_constants=_extract_constants(df, u_idx, "u") if u_idx is not None else {},
+            v_constants=_extract_constants(df, v_idx, "v") if v_idx is not None else {},
         )
 
     def predict_height(self, lat: float, lon: float, t: datetime) -> tuple[float, str] | None:

@@ -19,13 +19,14 @@ from __future__ import annotations
 
 import dataclasses
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 import uvicorn
 from mcp.server.transport_security import TransportSecuritySettings
 from openwind_data.adapters.base import ForecastHorizonError
+from openwind_data.currents.marc_atlas import MarcAtlasRegistry
 from openwind_data.routing.archetypes import list_archetypes_metadata
 from openwind_data.routing.complexity import score_complexity
 from openwind_data.routing.geometry import Point
@@ -508,6 +509,122 @@ async def _api_passage_by_eta(request: Request) -> JSONResponse:
     })
 
 
+# Module-level MARC registry — loaded once at import. Empty registry when
+# MARC_ATLAS_DIR is unset or the dataset wasn't pulled (build without
+# HF_TOKEN secret), so the overlay endpoint silently returns covered=false.
+_MARC_REGISTRY = MarcAtlasRegistry.from_directory(
+    os.environ.get("MARC_ATLAS_DIR", "")
+)
+
+
+async def _api_marc_overlay(request: Request) -> JSONResponse:
+    """Return MARC PREVIMER currents and tide-height predictions for a point.
+
+    Designed as a low-overhead overlay on top of Open-Meteo Marine: the web
+    client calls Open-Meteo direct from the browser (per-IP scaling, no
+    backend bottleneck) and in parallel calls this endpoint. When ``covered``
+    is true, the client overrides Open-Meteo currents and tide_height_m with
+    the MARC values; otherwise (Mediterranean, open ocean, polar regions),
+    the client keeps the Open-Meteo response unchanged.
+
+    Query params:
+      ``lat``, ``lon`` -- required floats.
+      ``start``, ``end`` -- required ISO-8601 timestamps (UTC assumed).
+      ``step_minutes`` -- optional, default 60 (hourly series).
+
+    Response shape (always 200 to avoid client-side 404 noise):
+      ``{"covered": false}`` when outside MARC coverage.
+      ``{"covered": true, "current_source": "marc_finis_250m",
+         "atlas_resolution_m": 250, "z0_hydro_m": -3.85, "times": [...],
+         "current_speed_kn": [...], "current_direction_to_deg": [...],
+         "tide_height_m": [...]}`` when covered.
+
+    Cache: 1 day (predictions are deterministic harmonics, time-series only
+    differs per requested ``[start, end, step]``).
+    """
+    try:
+        lat = float(request.query_params["lat"])
+        lon = float(request.query_params["lon"])
+        start = datetime.fromisoformat(request.query_params["start"])
+        end = datetime.fromisoformat(request.query_params["end"])
+    except (KeyError, ValueError, TypeError) as exc:
+        return JSONResponse(
+            {"error": f"missing or invalid query params (lat, lon, start, end): {exc}"},
+            status_code=422,
+        )
+    step_minutes = 60
+    if "step_minutes" in request.query_params:
+        try:
+            step_minutes = int(request.query_params["step_minutes"])
+        except ValueError:
+            return JSONResponse(
+                {"error": "step_minutes must be an integer"}, status_code=422
+            )
+        if step_minutes < 5 or step_minutes > 360:
+            return JSONResponse(
+                {"error": "step_minutes must be between 5 and 360"}, status_code=422
+            )
+
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=UTC)
+    if end <= start:
+        return JSONResponse({"error": "end must be after start"}, status_code=422)
+    span_days = (end - start).total_seconds() / 86400
+    if span_days > 30:
+        return JSONResponse(
+            {"error": "time window must be at most 30 days"}, status_code=422
+        )
+
+    if not _MARC_REGISTRY.atlases:
+        return JSONResponse(
+            {"covered": False, "reason": "no MARC dataset loaded on this Space"},
+            headers={"Cache-Control": "public, max-age=300"},
+        )
+
+    cell = _MARC_REGISTRY.cell_at(lat, lon)
+    if cell is None:
+        return JSONResponse(
+            {"covered": False},
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    n_steps = int((end - start).total_seconds() // (step_minutes * 60)) + 1
+    times = [start + timedelta(minutes=step_minutes * i) for i in range(n_steps)]
+
+    h_result = _MARC_REGISTRY.predict_height_series(lat, lon, times)
+    c_result = _MARC_REGISTRY.predict_current_series(lat, lon, times)
+
+    payload: dict[str, Any] = {
+        "covered": True,
+        "current_source": (h_result[1] if h_result else c_result[2]).lower()
+        if (h_result or c_result)
+        else None,
+        "atlas_resolution_m": next(
+            (a.resolution_m for a in _MARC_REGISTRY.atlases if a.name == cell.atlas_name),
+            None,
+        ),
+        "z0_hydro_m": cell.z0_hydro_m,
+        "times": [t.isoformat() for t in times],
+    }
+    if h_result is not None:
+        payload["tide_height_m"] = [round(float(v), 4) for v in h_result[0]]
+    if c_result is not None:
+        speeds, dirs, _ = c_result
+        payload["current_speed_kn"] = [round(float(v), 4) for v in speeds]
+        payload["current_direction_to_deg"] = [round(float(v), 2) for v in dirs]
+    # Map the source label to "marc_<atlas>_<res>m" pattern used elsewhere.
+    if cell.atlas_name and payload["atlas_resolution_m"]:
+        payload["current_source"] = (
+            f"marc_{cell.atlas_name.lower()}_{payload['atlas_resolution_m']}m"
+        )
+    return JSONResponse(
+        payload,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 def main() -> None:
     server = build_server()
     server.settings.transport_security = TransportSecuritySettings(
@@ -531,6 +648,7 @@ def main() -> None:
             Route("/api/v1/archetypes", _api_archetypes, methods=["GET"]),
             Route("/api/v1/passage", _api_passage, methods=["POST"]),
             Route("/api/v1/passage-by-eta", _api_passage_by_eta, methods=["POST"]),
+            Route("/api/v1/marine/marc", _api_marc_overlay, methods=["GET"]),
             Mount("/", app=mcp_app),
         ],
         middleware=[
