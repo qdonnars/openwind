@@ -144,8 +144,6 @@ function App() {
                   showWaves={showWaves}
                   showTides={showTides}
                   showCurrents={showCurrents}
-                  currentSource={marine?.current_source}
-                  marcResolutionM={marine?.marc_resolution_m}
                 />
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
