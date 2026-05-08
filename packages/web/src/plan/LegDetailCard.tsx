@@ -289,7 +289,7 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
           <circle cx="8" cy="8" r="6" />
           <path d="M8 4 L8 8 L11 10" />
         </svg>
-        Conditions vues du bateau
+        Éléments considérés dans le calcul de la vitesse
       </div>
 
       {/* Speed + allure + cap */}
@@ -319,7 +319,7 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
           width={SIZE}
           height={SIZE}
           viewBox={`0 0 ${SIZE} ${SIZE}`}
-          aria-label="Conditions autour du bateau (vue Nord en haut)"
+          aria-label="Éléments considérés dans le calcul de la vitesse — vent, vagues, courant (vue Nord en haut)"
           style={{ overflow: "visible" }}
         >
           {/* Outer dashed dial */}
