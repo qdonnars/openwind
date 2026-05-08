@@ -1,23 +1,15 @@
 import { useMemo, useState } from "react";
 import { useTheme } from "../design/theme";
-import type { PassageReport, ComplexityScore, SegmentReport, Archetype, PassageWindow } from "./types";
+import type { PassageReport, ComplexityScore, Archetype, PassageWindow } from "./types";
 import { aggregateLegs, type AggregatedLeg } from "./aggregateLegs";
 import { cxLevel, CX_COLORS } from "./types";
 import { WindowsTable } from "./WindowsTable";
 import { ModeToggle, TimeAnchorToggle, type PlanMode, type TimeAnchor } from "./ModeToggle";
 import { LegDetailCard } from "./LegDetailCard";
+import { EmptyState, ModePicker, HeroStats, Warn, RecapButton } from "./PlanStates";
+import { useHasChosenMode } from "./useChosenMode";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-
-function fmtDuration(h: number): string {
-  const hrs = Math.floor(h);
-  const mins = Math.round((h - hrs) * 60);
-  return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
-}
-
-function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-}
 
 // Format a Date as "YYYY-MM-DDTHH:MM" (local, naive — the format datetime-local expects).
 function toLocalIso(d: Date): string {
@@ -414,58 +406,6 @@ function SweepForm({
   );
 }
 
-// ── ComplexityBadge ───────────────────────────────────────────────────────────
-
-function ComplexityBadge({ level, label }: { level: number; label: string }) {
-  return (
-    <div
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-bold"
-      style={{ background: CX_COLORS[level] + "22", color: CX_COLORS[level], border: `1px solid ${CX_COLORS[level]}55` }}
-    >
-      <span className="w-2.5 h-2.5 rounded-full" style={{ background: CX_COLORS[level] }} />
-      {level}/5 — {label}
-    </div>
-  );
-}
-
-// ── ComplexityBar ─────────────────────────────────────────────────────────────
-
-function ComplexityBar({ segments }: { segments: SegmentReport[] }) {
-  const total = segments.reduce((s, seg) => s + seg.distance_nm, 0);
-  return (
-    <div className="flex h-2.5 rounded-full overflow-hidden gap-[1px]" role="progressbar">
-      {segments.map((seg, i) => (
-        <div
-          key={i}
-          style={{
-            width: `${(seg.distance_nm / total) * 100}%`,
-            background: CX_COLORS[cxLevel(seg.tws_kn)],
-            minWidth: 2,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-// ── SegmentLegend ─────────────────────────────────────────────────────────────
-
-function SegmentLegend() {
-  const items: [number, string][] = [
-    [1, "< 10 kn"], [2, "10–15"], [3, "15–20"], [4, "20–25"], [5, "> 25"],
-  ];
-  return (
-    <div className="hidden lg:flex items-center gap-2 text-[10px]" style={{ color: "var(--ow-fg-2)" }}>
-      {items.map(([lvl, label]) => (
-        <div key={lvl} className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: CX_COLORS[lvl] }} />
-          {label}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── ArchetypeSelector ─────────────────────────────────────────────────────────
 
 function ArchetypeSelector({
@@ -689,6 +629,21 @@ export function PlanSidebar({
     ? validateSweep(sweepEarliest, sweepLatest, sweepIntervalHours)
     : { ok: true } as SweepValidation;
   const canCalculate = waypointCount >= 2 && (mode === "single" || sweepValid.ok);
+  const [hasChosenMode, markChosen] = useHasChosenMode();
+  const [isEditingParams, setIsEditingParams] = useState(false);
+
+  // Wrap the parent handler so picking via tabs ALSO dismisses the picker on
+  // future visits. Same effect when the user clicks one of the big cards.
+  const handleModeChange = (m: PlanMode) => {
+    markChosen();
+    onModeChange(m);
+  };
+
+  // Show the mode picker when: 2+ waypoints placed, user has never chosen a
+  // mode in this browser, and no result is showing yet (single passage or
+  // compare windows). After first choice it gets out of the way for good.
+  const showModePicker =
+    waypointCount >= 2 && !hasChosenMode && !passage && !(windows && windows.length > 0);
 
   if (isLoading) {
     return (
@@ -707,7 +662,8 @@ export function PlanSidebar({
   if (error) {
     return (
       <div className="p-4">
-        <div className="rounded-xl p-4 text-sm" style={{ background: "var(--ow-err-soft)", color: "var(--ow-err)", border: "1px solid var(--ow-err-line)" }}>
+        <ModeToggle value={mode} onChange={handleModeChange} locked={waypointCount < 2} />
+        <div className="mt-4 rounded-xl p-4 text-sm" style={{ background: "var(--ow-err-soft)", color: "var(--ow-err)", border: "1px solid var(--ow-err-line)" }}>
           <p className="font-semibold mb-1">Erreur</p>
           <p className="leading-relaxed">{error}</p>
         </div>
@@ -715,16 +671,34 @@ export function PlanSidebar({
     );
   }
 
-  // In compare mode we always show the form + (optional) windows table,
-  // even if a single-mode `passage` is also in memory. That way toggling
-  // back to single shows the cached single result without a re-fetch.
-  if (mode === "compare" || !passage || !complexity) {
+  // ── Empty state: no waypoints yet ─────────────────────────────────────────
+  if (waypointCount < 2) {
+    return (
+      <div className="p-4 animate-fade-in">
+        <ModeToggle value={mode} onChange={handleModeChange} locked />
+        <EmptyState />
+      </div>
+    );
+  }
+
+  // ── Mode picker: 2+ waypoints, no choice yet ──────────────────────────────
+  if (showModePicker) {
     return (
       <div className="p-4 space-y-4 animate-fade-in">
-        {/* Mode toggle */}
-        <ModeToggle value={mode} onChange={onModeChange} />
+        <ModeToggle value={mode} onChange={handleModeChange} locked />
+        <ModePicker onPick={handleModeChange} />
+      </div>
+    );
+  }
 
-        {/* Departure (single) or sweep form (compare) */}
+  // ── Form state (compare always; single before any result) ─────────────────
+  if (mode === "compare" || !passage || !complexity) {
+    const accent = mode === "compare" ? "#F4C25C" : "var(--ow-accent)";
+    const ctaInk = mode === "compare" ? "#3a2a08" : "#fff";
+    return (
+      <div className="p-4 space-y-4 animate-fade-in">
+        <ModeToggle value={mode} onChange={handleModeChange} />
+
         {mode === "single" ? (
           <div className="space-y-2">
             <TimeAnchorToggle value={timeAnchor} onChange={onTimeAnchorChange} />
@@ -746,21 +720,19 @@ export function PlanSidebar({
           />
         )}
 
-        {/* Archetype */}
         <ArchetypeSelector
           currentSlug={currentArchetypeSlug}
           archetypes={archetypes}
           onChange={onArchetypeChange}
         />
 
-        {/* Calculate button */}
         <button
           onClick={mode === "single" ? onRefetch : onCompareFetch}
           disabled={!canCalculate}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
           style={{
-            background: canCalculate ? "var(--ow-accent)" : "var(--ow-bg-2)",
-            color: canCalculate ? "#fff" : "var(--ow-fg-3)",
+            background: canCalculate ? accent : "var(--ow-bg-2)",
+            color: canCalculate ? ctaInk : "var(--ow-fg-3)",
             border: `1px solid ${canCalculate ? "transparent" : "var(--ow-line-2)"}`,
             cursor: canCalculate ? "pointer" : "not-allowed",
           }}
@@ -773,14 +745,10 @@ export function PlanSidebar({
             : `${waypointCount}/2 waypoints`}
         </button>
 
-        {/* Windows table — shown after a successful compare-mode fetch */}
         {mode === "compare" && windows && windows.length > 0 && (
           <div className="space-y-2">
             {metaWarnings.map((m, i) => (
-              <p key={i} className="text-[11px] rounded-lg px-3 py-1.5"
-                 style={{ background: "var(--ow-warn-soft)", color: "var(--ow-warn)" }}>
-                {m}
-              </p>
+              <Warn key={i}>{m}</Warn>
             ))}
             <div className="rounded-xl overflow-hidden border" style={{ borderColor: "var(--ow-line)" }}>
               <WindowsTable windows={windows} onSelect={onWindowSelect} />
@@ -794,109 +762,84 @@ export function PlanSidebar({
     );
   }
 
+  // ── Filled state: single mode with a result ───────────────────────────────
   const hasWarnings = (complexity.warnings?.length ?? 0) > 0 || passage.warnings.length > 0;
+  const recapDate = new Date(departure).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
+  const recapTime = new Date(departure).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const archetype = archetypes.find((a) => a.slug === currentArchetypeSlug);
+  const archetypeLabel = archetype?.name ?? currentArchetypeSlug;
 
   return (
-    <div className="p-4 space-y-4 animate-fade-in">
-      {/* Mode toggle — always visible so the user can switch back to compare */}
-      <ModeToggle value={mode} onChange={onModeChange} />
-
-      {/* Recalculate — grows when stale */}
-      <button
-        onClick={onRefetch}
-        className={`w-full flex items-center justify-center gap-2 rounded-xl font-bold transition-all ${isStale ? "py-3 text-base" : "py-1.5 text-xs"}`}
-        style={{
-          background: isStale ? "var(--ow-accent)" : "var(--ow-bg-2)",
-          color: isStale ? "#fff" : "var(--ow-fg-2)",
-          border: `1px solid ${isStale ? "transparent" : "var(--ow-line-2)"}`,
-        }}
-      >
-        <svg width={isStale ? 16 : 12} height={isStale ? 16 : 12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M13.5 2.5A7 7 0 1 0 14.5 9"/><path d="M14 1v4h-4"/>
-        </svg>
-        Recalculer
-      </button>
-
-      {/* Time anchor + slider — both editable in the result view too. */}
-      <TimeAnchorToggle value={timeAnchor} onChange={onTimeAnchorChange} />
-      <DepartureSlider
-        value={departure}
-        onChange={onDepartureChange}
-        resolvedTheme={resolvedTheme}
-        anchor={timeAnchor}
-      />
-
-      {/* Archetype dropdown */}
-      <ArchetypeSelector
-        currentSlug={currentArchetypeSlug}
-        archetypes={archetypes}
-        onChange={onArchetypeChange}
-      />
-
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        {[
-          { label: "Distance", value: `${passage.distance_nm.toFixed(1)} nm` },
-          { label: "Durée", value: fmtDuration(passage.duration_h) },
-          { label: "Arrivée", value: fmtTime(passage.arrival_time) },
-        ].map(({ label, value }) => (
-          <div key={label} className="rounded-xl p-3" style={{ background: "var(--ow-bg-2)" }}>
-            <p className="text-[9px] uppercase tracking-widest mb-1 font-semibold" style={{ color: "var(--ow-fg-2)" }}>{label}</p>
-            <p className="text-sm font-bold tabular-nums" style={{ color: "var(--ow-fg-0)", fontFamily: "var(--ow-font-mono)" }}>{value}</p>
-          </div>
-        ))}
-        <div className="rounded-xl p-3" style={{ background: "var(--ow-bg-2)" }}>
-          <p className="text-[9px] uppercase tracking-widest mb-1 font-semibold" style={{ color: "var(--ow-fg-2)" }}>Complexité</p>
-          <p className="text-sm font-bold" style={{ color: CX_COLORS[complexity.level], fontFamily: "var(--ow-font-mono)" }}>
-            {complexity.level}/5 — {complexity.label}
-          </p>
-        </div>
+    <div className="animate-fade-in">
+      {/* Mode tabs */}
+      <div className="px-4 pt-4 pb-3" style={{ borderBottom: "1px solid var(--ow-line)" }}>
+        <ModeToggle value={mode} onChange={handleModeChange} />
       </div>
 
-      {/* Complexity bar */}
-      <div className="space-y-1.5">
-        <ComplexityBar segments={passage.segments} />
-        <SegmentLegend />
+      {/* Recalculer bar */}
+      <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--ow-line)" }}>
+        <button
+          onClick={onRefetch}
+          className="w-full flex items-center justify-center gap-2 rounded-md py-1.5 text-xs font-semibold transition-all"
+          style={{
+            background: isStale ? "var(--ow-accent)" : "var(--ow-bg-2)",
+            color: isStale ? "#fff" : "var(--ow-fg-1)",
+            border: `1px solid ${isStale ? "transparent" : "var(--ow-line)"}`,
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13.5 2.5A7 7 0 1 0 14.5 9" /><path d="M14 1v4h-4" />
+          </svg>
+          {isStale ? "Recalculer" : "Recalculer"}
+        </button>
       </div>
 
-      {/* Complexity badge */}
-      <ComplexityBadge level={complexity.level} label={complexity.label} />
-
-      {/* Warnings */}
-      {hasWarnings && (
-        <div className="space-y-1.5">
-          {complexity.warnings?.map((w, i) => (
-            <div key={i} className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs" style={{ background: "var(--ow-warn-soft)", color: "var(--ow-warn)", border: "1px solid var(--ow-warn-line)" }}>
-              <span className="shrink-0 mt-0.5">⚠</span>
-              <span>{w.message}</span>
-            </div>
-          ))}
-          {passage.warnings.map((w, i) => (
-            <div key={`pw-${i}`} className="flex items-start gap-2 rounded-lg px-3 py-2 text-xs" style={{ background: "var(--ow-warn-soft)", color: "var(--ow-warn)", border: "1px solid var(--ow-warn-line)" }}>
-              <span className="shrink-0 mt-0.5">⚠</span>
-              <span>{w}</span>
-            </div>
-          ))}
+      {/* Récap compact: click to edit departure / archetype inline */}
+      <RecapButton
+        primary={`${recapDate.charAt(0).toUpperCase() + recapDate.slice(1)} · ${recapTime}`}
+        secondary={archetypeLabel}
+        isOpen={isEditingParams}
+        onClick={() => setIsEditingParams((v) => !v)}
+      />
+      {isEditingParams && (
+        <div className="px-4 py-3 space-y-3" style={{ borderBottom: "1px solid var(--ow-line)", background: "var(--ow-bg-2)" }}>
+          <TimeAnchorToggle value={timeAnchor} onChange={onTimeAnchorChange} />
+          <DepartureSlider
+            value={departure}
+            onChange={onDepartureChange}
+            resolvedTheme={resolvedTheme}
+            anchor={timeAnchor}
+          />
+          <ArchetypeSelector
+            currentSlug={currentArchetypeSlug}
+            archetypes={archetypes}
+            onChange={onArchetypeChange}
+          />
         </div>
       )}
 
-      {/* Legs — click any row to see the "Comment c'est calculé" build-up */}
+      {/* Hero stats + segment bar */}
+      <div className="px-4 py-3.5" style={{ borderBottom: "1px solid var(--ow-line)" }}>
+        <HeroStats passage={passage} complexity={complexity} />
+      </div>
+
+      {/* Warnings */}
+      {hasWarnings && (
+        <div className="px-4 py-2.5 space-y-1.5" style={{ borderBottom: "1px solid var(--ow-line)" }}>
+          {complexity.warnings?.map((w, i) => <Warn key={i}>{w.message}</Warn>)}
+          {passage.warnings.map((w, i) => <Warn key={`pw-${i}`}>{w}</Warn>)}
+        </div>
+      )}
+
+      {/* Legs — click any row to see the build-up */}
       {(() => {
         const legs = aggregateLegs(passage.segments, waypoints, passage.efficiency);
-        const archetype = archetypes.find((a) => a.slug === currentArchetypeSlug);
-        const archetypeLabel = archetype?.name ?? currentArchetypeSlug;
-        // LegList has its own padding; cancel the page's px-4 so the rows
-        // stretch edge-to-edge like the design.
-        return (
-          <div className="-mx-4">
-            <LegList legs={legs} archetypeLabel={archetypeLabel} />
-          </div>
-        );
+        return <LegList legs={legs} archetypeLabel={archetypeLabel} />;
       })()}
 
       {/* Footer */}
       {forecastUpdatedAt && (
-        <p className="text-[10px] pt-1 border-t" style={{ color: "var(--ow-fg-2)", borderColor: "var(--ow-line)" }}>
+        <p className="px-4 py-2 text-[10px]" style={{ color: "var(--ow-fg-2)", borderTop: "1px solid var(--ow-line)" }}>
           Données fraîches au {new Date(forecastUpdatedAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} · Open-Meteo.com (CC BY 4.0)
         </p>
       )}
