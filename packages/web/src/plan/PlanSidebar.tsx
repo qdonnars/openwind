@@ -614,6 +614,9 @@ interface PlanSidebarProps {
   /** Selected leg index in the filled view (drives the map highlight). */
   selectedLegIdx: number | null;
   onSelectedLegChange: (idx: number | null) => void;
+  /** Mobile-only: pop the bottom drawer up to a readable height when the
+   *  user picks a mode (no-op on desktop). */
+  onExpandDrawer?: () => void;
 }
 
 export function PlanSidebar({
@@ -647,6 +650,7 @@ export function PlanSidebar({
   onWindowSelect,
   selectedLegIdx,
   onSelectedLegChange,
+  onExpandDrawer,
 }: PlanSidebarProps) {
   const { resolvedTheme } = useTheme();
   const sweepValid = mode === "compare"
@@ -710,7 +714,12 @@ export function PlanSidebar({
     return (
       <div className="p-4 space-y-4 animate-fade-in">
         <ModeToggle value={mode} onChange={handleModeChange} locked />
-        <ModePicker onPick={handleModeChange} />
+        <ModePicker
+          onPick={(m) => {
+            handleModeChange(m);
+            onExpandDrawer?.();
+          }}
+        />
       </div>
     );
   }

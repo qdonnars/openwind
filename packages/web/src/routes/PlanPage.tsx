@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { parsePlanUrl, isParsedOk, buildPlanUrl } from "../plan/parseUrl";
 import { PlanMap, type PlanMapHandle } from "../plan/PlanMap";
 import { PlanSidebar } from "../plan/PlanSidebar";
@@ -172,6 +172,16 @@ function CompactDrawer({
         </button>
       </div>
 
+      {/* Column legend — mirrors the desktop sidebar so the row format is legible */}
+      <div
+        className="flex items-center gap-2 px-3 py-1 text-[9px]"
+        style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}
+      >
+        <span className="shrink-0 w-5" />
+        <span className="flex-1">allure · vent · vagues · vitesse</span>
+        <span className="shrink-0">heure</span>
+      </div>
+
       {/* Leg rows */}
       <div>
         {legs.map((leg, i) => {
@@ -212,18 +222,24 @@ function CompactDrawer({
 // User-resizable bottom drawer: a 4 px grab-handle at the top responds to
 // pointer drag (mouse or touch) and adjusts the drawer height in vh. The
 // chosen height persists in localStorage so reload feels stable.
+//
+// Exposes an imperative `.expand()` so callers (e.g. the mode-picker click)
+// can pop the drawer up to a sensible reading height when the panel content
+// gets richer.
 
 const DRAWER_HEIGHT_KEY = "ow_drawer_vh_v1";
 const DRAWER_MIN_VH = 12;
 const DRAWER_MAX_VH = 90;
+const DRAWER_EXPANDED_VH = 75;
 
-function ResizableMobileDrawer({
-  defaultVh,
-  children,
-}: {
+interface DrawerHandle {
+  expand: () => void;
+}
+
+const ResizableMobileDrawer = forwardRef<DrawerHandle, {
   defaultVh: number;
   children: React.ReactNode;
-}) {
+}>(function ResizableMobileDrawer({ defaultVh, children }, ref) {
   const [vh, setVh] = useState<number>(() => {
     try {
       const raw = localStorage.getItem(DRAWER_HEIGHT_KEY);
@@ -238,6 +254,16 @@ function ResizableMobileDrawer({
   function persist(next: number) {
     try { localStorage.setItem(DRAWER_HEIGHT_KEY, String(next)); } catch { /* best-effort */ }
   }
+
+  useImperativeHandle(ref, () => ({
+    expand: () => {
+      setVh((prev) => {
+        const next = Math.max(prev, DRAWER_EXPANDED_VH);
+        if (next !== prev) persist(next);
+        return next;
+      });
+    },
+  }), []);
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     e.preventDefault();
@@ -283,7 +309,7 @@ function ResizableMobileDrawer({
       <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
     </div>
   );
-}
+});
 
 // ── ResizableDesktopSidebar ──────────────────────────────────────────────────
 // Desktop equivalent of ResizableMobileDrawer: vertical grab-handle on the left
@@ -372,6 +398,7 @@ function ResizableDesktopSidebar({
 
 export function PlanPage() {
   const mapRef = useRef<PlanMapHandle>(null);
+  const drawerRef = useRef<DrawerHandle>(null);
   const initialParsed = parsePlanUrl(window.location.search);
 
   const [waypoints, setWaypoints] = useState<[number, number][]>(
@@ -738,12 +765,13 @@ export function PlanPage() {
             onWindowSelect={handleWindowSelect}
             selectedLegIdx={selectedLegIdx}
             onSelectedLegChange={setSelectedLegIdx}
+            onExpandDrawer={() => drawerRef.current?.expand()}
           />
         </ResizableDesktopSidebar>
       </div>
 
       {/* Mobile drawer — below map. User-resizable via the handle bar at the top. */}
-      <ResizableMobileDrawer defaultVh={passage ? 38 : 60}>
+      <ResizableMobileDrawer ref={drawerRef} defaultVh={passage ? 38 : 60}>
         {passage && complexity && planMode === "single" ? (
           <CompactDrawer
             passage={passage}
@@ -788,6 +816,7 @@ export function PlanPage() {
             onWindowSelect={handleWindowSelect}
             selectedLegIdx={selectedLegIdx}
             onSelectedLegChange={setSelectedLegIdx}
+            onExpandDrawer={() => drawerRef.current?.expand()}
           />
         )}
       </ResizableMobileDrawer>
