@@ -12,7 +12,6 @@ import {
   type LastSimulation,
 } from "../plan/lastSimulation";
 import { type TimeAnchor } from "../plan/ModeToggle";
-import { CX_COLORS } from "../plan/types";
 import { computeLegSegmentRanges } from "../plan/aggregateLegs";
 
 // ── local helpers (mobile components) ────────────────────────────────────────
@@ -47,39 +46,6 @@ function toTzAware(iso: string): string {
   const hh = String(Math.floor(abs / 60)).padStart(2, "0");
   const mm = String(abs % 60).padStart(2, "0");
   return `${iso}:00${sign}${hh}:${mm}`;
-}
-
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-}
-function fmtDuration(h: number) {
-  const hrs = Math.floor(h);
-  const mins = Math.round((h - hrs) * 60);
-  return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
-}
-
-// Hero stats overlay — absolute, bottom of map, mobile only
-function PlanHeroStats({ passage, complexity }: { passage: PassageReport; complexity: ComplexityScore }) {
-  const stats = [
-    { label: "ETA", value: fmtTime(passage.arrival_time) },
-    { label: "Durée", value: fmtDuration(passage.duration_h) },
-    { label: "Dist", value: `${passage.distance_nm.toFixed(1)} nm` },
-    { label: "Cx", value: `${complexity.level}/5`, color: CX_COLORS[complexity.level] },
-  ];
-  return (
-    <div className="flex gap-1.5">
-      {stats.map(({ label, value, color }) => (
-        <div
-          key={label}
-          className="flex-1 rounded-xl px-2 py-1.5 text-center"
-          style={{ background: "var(--ow-surface-glass)", backdropFilter: "blur(8px)", border: "1px solid var(--ow-line-2)" }}
-        >
-          <div className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "var(--ow-fg-2)" }}>{label}</div>
-          <div className="text-xs font-bold tabular-nums leading-tight mt-0.5" style={{ color: color ?? "var(--ow-fg-0)", fontFamily: "var(--ow-font-mono)" }}>{value}</div>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 // ── ResizableMobileDrawer ────────────────────────────────────────────────────
@@ -586,14 +552,6 @@ export function PlanPage() {
               >
                 {waypoints.length === 0 ? "Cliquez pour placer le départ" : "Cliquez pour tracer votre route"}
               </div>
-            </div>
-          )}
-          {/* Hero stats overlay — mobile only, floats above the drawer.
-              Hidden in compare mode (no single passage to summarise — the
-              windows table inside the drawer is the relevant view). */}
-          {passage && complexity && planMode === "single" && (
-            <div className="lg:hidden absolute bottom-2 left-2 right-2 z-[400] pointer-events-none">
-              <PlanHeroStats passage={passage} complexity={complexity} />
             </div>
           )}
         </div>

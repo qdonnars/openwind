@@ -1,7 +1,7 @@
 // Visual building blocks for the /plan right panel — keeps PlanSidebar.tsx
 // focused on state wiring while these components stay design-only.
 
-import type { ComplexityScore, PassageReport, SegmentReport } from "./types";
+import type { PassageReport, SegmentReport } from "./types";
 import { CX_COLORS, cxLevel } from "./types";
 
 // ── EmptyState ────────────────────────────────────────────────────────────────
@@ -230,23 +230,17 @@ function SegmentBar({ segments }: { segments: SegmentReport[] }) {
 
 export function HeroStats({
   passage,
-  complexity,
 }: {
   passage: PassageReport;
-  complexity: ComplexityScore;
 }) {
+  // Complexity isn't a tile any more — the colored segment bar below already
+  // tells the same story (per-leg wind buckets) without a redundant number.
   return (
     <div>
-      <div className="grid grid-cols-4 gap-3 mb-3">
+      <div className="grid grid-cols-3 gap-3 mb-3">
         <HeroCell label="Distance" value={passage.distance_nm.toFixed(1)} unit="nm" />
         <HeroCell label="Durée" value={fmtDuration(passage.duration_h)} />
         <HeroCell label="Arrivée" value={fmtTime(passage.arrival_time)} />
-        <HeroCell
-          label="Cplx"
-          value={String(complexity.level)}
-          unit="/5"
-          tone={complexity.level >= 4 ? "warn" : "default"}
-        />
       </div>
       <SegmentBar segments={passage.segments} />
       <div
