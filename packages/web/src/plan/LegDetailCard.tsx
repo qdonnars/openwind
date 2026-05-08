@@ -250,27 +250,33 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
 
   // Each force gets its own label outside the dial at its own angle.
   // Wind & wave are spread by construction (30° angular offset). The current's
-  // angle is independent though — if it lands within 30° of either, push the
-  // current label radially outward so labels never share screen space. Keeps
-  // the angular position truthful (label still points at the real flow
-  // direction); only the distance from the dial changes.
+  // angle is independent — collision rules (user spec):
+  //   – close (<40°) to wind only   → label opposite the wind
+  //   – close (<40°) to wave only   → label opposite the wind (still ≥150° away)
+  //   – close to BOTH wind and wave → label perpendicular to the wind (+90°)
+  // The on-dial flow field still draws at the true current direction; only
+  // the textual annotation moves.
   const angularGap = (a: number, b: number): number => {
     const d = ((a - b + 540) % 360) - 180;
     return Math.abs(d);
   };
-  let currentLabelR = LABEL_R;
+  let currentLabelAngle = currentAngle ?? 0;
   if (currentAngle != null) {
-    const tooCloseToWind = angularGap(currentAngle, windAngle) < 30;
-    const tooCloseToWave = angularGap(currentAngle, waveAngle) < 30;
-    if (tooCloseToWind || tooCloseToWave) currentLabelR = LABEL_R + 28;
+    const closeToWind = angularGap(currentAngle, windAngle) < 40;
+    const closeToWave = angularGap(currentAngle, waveAngle) < 40;
+    if (closeToWind && closeToWave) {
+      currentLabelAngle = (windAngle + 90) % 360;
+    } else if (closeToWind || closeToWave) {
+      currentLabelAngle = (windAngle + 180) % 360;
+    }
   }
 
   const [windLx, windLy] = polarXY(windAngle, LABEL_R);
   const windLabel = labelLayout(windAngle);
   const [waveLx, waveLy] = polarXY(waveAngle, LABEL_R);
   const waveLabel = labelLayout(waveAngle);
-  const [curLx, curLy] = currentAngle != null ? polarXY(currentAngle, currentLabelR) : [0, 0];
-  const curLabel = currentAngle != null ? labelLayout(currentAngle) : { anchor: "middle" as const, dx: 0 };
+  const [curLx, curLy] = currentAngle != null ? polarXY(currentLabelAngle, LABEL_R) : [0, 0];
+  const curLabel = currentAngle != null ? labelLayout(currentLabelAngle) : { anchor: "middle" as const, dx: 0 };
 
   return (
     <div className="px-4 pb-4 pt-1">
