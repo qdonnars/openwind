@@ -11,6 +11,7 @@
   --ow-bg-0: #030712;        /* deepest bg (gray-950) */
   --ow-bg-1: #0d1117;        /* surface panel */
   --ow-bg-2: #161b22;        /* elevated surface */
+  --ow-bg-3: #1f2632;        /* hover / inset (used by /plan only) */
 
   /* Foreground */
   --ow-fg-0: #e8eaf0;        /* primary text */
@@ -83,6 +84,10 @@
   --ow-warn: #fbbf24;
   --ow-warn-soft: rgba(251, 191, 36, 0.12);
   --ow-warn-line: rgba(251, 191, 36, 0.25);
+  --ow-ok: #34d399;
+  --ow-ok-soft: rgba(52, 211, 153, 0.12);
+  --ow-ok-line: rgba(52, 211, 153, 0.25);
+  --ow-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
 
   /* Map */
   --ow-map-sea-0: #0B1A2E;
@@ -95,6 +100,7 @@
   --ow-bg-0: #f4f6fb;
   --ow-bg-1: #ffffff;
   --ow-bg-2: #e8ecf3;
+  --ow-bg-3: #dde3ed;
 
   --ow-fg-0: #0d1117;
   --ow-fg-1: #3a4250;
@@ -167,4 +173,8 @@
   --ow-warn: #fbbf24;
   --ow-warn-soft: rgba(251, 191, 36, 0.12);
   --ow-warn-line: rgba(251, 191, 36, 0.25);
+  --ow-ok: #0e9f8f;
+  --ow-ok-soft: rgba(14, 159, 143, 0.12);
+  --ow-ok-line: rgba(14, 159, 143, 0.40);
+  --ow-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
 }

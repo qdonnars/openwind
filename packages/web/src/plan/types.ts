@@ -18,6 +18,12 @@ export interface SegmentReport {
   duration_h: number;
   hs_m: number | null;
   wave_derate_factor: number;
+  current_speed_kn?: number | null;
+  current_direction_to_deg?: number | null;
+  sog_kn?: number | null;
+  current_source?: string | null;
+  gust_kn?: number | null;
+  wave_period_s?: number | null;
 }
 
 export interface PassageReport {

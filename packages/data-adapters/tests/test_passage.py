@@ -41,12 +41,16 @@ class StubAdapter:
         hs_m: float | None = None,
         current_kn: float | None = None,
         current_to_deg: float | None = None,
+        gust_kn: float | None = None,
+        wave_period_s: float | None = None,
     ) -> None:
         self.tws_kn = tws_kn
         self.twd_deg = twd_deg
         self.hs_m = hs_m
         self.current_kn = current_kn
         self.current_to_deg = current_to_deg
+        self.gust_kn = gust_kn
+        self.wave_period_s = wave_period_s
         self.calls: list[tuple[float, float, datetime, datetime]] = []
 
     async def fetch(
@@ -67,14 +71,17 @@ class StubAdapter:
                     time=t,
                     speed_kn=self.tws_kn,
                     direction_deg=self.twd_deg,
-                    gust_kn=None,
+                    gust_kn=self.gust_kn,
                 )
             )
             t = t + timedelta(hours=1)
         wind = {m: WindSeries(model=m, points=tuple(points)) for m in models}
         sea_points: list[SeaPoint] = []
         emit_sea = (
-            self.hs_m is not None or self.current_kn is not None or self.current_to_deg is not None
+            self.hs_m is not None
+            or self.current_kn is not None
+            or self.current_to_deg is not None
+            or self.wave_period_s is not None
         )
         if emit_sea:
             t = start
@@ -83,7 +90,7 @@ class StubAdapter:
                     SeaPoint(
                         time=t,
                         wave_height_m=self.hs_m,
-                        wave_period_s=None,
+                        wave_period_s=self.wave_period_s,
                         wave_direction_deg=None,
                         wind_wave_height_m=None,
                         swell_wave_height_m=None,
@@ -241,6 +248,20 @@ class TestEstimatePassage:
                 "battleship",
                 adapter=adapter,
             )
+
+    async def test_gust_and_wave_period_propagated_to_segments(self) -> None:
+        # Web "Comment c'est calculé" build-up surfaces gust_kn and wave_period_s
+        # alongside Hs — verify both ride through the full pipeline.
+        adapter = StubAdapter(tws_kn=12.0, twd_deg=180.0, hs_m=1.4, gust_kn=22.0, wave_period_s=4.5)
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=10.0,
+        )
+        assert all(seg.gust_kn == 22.0 for seg in report.segments)
+        assert all(seg.wave_period_s == 4.5 for seg in report.segments)
 
     async def test_segments_continuous_in_time(self) -> None:
         adapter = StubAdapter(tws_kn=10.0, twd_deg=0.0)
