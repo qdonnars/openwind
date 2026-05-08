@@ -48,6 +48,40 @@ function toTzAware(iso: string): string {
   return `${iso}:00${sign}${hh}:${mm}`;
 }
 
+function fmtTime(iso: string) {
+  return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+function fmtDuration(h: number) {
+  const hrs = Math.floor(h);
+  const mins = Math.round((h - hrs) * 60);
+  return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+}
+
+// Hero stats overlay — absolute, bottom of map, mobile only.
+// 3 tiles (ETA / Durée / Dist) — complexity is conveyed by the segment color
+// of the route on the map itself.
+function PlanHeroStats({ passage }: { passage: PassageReport }) {
+  const stats = [
+    { label: "ETA", value: fmtTime(passage.arrival_time) },
+    { label: "Durée", value: fmtDuration(passage.duration_h) },
+    { label: "Dist", value: `${passage.distance_nm.toFixed(1)} nm` },
+  ];
+  return (
+    <div className="flex gap-1.5">
+      {stats.map(({ label, value }) => (
+        <div
+          key={label}
+          className="flex-1 rounded-xl px-2 py-1.5 text-center"
+          style={{ background: "var(--ow-surface-glass)", backdropFilter: "blur(8px)", border: "1px solid var(--ow-line-2)" }}
+        >
+          <div className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "var(--ow-fg-2)" }}>{label}</div>
+          <div className="text-xs font-bold tabular-nums leading-tight mt-0.5" style={{ color: "var(--ow-fg-0)", fontFamily: "var(--ow-font-mono)" }}>{value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── ResizableMobileDrawer ────────────────────────────────────────────────────
 // User-resizable bottom drawer: a 4 px grab-handle at the top responds to
 // pointer drag (mouse or touch) and adjusts the drawer height in vh. The
@@ -552,6 +586,14 @@ export function PlanPage() {
               >
                 {waypoints.length === 0 ? "Cliquez pour placer le départ" : "Cliquez pour tracer votre route"}
               </div>
+            </div>
+          )}
+          {/* Hero stats overlay — mobile only, single-mode results.
+              3 tiles (ETA / Durée / Dist). Complexity is read from the
+              colored route on the map itself. */}
+          {passage && planMode === "single" && (
+            <div className="lg:hidden absolute bottom-2 left-2 right-2 z-[400] pointer-events-none">
+              <PlanHeroStats passage={passage} />
             </div>
           )}
         </div>
