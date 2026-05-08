@@ -12,6 +12,7 @@ export interface AggregatedLeg {
   tws_avg_kn: number;
   twa_avg_deg: number; // signed -180..180 like SegmentReport.twa_deg
   twd_avg_deg: number; // 0..360 (true wind direction)
+  bearing_avg_deg: number; // 0..360 (boat course, true)
   gust_max_kn: number | null;
   point_of_sail: string;
 
@@ -104,6 +105,7 @@ export function aggregateLegs(
     const tws_avg_kn = wsum((s) => s.tws_kn);
     const twa_avg_deg = circularMeanDeg(segs.map((s) => s.twa_deg));
     const twd_avg_deg = circularMeanDeg(segs.map((s) => s.twd_deg));
+    const bearing_avg_deg = circularMeanDeg(segs.map((s) => s.bearing_deg));
     const gusts = segs.map((s) => s.gust_kn).filter((g): g is number => g != null);
     const gust_max_kn = gusts.length > 0 ? Math.max(...gusts) : null;
 
@@ -148,6 +150,7 @@ export function aggregateLegs(
       tws_avg_kn,
       twa_avg_deg,
       twd_avg_deg,
+      bearing_avg_deg,
       gust_max_kn,
       point_of_sail: twaToPointOfSail(twa_avg_deg),
       polar_after_eff_kn,

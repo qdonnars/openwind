@@ -486,6 +486,9 @@ function LegRow({
 }) {
   const cx = cxLevel((leg.tws_min + leg.tws_max) / 2);
   const tws = Math.round(leg.tws_avg_kn);
+  const seaPart = leg.hs_avg_m != null
+    ? `${leg.hs_avg_m.toFixed(1)}m ${leg.sea_direction ?? ""}`.trim()
+    : null;
   const fmtHM = (iso: string) =>
     new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   return (
@@ -507,7 +510,7 @@ function LegRow({
             Tronçon {index + 1}
           </div>
           <div className="text-[10px] mt-0.5 tabular-nums" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
-            {leg.distance_nm.toFixed(1)} nm · {leg.point_of_sail} · {tws} kn
+            {leg.point_of_sail} · {tws} kn{seaPart ? ` · ${seaPart}` : ""} · {leg.distance_nm.toFixed(1)} nm
           </div>
           <div className="text-[10px] mt-0.5 tabular-nums" style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}>
             {fmtHM(leg.start_time)} → {fmtHM(leg.end_time)}
