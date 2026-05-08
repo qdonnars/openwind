@@ -6,7 +6,7 @@ import { cxLevel, CX_COLORS } from "./types";
 import { WindowsTable } from "./WindowsTable";
 import { ModeToggle, TimeAnchorToggle, type PlanMode, type TimeAnchor } from "./ModeToggle";
 import { LegDetailCard } from "./LegDetailCard";
-import { EmptyState, ModePicker, HeroStats, Warn, RecapButton } from "./PlanStates";
+import { EmptyState, ModePicker, Warn, RecapButton } from "./PlanStates";
 import { useHasChosenMode } from "./useChosenMode";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -930,11 +930,6 @@ export function PlanSidebar({
           />
         </div>
       )}
-
-      {/* Hero stats + segment bar */}
-      <div className="px-4 py-3.5" style={{ borderBottom: "1px solid var(--ow-line)" }}>
-        <HeroStats passage={passage} />
-      </div>
 
       {/* Warnings */}
       {hasWarnings && (
