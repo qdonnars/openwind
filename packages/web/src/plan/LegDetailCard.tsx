@@ -289,28 +289,28 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
 
   return (
     <div className="px-4 pb-4 pt-1">
-      {/* Section header */}
-      <div
-        className="mb-2 text-[10px] font-bold uppercase"
-        style={{ color: "var(--ow-accent)", letterSpacing: "0.1em" }}
-      >
-        Vitesse absolue
-      </div>
-
-      {/* Headline speed + cap */}
+      {/* Title with inline speed + cap on the right */}
       <div className="flex items-baseline justify-between mb-1.5">
-        <span
-          className="text-2xl font-bold tabular-nums"
-          style={{ color: "var(--ow-accent)", fontFamily: "var(--ow-font-mono)", letterSpacing: "-0.02em", lineHeight: 1 }}
-        >
-          {leg.target_speed_kn.toFixed(1)} kn
-        </span>
+        <div className="flex items-baseline gap-1.5">
+          <span
+            className="text-[10px] font-bold uppercase"
+            style={{ color: "var(--ow-accent)", letterSpacing: "0.1em" }}
+          >
+            Vitesse absolue de
+          </span>
+          <span
+            className="text-base font-bold tabular-nums"
+            style={{ color: "var(--ow-accent)", fontFamily: "var(--ow-font-mono)", letterSpacing: "-0.01em" }}
+          >
+            {fmtFR1(leg.target_speed_kn)} kn
+          </span>
+        </div>
         <span className="text-[10px] tabular-nums" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
           cap {Math.round(leg.bearing_avg_deg)}°
         </span>
       </div>
 
-      {/* Build-up: polaire (+) / mer (−) / courant (±) → cible */}
+      {/* Build-up of the speed: polaire (+) / mer (−) / courant (±) */}
       <div
         className="text-[10px] tabular-nums leading-snug mb-2"
         style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}
@@ -336,12 +336,6 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
             <span>courant</span>
           </div>
         )}
-        <div className="flex items-baseline gap-2 mt-0.5 pt-0.5" style={{ borderTop: "1px solid var(--ow-line)" }}>
-          <span className="w-10 tabular-nums font-semibold" style={{ color: "var(--ow-fg-0)" }}>
-            {fmtFR1(leg.target_speed_kn)}
-          </span>
-          <span style={{ color: "var(--ow-fg-1)" }}>kn</span>
-        </div>
       </div>
 
       {/* Compass diagram */}
