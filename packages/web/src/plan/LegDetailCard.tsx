@@ -278,39 +278,61 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
   const [curLx, curLy] = currentAngle != null ? polarXY(currentLabelAngle, LABEL_R) : [0, 0];
   const curLabel = currentAngle != null ? labelLayout(currentLabelAngle) : { anchor: "middle" as const, dx: 0 };
 
+  // Build-up of the absolute (over-ground) target speed, shown as a small
+  // signed list under the headline number. Sign is explicit ("+", "−") on
+  // every line so the addition reads at a glance.
+  const fmtSigned1 = (n: number) => {
+    if (Math.abs(n) < 0.05) return "+0,0";
+    const sign = n > 0 ? "+" : "−";
+    return `${sign}${fmtFR1(Math.abs(n))}`;
+  };
+
   return (
     <div className="px-4 pb-4 pt-1">
-      {/* Section header */}
-      <div
-        className="flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase"
-        style={{ color: "var(--ow-accent)", letterSpacing: "0.1em" }}
-      >
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="8" cy="8" r="6" />
-          <path d="M8 4 L8 8 L11 10" />
-        </svg>
-        Conditions vues du bateau
-      </div>
-
-      {/* Speed + allure + cap */}
-      <div className="flex items-baseline justify-between mb-2">
-        <div className="flex items-baseline gap-3">
+      {/* Title with inline speed + cap on the right */}
+      <div className="flex items-baseline justify-between mb-1.5">
+        <div className="flex items-baseline gap-1.5">
           <span
-            className="text-2xl font-bold tabular-nums"
-            style={{ color: "var(--ow-accent)", fontFamily: "var(--ow-font-mono)", letterSpacing: "-0.02em", lineHeight: 1 }}
+            className="text-[10px] font-bold uppercase"
+            style={{ color: "var(--ow-accent)", letterSpacing: "0.1em" }}
           >
-            {leg.target_speed_kn.toFixed(1)} kn
+            Vitesse absolue de
           </span>
           <span
-            className="text-xl font-bold"
-            style={{ color: "var(--ow-fg-0)", letterSpacing: "-0.01em", lineHeight: 1 }}
+            className="text-base font-bold tabular-nums"
+            style={{ color: "var(--ow-accent)", fontFamily: "var(--ow-font-mono)", letterSpacing: "-0.01em" }}
           >
-            {leg.point_of_sail}
+            {fmtFR1(leg.target_speed_kn)} kn
           </span>
         </div>
         <span className="text-[10px] tabular-nums" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
           cap {Math.round(leg.bearing_avg_deg)}°
         </span>
+      </div>
+
+      {/* Build-up of the speed: polaire (+) / mer (−) / courant (±).
+          Each row picks up the matching arrow color from the boat diagram so
+          the eye links the number to its glyph. */}
+      <div
+        className="text-[10px] tabular-nums leading-snug mb-2"
+        style={{ fontFamily: "var(--ow-font-mono)" }}
+      >
+        <div className="flex items-baseline gap-2" style={{ color: COLORS.wind }}>
+          <span className="w-10 tabular-nums">{fmtSigned1(leg.polar_after_eff_kn)}</span>
+          <span>polaire</span>
+        </div>
+        {hasWaves && Math.abs(leg.wave_delta_kn) > 0.05 && (
+          <div className="flex items-baseline gap-2" style={{ color: COLORS.waves }}>
+            <span className="w-10 tabular-nums">{fmtSigned1(leg.wave_delta_kn)}</span>
+            <span>mer</span>
+          </div>
+        )}
+        {leg.current_delta_kn != null && Math.abs(leg.current_delta_kn) > 0.05 && (
+          <div className="flex items-baseline gap-2" style={{ color: currentColor }}>
+            <span className="w-10 tabular-nums">{fmtSigned1(leg.current_delta_kn)}</span>
+            <span>courant</span>
+          </div>
+        )}
       </div>
 
       {/* Compass diagram */}
@@ -319,7 +341,7 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
           width={SIZE}
           height={SIZE}
           viewBox={`0 0 ${SIZE} ${SIZE}`}
-          aria-label="Conditions autour du bateau (vue Nord en haut)"
+          aria-label="Vitesse absolue — vent, vagues, courant autour du bateau (vue Nord en haut)"
           style={{ overflow: "visible" }}
         >
           {/* Outer dashed dial */}
