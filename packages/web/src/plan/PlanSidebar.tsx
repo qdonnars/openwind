@@ -486,6 +486,8 @@ function LegRow({
 }) {
   const cx = cxLevel((leg.tws_min + leg.tws_max) / 2);
   const tws = Math.round(leg.tws_avg_kn);
+  const fmtHM = (iso: string) =>
+    new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   return (
     <div style={{ borderBottom: "1px solid var(--ow-line)", background: expanded ? "var(--ow-bg-2)" : "transparent" }}>
       <button
@@ -507,9 +509,12 @@ function LegRow({
           <div className="text-[10px] mt-0.5 tabular-nums" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
             {leg.distance_nm.toFixed(1)} nm · {leg.point_of_sail} · {tws} kn
           </div>
+          <div className="text-[10px] mt-0.5 tabular-nums" style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}>
+            {fmtHM(leg.start_time)} → {fmtHM(leg.end_time)}
+          </div>
         </div>
-        <span className="text-[11px] tabular-nums shrink-0" style={{ color: "var(--ow-fg-1)", fontFamily: "var(--ow-font-mono)" }}>
-          {new Date(leg.end_time).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+        <span className="text-[11px] tabular-nums shrink-0 font-semibold" style={{ color: "var(--ow-fg-0)", fontFamily: "var(--ow-font-mono)" }}>
+          {leg.target_speed_kn.toFixed(1)} kn
         </span>
         <span
           aria-hidden="true"
@@ -691,7 +696,82 @@ export function PlanSidebar({
     );
   }
 
-  // ── Form state (compare always; single before any result) ─────────────────
+  const archetype = archetypes.find((a) => a.slug === currentArchetypeSlug);
+  const archetypeLabel = archetype?.name ?? currentArchetypeSlug;
+
+  // ── Filled compare view: results loaded, inputs collapsed into a recap ────
+  if (mode === "compare" && windows && windows.length > 0) {
+    const fmtShort = (iso: string) =>
+      new Date(iso).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
+    const fmtClock = (iso: string) =>
+      new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const recapPrimary = `${fmtShort(sweepEarliest)} ${fmtClock(sweepEarliest)} → ${fmtShort(sweepLatest)} ${fmtClock(sweepLatest)}`;
+    const recapSecondary = `pas ${sweepIntervalHours}h · ${archetypeLabel}`;
+
+    return (
+      <div className="animate-fade-in">
+        <div className="px-4 pt-4 pb-3" style={{ borderBottom: "1px solid var(--ow-line)" }}>
+          <ModeToggle value={mode} onChange={handleModeChange} />
+        </div>
+
+        <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--ow-line)" }}>
+          <button
+            onClick={onCompareFetch}
+            disabled={!canCalculate}
+            className="w-full flex items-center justify-center gap-2 rounded-md py-1.5 text-xs font-semibold transition-all"
+            style={{
+              background: canCalculate ? "#F4C25C" : "var(--ow-bg-2)",
+              color: canCalculate ? "#3a2a08" : "var(--ow-fg-3)",
+              border: `1px solid ${canCalculate ? "transparent" : "var(--ow-line)"}`,
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13.5 2.5A7 7 0 1 0 14.5 9" /><path d="M14 1v4h-4" />
+            </svg>
+            Recalculer
+          </button>
+        </div>
+
+        <RecapButton
+          primary={recapPrimary}
+          secondary={recapSecondary}
+          isOpen={isEditingParams}
+          onClick={() => setIsEditingParams((v) => !v)}
+        />
+        {isEditingParams && (
+          <div className="px-4 py-3 space-y-3" style={{ borderBottom: "1px solid var(--ow-line)", background: "var(--ow-bg-2)" }}>
+            <SweepForm
+              earliest={sweepEarliest}
+              latest={sweepLatest}
+              intervalHours={sweepIntervalHours}
+              onEarliestChange={onSweepEarliestChange}
+              onLatestChange={onSweepLatestChange}
+              onIntervalChange={onSweepIntervalChange}
+            />
+            <ArchetypeSelector
+              currentSlug={currentArchetypeSlug}
+              archetypes={archetypes}
+              onChange={onArchetypeChange}
+            />
+          </div>
+        )}
+
+        {metaWarnings.length > 0 && (
+          <div className="px-4 py-2.5 space-y-1.5" style={{ borderBottom: "1px solid var(--ow-line)" }}>
+            {metaWarnings.map((m, i) => <Warn key={i}>{m}</Warn>)}
+          </div>
+        )}
+
+        <WindowsTable windows={windows} onSelect={onWindowSelect} />
+
+        <p className="px-4 py-2 text-[10px]" style={{ color: "var(--ow-fg-3)", borderTop: "1px solid var(--ow-line)" }}>
+          {windows.length} fenêtre{windows.length > 1 ? "s" : ""} comparée{windows.length > 1 ? "s" : ""} · cliquez sur une ligne pour ouvrir la simulation détaillée
+        </p>
+      </div>
+    );
+  }
+
+  // ── Form state (compare without windows; single before any result) ────────
   if (mode === "compare" || !passage || !complexity) {
     const accent = mode === "compare" ? "#F4C25C" : "var(--ow-accent)";
     const ctaInk = mode === "compare" ? "#3a2a08" : "#fff";
@@ -744,20 +824,6 @@ export function PlanSidebar({
             ? mode === "single" ? "Calculer le passage" : "Comparer les créneaux"
             : `${waypointCount}/2 waypoints`}
         </button>
-
-        {mode === "compare" && windows && windows.length > 0 && (
-          <div className="space-y-2">
-            {metaWarnings.map((m, i) => (
-              <Warn key={i}>{m}</Warn>
-            ))}
-            <div className="rounded-xl overflow-hidden border" style={{ borderColor: "var(--ow-line)" }}>
-              <WindowsTable windows={windows} onSelect={onWindowSelect} />
-            </div>
-            <p className="text-[10px]" style={{ color: "var(--ow-fg-3)" }}>
-              {windows.length} fenêtre{windows.length > 1 ? "s" : ""} comparée{windows.length > 1 ? "s" : ""} · cliquez sur une ligne pour ouvrir la simulation détaillée
-            </p>
-          </div>
-        )}
       </div>
     );
   }
@@ -766,8 +832,6 @@ export function PlanSidebar({
   const hasWarnings = (complexity.warnings?.length ?? 0) > 0 || passage.warnings.length > 0;
   const recapDate = new Date(departure).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
   const recapTime = new Date(departure).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  const archetype = archetypes.find((a) => a.slug === currentArchetypeSlug);
-  const archetypeLabel = archetype?.name ?? currentArchetypeSlug;
 
   return (
     <div className="animate-fade-in">

@@ -3,6 +3,7 @@ import type { SegmentReport } from "./types";
 export interface AggregatedLeg {
   // ── Distances & timing (carried from the segment span) ─────────────────────
   distance_nm: number;
+  start_time: string;
   end_time: string;
 
   // ── Wind summary ──────────────────────────────────────────────────────────
@@ -140,6 +141,7 @@ export function aggregateLegs(
 
     return {
       distance_nm: totalDist,
+      start_time: segs[0].start_time,
       end_time: segs[segs.length - 1].end_time,
       tws_min: Math.min(...twsVals),
       tws_max: Math.max(...twsVals),
