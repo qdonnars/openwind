@@ -3,6 +3,7 @@ import type { SegmentReport } from "./types";
 export interface AggregatedLeg {
   // ── Distances & timing (carried from the segment span) ─────────────────────
   distance_nm: number;
+  start_time: string;
   end_time: string;
 
   // ── Wind summary ──────────────────────────────────────────────────────────
@@ -11,6 +12,7 @@ export interface AggregatedLeg {
   tws_avg_kn: number;
   twa_avg_deg: number; // signed -180..180 like SegmentReport.twa_deg
   twd_avg_deg: number; // 0..360 (true wind direction)
+  bearing_avg_deg: number; // 0..360 (boat course, true)
   gust_max_kn: number | null;
   point_of_sail: string;
 
@@ -54,6 +56,29 @@ function twaToPointOfSail(twa: number): string {
   if (a < 90) return "Travers";
   if (a < 135) return "Largue";
   return "Arrière";
+}
+
+// Inclusive-exclusive segment ranges per user-waypoint leg. Shared between
+// the sidebar (drives the click-to-expand list) and the map (drives the
+// highlight overlay when a leg is selected).
+export function computeLegSegmentRanges(
+  segments: { start: { lat: number; lon: number } }[],
+  waypoints: [number, number][],
+): Array<[number, number]> {
+  if (waypoints.length < 2 || segments.length === 0) return [];
+  const legStarts: number[] = [0];
+  for (let w = 1; w < waypoints.length - 1; w++) {
+    const [wlat, wlon] = waypoints[w];
+    let best = legStarts[legStarts.length - 1] + 1;
+    let bestD = Infinity;
+    for (let i = best; i < segments.length; i++) {
+      const d = Math.hypot(segments[i].start.lat - wlat, segments[i].start.lon - wlon);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    legStarts.push(best);
+  }
+  legStarts.push(segments.length);
+  return legStarts.slice(0, -1).map((s, i) => [s, legStarts[i + 1]]);
 }
 
 function twaToSeaDirection(twa: number): "face" | "travers" | "arrière" {
@@ -103,6 +128,7 @@ export function aggregateLegs(
     const tws_avg_kn = wsum((s) => s.tws_kn);
     const twa_avg_deg = circularMeanDeg(segs.map((s) => s.twa_deg));
     const twd_avg_deg = circularMeanDeg(segs.map((s) => s.twd_deg));
+    const bearing_avg_deg = circularMeanDeg(segs.map((s) => s.bearing_deg));
     const gusts = segs.map((s) => s.gust_kn).filter((g): g is number => g != null);
     const gust_max_kn = gusts.length > 0 ? Math.max(...gusts) : null;
 
@@ -140,12 +166,14 @@ export function aggregateLegs(
 
     return {
       distance_nm: totalDist,
+      start_time: segs[0].start_time,
       end_time: segs[segs.length - 1].end_time,
       tws_min: Math.min(...twsVals),
       tws_max: Math.max(...twsVals),
       tws_avg_kn,
       twa_avg_deg,
       twd_avg_deg,
+      bearing_avg_deg,
       gust_max_kn,
       point_of_sail: twaToPointOfSail(twa_avg_deg),
       polar_after_eff_kn,

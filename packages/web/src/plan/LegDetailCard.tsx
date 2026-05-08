@@ -1,314 +1,395 @@
 import type { AggregatedLeg } from "./aggregateLegs";
 
-// "Comment c'est calculé" — expanded leg detail. Layout:
-//   1. Build-up of the target speed: polar → wave penalty → current → target
-//   2. Four mini-tiles: polar pose, observed wind, sea sensitivity, current
-// Numbers come from `aggregateLegs` (segment-level math weighted by distance,
-// so the column sums match the displayed target).
+// "Conditions vues du bateau" — North-up compass with the boat rotated to its
+// true heading. Wind / waves / current sit at their absolute compass bearings
+// around the dial; the boat points where it's going.
+//
+// Color code (also rendered in the legend below the diagram):
+//   white = vent, amber wavy = vagues,
+//   green/orange/grey arrow = courant (portant / contraire / travers).
 
-const fmtKn = (kn: number, signed = false): string => {
-  const r = Math.abs(kn) < 0.05 ? 0 : kn; // hide tiny rounding flips
-  if (!signed) return `${r.toFixed(1)} kn`;
-  const sign = r > 0 ? "+" : r < 0 ? "−" : "";
-  return `${sign}${Math.abs(r).toFixed(1)} kn`;
+const SIZE = 320;
+const CENTER = SIZE / 2;
+const COMPASS_R = 104;
+const ARROW_TAIL_R = 100;
+const ARROW_TIP_R = 58;
+const LABEL_R = 122;
+
+const COLORS = {
+  wind: "var(--ow-fg-0)",
+  waves: "var(--ow-warn)",
+  currentPortant: "var(--ow-ok)",
+  currentContraire: "#fb923c",  // distinct from waves' amber
+  currentTravers: "#3b82f6",    // blue-500 — clearly visible in both themes (grey washed out in light)
 };
 
-function compass16(deg: number): string {
-  const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
-  return dirs[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+// 0° = up (12 o'clock), increasing clockwise. Returns [x, y] in SVG coords.
+function polarXY(angleDeg: number, r: number): [number, number] {
+  const rad = ((angleDeg - 90) * Math.PI) / 180;
+  return [CENTER + Math.cos(rad) * r, CENTER + Math.sin(rad) * r];
 }
 
-// ── Inline icons (kept tiny, design uses 11px line-art) ────────────────────────
-function Icon({ name, size = 11, color = "currentColor" }: { name: "gauge" | "sail" | "wind" | "alert" | "route"; size?: number; color?: string }) {
-  const stroke = { width: 1.6, color };
-  const common = { width: size, height: size, viewBox: "0 0 16 16", fill: "none", stroke: stroke.color, strokeWidth: stroke.width, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-  switch (name) {
-    case "gauge":
-      return (<svg {...common}><path d="M3 12a5 5 0 0 1 10 0" /><path d="M8 12 11 8" /><circle cx="8" cy="12" r="0.7" fill={color} /></svg>);
-    case "sail":
-      return (<svg {...common}><path d="M8 2v11" /><path d="M8 2c-2.5 1 -4 5 -4 11h4z" /><path d="M2 14h12" /></svg>);
-    case "wind":
-      return (<svg {...common}><path d="M3 6h7a2 2 0 1 0-2-2" /><path d="M3 10h10a2 2 0 1 1-2 2" /></svg>);
-    case "alert":
-      return (<svg {...common}><path d="M8 2 14 13H2z" /><path d="M8 7v3" /><circle cx="8" cy="12" r="0.5" fill={color} /></svg>);
-    case "route":
-      return (<svg {...common}><path d="M3 12c2-4 5-1 7-3 1-1 2-3 3-3" /><circle cx="3" cy="12" r="1.4" fill={color} stroke="none" /><circle cx="13" cy="6" r="1.4" fill={color} stroke="none" /></svg>);
-  }
+// Pick label anchor + small dx so a force label outside the dial reads clean.
+function labelLayout(angleDeg: number): { anchor: "start" | "middle" | "end"; dx: number } {
+  const a = ((angleDeg % 360) + 360) % 360;
+  if (a < 15 || a > 345) return { anchor: "middle", dx: 0 };
+  if (a > 165 && a < 195) return { anchor: "middle", dx: 0 };
+  return a < 180
+    ? { anchor: "start", dx: 4 }
+    : { anchor: "end", dx: -4 };
 }
 
-// ── Build-up rows ─────────────────────────────────────────────────────────────
-function BuildUpRow({
-  label,
-  sub,
-  value,
-  tone,
+// Double-shaft arrow for the wind — two parallel lines so the eye can pick
+// it out among the wavy line and the current flow field. The shaft stops a
+// few px short of the tip so the lines don't poke through the arrowhead.
+function WindArrow({
+  fromR,
+  toR,
+  angleDeg,
+  color,
 }: {
-  label: string;
-  sub: string;
-  value: string;
-  tone: "base" | "pos" | "neg" | "total";
+  fromR: number;
+  toR: number;
+  angleDeg: number;
+  color: string;
 }) {
-  const colorMap: Record<typeof tone, string> = {
-    base: "var(--ow-fg-1)",
-    pos: "var(--ow-ok)",
-    neg: "var(--ow-warn)",
-    total: "var(--ow-accent)",
-  };
+  const [x1, y1] = polarXY(angleDeg, fromR);
+  const [x2, y2] = polarXY(angleDeg, toR);
+  const dirRad = Math.atan2(y2 - y1, x2 - x1);
+  const perpRad = dirRad + Math.PI / 2;
+  const off = 2.6;
+  const ox = Math.cos(perpRad) * off;
+  const oy = Math.sin(perpRad) * off;
+  const tipBack = 8;
+  const sx = x2 - Math.cos(dirRad) * tipBack;
+  const sy = y2 - Math.sin(dirRad) * tipBack;
+  const head = 10, wing = 5.5;
+  const hx1 = x2 - Math.cos(dirRad) * head + Math.sin(dirRad) * wing;
+  const hy1 = y2 - Math.sin(dirRad) * head - Math.cos(dirRad) * wing;
+  const hx2 = x2 - Math.cos(dirRad) * head - Math.sin(dirRad) * wing;
+  const hy2 = y2 - Math.sin(dirRad) * head + Math.cos(dirRad) * wing;
   return (
-    <div className="flex items-center gap-2 mt-1">
-      <div className="flex-1 min-w-0">
-        <div className="text-[11px]" style={{ color: "var(--ow-fg-0)", fontWeight: tone === "total" ? 600 : 500 }}>
-          {label}
-        </div>
-        <div className="text-[9px] mt-0.5" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
-          {sub}
-        </div>
-      </div>
-      <span
-        className="text-xs font-semibold tabular-nums"
-        style={{ color: colorMap[tone], fontFamily: "var(--ow-font-mono)", letterSpacing: "-0.01em" }}
-      >
-        {value}
-      </span>
-    </div>
+    <g stroke={color} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <line x1={x1 + ox} y1={y1 + oy} x2={sx + ox} y2={sy + oy} />
+      <line x1={x1 - ox} y1={y1 - oy} x2={sx - ox} y2={sy - oy} />
+      <path d={`M ${hx1} ${hy1} L ${x2} ${y2} L ${hx2} ${hy2}`} />
+    </g>
   );
 }
 
-// ── Mini visualizations ───────────────────────────────────────────────────────
-function PolarMini({ twa }: { twa: number }) {
-  const r = 16, cx = 20, cy = 20;
-  // TWA is a relative angle (0..180). Place it on the right hemisphere of a half-circle.
-  const a = Math.min(180, Math.max(0, Math.abs(twa) > 180 ? 360 - Math.abs(twa) : Math.abs(twa)));
-  const angle = ((a - 90) * Math.PI) / 180;
-  const tx = cx + Math.cos(angle) * r;
-  const ty = cy + Math.sin(angle) * r;
+// Current flow field — short fine arrows distributed around the boat, all
+// pointing in the direction the water flows. Visually evokes a river current
+// (the user's red drawing).
+function CurrentFlowField({ flowAngleDeg, color }: { flowAngleDeg: number; color: string }) {
+  const flowRad = ((flowAngleDeg - 90) * Math.PI) / 180;
+  const fx = Math.cos(flowRad), fy = Math.sin(flowRad);
+  const px = -fy, py = fx; // perpendicular unit
+  const lineLen = 38;       // longer than before so the field reads as flow, not many small arrows
+  const HEAD = 4, WING = 2.2; // smaller arrowhead so the flow stays subtle
+  const positions: Array<[number, number]> = [];
+  // 2 rows of 3 lines either side of the boat — quieter than the prior 3×3 grid.
+  const perpOffsets = [-58, 58];
+  const alongOffsets = [-46, 0, 46];
+  for (const a of alongOffsets) {
+    for (const p of perpOffsets) {
+      positions.push([CENTER + fx * a + px * p, CENTER + fy * a + py * p]);
+    }
+  }
+
   return (
-    <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--ow-line-2)" strokeWidth="1" />
+    <g stroke={color} strokeWidth="1" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.5">
+      {positions.map(([cx, cy], i) => {
+        const distC = Math.hypot(cx - CENTER, cy - CENTER);
+        if (distC > COMPASS_R - 4) return null;
+        if (distC < 30) return null; // keep clear of the hull
+        const tailX = cx - fx * lineLen / 2;
+        const tailY = cy - fy * lineLen / 2;
+        const tipX = cx + fx * lineLen / 2;
+        const tipY = cy + fy * lineLen / 2;
+        const hx1 = tipX - fx * HEAD + px * WING;
+        const hy1 = tipY - fy * HEAD + py * WING;
+        const hx2 = tipX - fx * HEAD - px * WING;
+        const hy2 = tipY - fy * HEAD - py * WING;
+        return (
+          <g key={i}>
+            <line x1={tailX} y1={tailY} x2={tipX} y2={tipY} />
+            <path d={`M ${hx1} ${hy1} L ${tipX} ${tipY} L ${hx2} ${hy2}`} />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+function WaveMark({ angleDeg, color }: { angleDeg: number; color: string }) {
+  const [tipX, tipY] = polarXY(angleDeg, ARROW_TIP_R + 8);
+  const [tailX, tailY] = polarXY(angleDeg, ARROW_TAIL_R - 4);
+  const dx = tipX - tailX;
+  const dy = tipY - tailY;
+  const len = Math.hypot(dx, dy);
+  const ux = dx / len, uy = dy / len;
+  const nx = -uy, ny = ux;
+  const amp = 3.2;
+  // Reserve a straight section just before the tip so the arrowhead reads as
+  // a clean chevron (not jammed into the last sinusoid bump).
+  const TAIL_STRAIGHT = 10;
+  const wavyEnd = len - TAIL_STRAIGHT;
+  const N = 16;
+  const points: string[] = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const dist = wavyEnd * t;
+    const o = Math.sin(t * Math.PI * 3) * amp * (1 - t * 0.5); // taper amp toward the tip
+    points.push(`${tailX + ux * dist + nx * o},${tailY + uy * dist + ny * o}`);
+  }
+  // Continue with a straight segment to the tip.
+  points.push(`${tipX},${tipY}`);
+
+  // Arrowhead at the tip — drawn along the radial direction, so it lands on
+  // the straight tail section above and reads as a clean ▶.
+  const HEAD = 7, WING = 4;
+  const hx1 = tipX - ux * HEAD + nx * WING;
+  const hy1 = tipY - uy * HEAD + ny * WING;
+  const hx2 = tipX - ux * HEAD - nx * WING;
+  const hy2 = tipY - uy * HEAD - ny * WING;
+  return (
+    <g stroke={color} strokeWidth="1.7" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points={points.join(" ")} />
+      <path d={`M ${hx1} ${hy1} L ${tipX} ${tipY} L ${hx2} ${hy2}`} />
+    </g>
+  );
+}
+
+// Top-down hull silhouette — pointed bow up, flat transom at the bottom.
+// Drawn centred on (0,0) so it can be translated + rotated by bearing.
+function BoatHull() {
+  return (
+    <g>
       <path
-        d={`M ${cx} ${cy - r} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
-        stroke="var(--ow-accent)"
-        strokeWidth="1.5"
-        fill="none"
+        d="
+          M 0 -34
+          C -8 -28, -14 -16, -14 -2
+          C -14 8, -14 16, -13 22
+          L 13 22
+          C 14 16, 14 8, 14 -2
+          C 14 -16, 8 -28, 0 -34
+          Z
+        "
+        fill="var(--ow-bg-2)"
+        stroke="var(--ow-fg-0)"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
       />
-      <line x1={cx} y1={cy} x2={tx} y2={ty} stroke="var(--ow-accent)" strokeWidth="1.5" />
-      <circle cx={tx} cy={ty} r="2.2" fill="var(--ow-accent)" />
-    </svg>
+      <line x1="0" y1="-26" x2="0" y2="20" stroke="var(--ow-fg-2)" strokeWidth="0.8" />
+      <circle cx="0" cy="-4" r="2.2" fill="var(--ow-accent)" />
+      <path d="M 0 -34 L -3 -28 L 3 -28 Z" fill="var(--ow-fg-0)" stroke="none" />
+    </g>
   );
 }
 
-function CompassArrow({ deg, label }: { deg: number; label: string }) {
-  // True wind direction is "from" — flip to "to" for the arrow tip.
+// Cardinal direction markers (N, E, S, W) just outside the dial.
+function CardinalMarkers() {
+  const items: { label: string; deg: number }[] = [
+    { label: "N", deg: 0 },
+    { label: "E", deg: 90 },
+    { label: "S", deg: 180 },
+    { label: "W", deg: 270 },
+  ];
   return (
-    <div className="flex flex-col items-center gap-0.5">
-      <svg width="26" height="26" viewBox="0 0 26 26" style={{ transform: `rotate(${deg + 180}deg)` }} aria-hidden="true">
-        <line x1="13" y1="5" x2="13" y2="20" stroke="var(--ow-fg-1)" strokeWidth="1.6" strokeLinecap="round" />
-        <path d="M13 5 L9 10 M13 5 L17 10" stroke="var(--ow-fg-1)" strokeWidth="1.6" strokeLinecap="round" fill="none" />
-      </svg>
-      <span className="text-[8px] tabular-nums" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>{label}</span>
-    </div>
-  );
-}
-
-function WaveMini({ steep }: { steep: boolean }) {
-  // Tighter wavelength when steep (Hs/Tp high) — visual cue, not to scale.
-  const path = steep
-    ? "M0 13 Q 4 4 8 13 T 16 13 T 24 13 T 32 13 T 40 13"
-    : "M0 13 Q 6 6 12 13 T 24 13 T 36 13 T 48 13";
-  return (
-    <svg width="40" height="20" viewBox="0 0 40 20" aria-hidden="true">
-      <path d={path} stroke="var(--ow-warn)" strokeWidth="1.5" fill="none" />
-    </svg>
-  );
-}
-
-function CurrentArrow({ relative }: { relative: "portant" | "contraire" | "travers" }) {
-  const color = relative === "portant" ? "var(--ow-ok)" : relative === "contraire" ? "var(--ow-warn)" : "var(--ow-fg-1)";
-  // travers: short side-line; portant: forward arrow; contraire: backward arrow
-  if (relative === "travers") {
-    return (
-      <svg width="40" height="20" viewBox="0 0 40 20" aria-hidden="true">
-        <path d="M2 10 L38 10" stroke={color} strokeWidth="1.5" fill="none" />
-        <path d="M22 6 L18 10 L22 14" stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  return (
-    <svg
-      width="40"
-      height="20"
-      viewBox="0 0 40 20"
-      aria-hidden="true"
-      style={{ transform: relative === "contraire" ? "scaleX(-1)" : "none" }}
-    >
-      <path d="M2 10 Q 11 4 22 10 T 40 10" stroke={color} strokeWidth="1.5" fill="none" />
-      <path d="M34 7 L40 10 L34 13" stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-// ── Factor tile (the 4 cards) ─────────────────────────────────────────────────
-function FactorTile({
-  icon,
-  title,
-  metric,
-  caption,
-  tone,
-  extra,
-}: {
-  icon: "sail" | "wind" | "alert" | "route";
-  title: string;
-  metric: string;
-  caption: string;
-  tone?: "warn" | "ok";
-  extra?: React.ReactNode;
-}) {
-  const accent = tone === "warn" ? "var(--ow-warn)" : tone === "ok" ? "var(--ow-ok)" : "var(--ow-fg-0)";
-  return (
-    <div
-      className="rounded-lg p-2.5"
-      style={{ background: "var(--ow-bg-1)", border: "1px solid var(--ow-line)" }}
-    >
-      <div className="flex items-center gap-1.5 mb-1.5" style={{ color: "var(--ow-fg-2)" }}>
-        <Icon name={icon} size={11} />
-        <span className="text-[9px] font-bold uppercase tracking-widest">{title}</span>
-      </div>
-      <div className="flex items-end justify-between gap-1.5">
-        <div className="min-w-0">
-          <div
-            className="text-[15px] font-bold tabular-nums leading-none"
-            style={{ color: accent, fontFamily: "var(--ow-font-mono)", letterSpacing: "-0.02em" }}
+    <g>
+      {items.map(({ label, deg }) => {
+        const [x, y] = polarXY(deg, COMPASS_R + 14);
+        return (
+          <text
+            key={label}
+            x={x}
+            y={y}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize="10"
+            fill="var(--ow-fg-3)"
+            style={{ fontFamily: "var(--ow-font-mono)", fontWeight: 600 }}
           >
-            {metric}
-          </div>
-          <div className="text-[9px] mt-1 leading-tight" style={{ color: "var(--ow-fg-2)" }}>
-            {caption}
-          </div>
-        </div>
-        {extra && <div className="shrink-0">{extra}</div>}
-      </div>
-    </div>
+            {label}
+          </text>
+        );
+      })}
+    </g>
   );
 }
 
-// ── Main card ─────────────────────────────────────────────────────────────────
-export function LegDetailCard({ leg, archetypeLabel }: { leg: AggregatedLeg; archetypeLabel: string }) {
-  const twa = Math.round(Math.abs(leg.twa_avg_deg) > 180 ? 360 - Math.abs(leg.twa_avg_deg) : Math.abs(leg.twa_avg_deg));
+
+// ── Main component ────────────────────────────────────────────────────────────
+export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
+  // Absolute compass bearings — boat is rotated to its actual heading and
+  // every force sits at its true direction on the North-up dial. Waves
+  // track wind in our current Med model; we offset the wave marker by a
+  // fixed 30° so the two arrows never share a shaft. Robust by construction:
+  // 30° is the minimum gap that keeps labels (≈ 50-60 px wide at LABEL_R)
+  // from overlapping at 12 pt. Picking the offset away from the boat's bow
+  // also avoids stacking wave on top of the boat hull.
+  const windAngle = leg.twd_avg_deg;
+  const waveAngle = leg.twd_avg_deg + 30;
   const tws = Math.round(leg.tws_avg_kn);
-  const effPct = Math.round(leg.efficiency * 100);
+  const windLine =
+    leg.gust_max_kn != null && leg.gust_max_kn > tws + 1
+      ? `${tws} (${Math.round(leg.gust_max_kn)}) kn`
+      : `${tws} kn`;
+  const fmtFR1 = (n: number) => n.toFixed(1).replace(".", ",");
+  const waveLine = leg.hs_avg_m != null
+    ? `${fmtFR1(leg.hs_avg_m)} m${leg.tp_avg_s != null ? ` (${Math.round(leg.tp_avg_s)} s)` : ""}`
+    : "";
+  const hasWaves = leg.hs_avg_m != null;
 
-  // Sea direction relative to the boat (hs_avg_m null → no sea data)
-  const seaDir = leg.sea_direction; // "face" | "travers" | "arrière" | null
-  const tpStr = leg.tp_avg_s != null ? ` · Tp ${leg.tp_avg_s.toFixed(1)} s` : "";
-  const seaSub = leg.hs_avg_m != null
-    ? `Hs ${leg.hs_avg_m.toFixed(1)} m${tpStr}${seaDir ? ` · de ${seaDir}` : ""}`
-    : "Pas de donnée vagues";
+  // Current arrow points OUTWARD from the boat in the direction water flows.
+  const currentAngle = leg.current_direction_to_deg ?? null;
+  const currentColor =
+    leg.current_relative === "portant" ? COLORS.currentPortant :
+    leg.current_relative === "contraire" ? COLORS.currentContraire :
+    COLORS.currentTravers;
 
-  // Current sub-text
-  const curSub = (() => {
-    if (leg.current_speed_kn == null || leg.current_relative == null) return "Pas de donnée courant";
-    const speed = leg.current_speed_kn.toFixed(1);
-    const rel = leg.current_relative;
-    return `${speed} kn ${rel}`;
-  })();
-  const gustStr = leg.gust_max_kn != null ? `rafales ${Math.round(leg.gust_max_kn)} kn · ` : "";
+  // Each force gets its own label outside the dial at its own angle.
+  // Wind & wave are spread by construction (30° angular offset). The current's
+  // angle is independent though — if it lands within 30° of either, push the
+  // current label radially outward so labels never share screen space. Keeps
+  // the angular position truthful (label still points at the real flow
+  // direction); only the distance from the dial changes.
+  const angularGap = (a: number, b: number): number => {
+    const d = ((a - b + 540) % 360) - 180;
+    return Math.abs(d);
+  };
+  let currentLabelR = LABEL_R;
+  if (currentAngle != null) {
+    const tooCloseToWind = angularGap(currentAngle, windAngle) < 30;
+    const tooCloseToWave = angularGap(currentAngle, waveAngle) < 30;
+    if (tooCloseToWind || tooCloseToWave) currentLabelR = LABEL_R + 28;
+  }
 
-  // Steepness heuristic: short period for the height = steep mer courte.
-  const steepSea = leg.hs_avg_m != null && leg.tp_avg_s != null && leg.hs_avg_m / leg.tp_avg_s > 0.3;
+  const [windLx, windLy] = polarXY(windAngle, LABEL_R);
+  const windLabel = labelLayout(windAngle);
+  const [waveLx, waveLy] = polarXY(waveAngle, LABEL_R);
+  const waveLabel = labelLayout(waveAngle);
+  const [curLx, curLy] = currentAngle != null ? polarXY(currentAngle, currentLabelR) : [0, 0];
+  const curLabel = currentAngle != null ? labelLayout(currentAngle) : { anchor: "middle" as const, dx: 0 };
 
   return (
-    <div className="px-4 pb-3 pt-1">
-      {/* Section label */}
+    <div className="px-4 pb-4 pt-1">
+      {/* Section header */}
       <div
-        className="flex items-center gap-1.5 mb-2.5 text-[10px] font-bold uppercase"
+        className="flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase"
         style={{ color: "var(--ow-accent)", letterSpacing: "0.1em" }}
       >
-        <Icon name="gauge" size={11} color="var(--ow-accent)" />
-        Comment c'est calculé
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="8" cy="8" r="6" />
+          <path d="M8 4 L8 8 L11 10" />
+        </svg>
+        Conditions vues du bateau
       </div>
 
-      {/* Build-up card */}
-      <div
-        className="rounded-lg p-3 mb-2.5"
-        style={{ background: "var(--ow-bg-1)", border: "1px solid var(--ow-line)" }}
-      >
-        <div
-          className="text-[9px] mb-1.5 font-bold uppercase tracking-widest"
-          style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}
-        >
-          Vitesse cible · build-up
+      {/* Speed + allure + cap */}
+      <div className="flex items-baseline justify-between mb-2">
+        <div className="flex items-baseline gap-3">
+          <span
+            className="text-2xl font-bold tabular-nums"
+            style={{ color: "var(--ow-accent)", fontFamily: "var(--ow-font-mono)", letterSpacing: "-0.02em", lineHeight: 1 }}
+          >
+            {leg.target_speed_kn.toFixed(1)} kn
+          </span>
+          <span
+            className="text-xl font-bold"
+            style={{ color: "var(--ow-fg-0)", letterSpacing: "-0.01em", lineHeight: 1 }}
+          >
+            {leg.point_of_sail}
+          </span>
         </div>
-        <BuildUpRow
-          label="Polaire bateau"
-          sub={`${archetypeLabel} · TWA ${twa}° / TWS ${tws} kn · efficacité ${effPct}%`}
-          value={fmtKn(leg.polar_after_eff_kn, true)}
-          tone="base"
-        />
-        {Math.abs(leg.wave_delta_kn) > 0.05 && (
-          <BuildUpRow
-            label="Pénalité vagues"
-            sub={
-              leg.hs_avg_m != null
-                ? `Hs ${leg.hs_avg_m.toFixed(1)} m${tpStr}${seaDir ? ` · de ${seaDir}` : ""}`
-                : "—"
-            }
-            value={fmtKn(leg.wave_delta_kn, true)}
-            tone="neg"
-          />
-        )}
-        {leg.current_delta_kn != null && Math.abs(leg.current_delta_kn) > 0.05 && (
-          <BuildUpRow
-            label="Courant"
-            sub={
-              leg.current_speed_kn != null
-                ? `${leg.current_speed_kn.toFixed(1)} kn ${leg.current_relative ?? ""}`.trim()
-                : "—"
-            }
-            value={fmtKn(leg.current_delta_kn, true)}
-            tone={leg.current_delta_kn >= 0 ? "pos" : "neg"}
-          />
-        )}
-        <div className="h-px my-1.5" style={{ background: "var(--ow-line)" }} />
-        <BuildUpRow
-          label="Cible retenue"
-          sub="utilisée pour la durée"
-          value={fmtKn(leg.target_speed_kn)}
-          tone="total"
-        />
+        <span className="text-[10px] tabular-nums" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
+          cap {Math.round(leg.bearing_avg_deg)}°
+        </span>
       </div>
 
-      {/* 4 factor tiles */}
-      <div className="grid grid-cols-2 gap-2">
-        <FactorTile
-          icon="sail"
-          title="Finesse bateau"
-          metric={`${leg.polar_after_eff_kn.toFixed(1)} kn`}
-          caption={`${leg.point_of_sail.toLowerCase()} · TWA ${twa}°`}
-          extra={<PolarMini twa={leg.twa_avg_deg} />}
-        />
-        <FactorTile
-          icon="wind"
-          title="Vent vu"
-          metric={`${tws} kn`}
-          caption={`${gustStr}${leg.point_of_sail.toLowerCase()}`}
-          extra={<CompassArrow deg={leg.twd_avg_deg} label={compass16(leg.twd_avg_deg)} />}
-        />
-        <FactorTile
-          icon="alert"
-          title="Sensibilité vagues"
-          metric={leg.hs_avg_m != null ? fmtKn(leg.wave_delta_kn, true) : "—"}
-          caption={seaSub}
-          tone="warn"
-          extra={leg.hs_avg_m != null ? <WaveMini steep={steepSea} /> : null}
-        />
-        <FactorTile
-          icon="route"
-          title="Courant"
-          metric={leg.current_delta_kn != null ? fmtKn(leg.current_delta_kn, true) : "—"}
-          caption={curSub}
-          tone={leg.current_delta_kn != null && leg.current_delta_kn >= 0 ? "ok" : "warn"}
-          extra={leg.current_relative ? <CurrentArrow relative={leg.current_relative} /> : null}
-        />
+      {/* Compass diagram */}
+      <div className="flex justify-center">
+        <svg
+          width={SIZE}
+          height={SIZE}
+          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          aria-label="Conditions autour du bateau (vue Nord en haut)"
+          style={{ overflow: "visible" }}
+        >
+          {/* Outer dashed dial */}
+          <circle cx={CENTER} cy={CENTER} r={COMPASS_R} fill="none" stroke="var(--ow-line-2)" strokeWidth="1" strokeDasharray="2 4" />
+
+          {/* Cardinal markers */}
+          <CardinalMarkers />
+
+          {/* Boat hull rotated to its true bearing */}
+          <g transform={`translate(${CENTER} ${CENTER}) rotate(${leg.bearing_avg_deg})`}>
+            <BoatHull />
+          </g>
+
+          {/* Wind arrow (double-shaft, distinctive) */}
+          <WindArrow fromR={ARROW_TAIL_R} toR={ARROW_TIP_R} angleDeg={windAngle} color={COLORS.wind} />
+
+          {/* Wind label — caption above the value, same color & font as the arrow */}
+          <text
+            x={windLx + windLabel.dx}
+            y={windLy - 7}
+            textAnchor={windLabel.anchor}
+            dominantBaseline="middle"
+            fill={COLORS.wind}
+            style={{ fontFamily: "var(--ow-font-mono)" }}
+          >
+            <tspan fontSize="9" fontWeight="500">
+              {leg.gust_max_kn != null && leg.gust_max_kn > tws + 1 ? "Vent (rafales)" : "Vent"}
+            </tspan>
+            <tspan x={windLx + windLabel.dx} dy="13" fontSize="12" fontWeight="700">
+              {windLine}
+            </tspan>
+          </text>
+
+          {/* Waves wavy line at wave direction (offset 30° from wind so they
+              never share a shaft), with its own captioned label */}
+          {hasWaves && (
+            <>
+              <WaveMark angleDeg={waveAngle} color={COLORS.waves} />
+              <text
+                x={waveLx + waveLabel.dx}
+                y={waveLy - 7}
+                textAnchor={waveLabel.anchor}
+                dominantBaseline="middle"
+                fill={COLORS.waves}
+                style={{ fontFamily: "var(--ow-font-mono)" }}
+              >
+                <tspan fontSize="9" fontWeight="500">
+                  {leg.tp_avg_s != null ? "Hauteur vagues (période)" : "Hauteur vagues"}
+                </tspan>
+                <tspan x={waveLx + waveLabel.dx} dy="13" fontSize="12" fontWeight="700">
+                  {waveLine}
+                </tspan>
+              </text>
+            </>
+          )}
+
+          {/* Current flow field — short fine arrows around the boat */}
+          {currentAngle != null && (
+            <>
+              <CurrentFlowField flowAngleDeg={currentAngle} color={currentColor} />
+              <text
+                x={curLx + curLabel.dx}
+                y={curLy - 7}
+                textAnchor={curLabel.anchor}
+                dominantBaseline="middle"
+                fill={currentColor}
+                style={{ fontFamily: "var(--ow-font-mono)" }}
+              >
+                <tspan fontSize="9" fontWeight="500">Courant</tspan>
+                <tspan x={curLx + curLabel.dx} dy="13" fontSize="12" fontWeight="700">
+                  {leg.current_speed_kn != null ? `${leg.current_speed_kn.toFixed(1).replace(".", ",")} kn` : "— kn"}
+                </tspan>
+              </text>
+            </>
+          )}
+        </svg>
       </div>
     </div>
   );

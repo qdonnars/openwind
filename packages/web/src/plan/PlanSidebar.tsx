@@ -471,21 +471,29 @@ function ArchetypeSelector({
 // Click-to-expand list of legs, with the "Comment c'est calculé" build-up
 // rendered inline for the open leg.
 
+// Shared 4-column template for the leg sub-line — kept as a constant so the
+// sidebar's legend header and every row use the same widths and the values
+// (allure / vent / vagues / distance) line up vertically across rows.
+const SEG_SUBLINE_COLS = "minmax(50px,0.7fr) minmax(40px,0.5fr) minmax(82px,1fr) minmax(44px,0.5fr)";
+
 function LegRow({
   leg,
   index,
   expanded,
-  archetypeLabel,
   onToggle,
 }: {
   leg: AggregatedLeg;
   index: number;
   expanded: boolean;
-  archetypeLabel: string;
   onToggle: () => void;
 }) {
   const cx = cxLevel((leg.tws_min + leg.tws_max) / 2);
   const tws = Math.round(leg.tws_avg_kn);
+  const seaPart = leg.hs_avg_m != null
+    ? `${leg.hs_avg_m.toFixed(1)}m ${leg.sea_direction ?? ""}`.trim()
+    : "—";
+  const fmtHM = (iso: string) =>
+    new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   return (
     <div style={{ borderBottom: "1px solid var(--ow-line)", background: expanded ? "var(--ow-bg-2)" : "transparent" }}>
       <button
@@ -504,12 +512,21 @@ function LegRow({
           <div className="text-xs font-semibold truncate" style={{ color: "var(--ow-fg-0)" }}>
             Tronçon {index + 1}
           </div>
-          <div className="text-[10px] mt-0.5 tabular-nums" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
-            {leg.distance_nm.toFixed(1)} nm · {leg.point_of_sail} · {tws} kn
+          <div
+            className="grid gap-2 mt-0.5 text-[10px] tabular-nums"
+            style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)", gridTemplateColumns: SEG_SUBLINE_COLS }}
+          >
+            <span className="truncate">{leg.point_of_sail}</span>
+            <span>{tws} kn</span>
+            <span className="truncate">{seaPart}</span>
+            <span>{leg.distance_nm.toFixed(1)} nm</span>
+          </div>
+          <div className="text-[10px] mt-0.5 tabular-nums" style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}>
+            {fmtHM(leg.start_time)} → {fmtHM(leg.end_time)}
           </div>
         </div>
-        <span className="text-[11px] tabular-nums shrink-0" style={{ color: "var(--ow-fg-1)", fontFamily: "var(--ow-font-mono)" }}>
-          {new Date(leg.end_time).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+        <span className="text-[11px] tabular-nums shrink-0 font-semibold" style={{ color: "var(--ow-fg-0)", fontFamily: "var(--ow-font-mono)" }}>
+          {leg.target_speed_kn.toFixed(1)} kn
         </span>
         <span
           aria-hidden="true"
@@ -525,23 +542,47 @@ function LegRow({
           </svg>
         </span>
       </button>
-      {expanded && <LegDetailCard leg={leg} archetypeLabel={archetypeLabel} />}
+      {expanded && <LegDetailCard leg={leg} />}
     </div>
   );
 }
 
-function LegList({ legs, archetypeLabel }: { legs: AggregatedLeg[]; archetypeLabel: string }) {
-  const [openIdx, setOpenIdx] = useState<number | null>(null);
+function LegList({
+  legs,
+  openIdx,
+  onOpenChange,
+}: {
+  legs: AggregatedLeg[];
+  openIdx: number | null;
+  onOpenChange: (idx: number | null) => void;
+}) {
   return (
     <div>
       <div
-        className="flex items-center justify-between px-4 pt-3 pb-1.5 text-[10px] uppercase tracking-widest font-bold"
+        className="flex items-center justify-between px-4 pt-3 pb-1 text-[10px] uppercase tracking-widest font-bold"
         style={{ color: "var(--ow-fg-2)" }}
       >
         Segments
         <span className="text-[9px] font-medium normal-case tracking-normal" style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}>
           cliquez pour détailler
         </span>
+      </div>
+      <div
+        className="flex items-center gap-2.5 px-4 pb-1.5 text-[9px]"
+        style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}
+      >
+        <span className="shrink-0 w-6" />
+        <div
+          className="flex-1 min-w-0 grid gap-2"
+          style={{ gridTemplateColumns: SEG_SUBLINE_COLS }}
+        >
+          <span>allure</span>
+          <span>vent</span>
+          <span>vagues</span>
+          <span>distance</span>
+        </div>
+        <span className="shrink-0">vitesse cible</span>
+        <span className="shrink-0 w-[14px]" />
       </div>
       <div style={{ borderTop: "1px solid var(--ow-line)" }}>
         {legs.map((leg, i) => (
@@ -550,8 +591,7 @@ function LegList({ legs, archetypeLabel }: { legs: AggregatedLeg[]; archetypeLab
             leg={leg}
             index={i}
             expanded={openIdx === i}
-            archetypeLabel={archetypeLabel}
-            onToggle={() => setOpenIdx((cur) => (cur === i ? null : i))}
+            onToggle={() => onOpenChange(openIdx === i ? null : i)}
           />
         ))}
       </div>
@@ -592,6 +632,12 @@ interface PlanSidebarProps {
   metaWarnings: string[];
   onCompareFetch: () => void;
   onWindowSelect?: (w: PassageWindow) => void;
+  /** Selected leg index in the filled view (drives the map highlight). */
+  selectedLegIdx: number | null;
+  onSelectedLegChange: (idx: number | null) => void;
+  /** Mobile-only: pop the bottom drawer up to a readable height when the
+   *  user picks a mode (no-op on desktop). */
+  onExpandDrawer?: () => void;
 }
 
 export function PlanSidebar({
@@ -623,6 +669,9 @@ export function PlanSidebar({
   metaWarnings,
   onCompareFetch,
   onWindowSelect,
+  selectedLegIdx,
+  onSelectedLegChange,
+  onExpandDrawer,
 }: PlanSidebarProps) {
   const { resolvedTheme } = useTheme();
   const sweepValid = mode === "compare"
@@ -686,12 +735,92 @@ export function PlanSidebar({
     return (
       <div className="p-4 space-y-4 animate-fade-in">
         <ModeToggle value={mode} onChange={handleModeChange} locked />
-        <ModePicker onPick={handleModeChange} />
+        <ModePicker
+          onPick={(m) => {
+            handleModeChange(m);
+            onExpandDrawer?.();
+          }}
+        />
       </div>
     );
   }
 
-  // ── Form state (compare always; single before any result) ─────────────────
+  const archetype = archetypes.find((a) => a.slug === currentArchetypeSlug);
+  const archetypeLabel = archetype?.name ?? currentArchetypeSlug;
+
+  // ── Filled compare view: results loaded, inputs collapsed into a recap ────
+  if (mode === "compare" && windows && windows.length > 0) {
+    const fmtShort = (iso: string) =>
+      new Date(iso).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
+    const fmtClock = (iso: string) =>
+      new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const recapPrimary = `${fmtShort(sweepEarliest)} ${fmtClock(sweepEarliest)} → ${fmtShort(sweepLatest)} ${fmtClock(sweepLatest)}`;
+    const recapSecondary = `pas ${sweepIntervalHours}h · ${archetypeLabel}`;
+
+    return (
+      <div className="animate-fade-in">
+        <div className="px-4 pt-4 pb-3" style={{ borderBottom: "1px solid var(--ow-line)" }}>
+          <ModeToggle value={mode} onChange={handleModeChange} />
+        </div>
+
+        <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--ow-line)" }}>
+          <button
+            onClick={onCompareFetch}
+            disabled={!canCalculate}
+            className="w-full flex items-center justify-center gap-2 rounded-md py-1.5 text-xs font-semibold transition-all"
+            style={{
+              background: canCalculate ? "#F4C25C" : "var(--ow-bg-2)",
+              color: canCalculate ? "#3a2a08" : "var(--ow-fg-3)",
+              border: `1px solid ${canCalculate ? "transparent" : "var(--ow-line)"}`,
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13.5 2.5A7 7 0 1 0 14.5 9" /><path d="M14 1v4h-4" />
+            </svg>
+            Recalculer
+          </button>
+        </div>
+
+        <RecapButton
+          primary={recapPrimary}
+          secondary={recapSecondary}
+          isOpen={isEditingParams}
+          onClick={() => setIsEditingParams((v) => !v)}
+        />
+        {isEditingParams && (
+          <div className="px-4 py-3 space-y-3" style={{ borderBottom: "1px solid var(--ow-line)", background: "var(--ow-bg-2)" }}>
+            <SweepForm
+              earliest={sweepEarliest}
+              latest={sweepLatest}
+              intervalHours={sweepIntervalHours}
+              onEarliestChange={onSweepEarliestChange}
+              onLatestChange={onSweepLatestChange}
+              onIntervalChange={onSweepIntervalChange}
+            />
+            <ArchetypeSelector
+              currentSlug={currentArchetypeSlug}
+              archetypes={archetypes}
+              onChange={onArchetypeChange}
+            />
+          </div>
+        )}
+
+        {metaWarnings.length > 0 && (
+          <div className="px-4 py-2.5 space-y-1.5" style={{ borderBottom: "1px solid var(--ow-line)" }}>
+            {metaWarnings.map((m, i) => <Warn key={i}>{m}</Warn>)}
+          </div>
+        )}
+
+        <WindowsTable windows={windows} onSelect={onWindowSelect} />
+
+        <p className="px-4 py-2 text-[10px]" style={{ color: "var(--ow-fg-3)", borderTop: "1px solid var(--ow-line)" }}>
+          {windows.length} fenêtre{windows.length > 1 ? "s" : ""} comparée{windows.length > 1 ? "s" : ""} · cliquez sur une ligne pour ouvrir la simulation détaillée
+        </p>
+      </div>
+    );
+  }
+
+  // ── Form state (compare without windows; single before any result) ────────
   if (mode === "compare" || !passage || !complexity) {
     const accent = mode === "compare" ? "#F4C25C" : "var(--ow-accent)";
     const ctaInk = mode === "compare" ? "#3a2a08" : "#fff";
@@ -744,20 +873,6 @@ export function PlanSidebar({
             ? mode === "single" ? "Calculer le passage" : "Comparer les créneaux"
             : `${waypointCount}/2 waypoints`}
         </button>
-
-        {mode === "compare" && windows && windows.length > 0 && (
-          <div className="space-y-2">
-            {metaWarnings.map((m, i) => (
-              <Warn key={i}>{m}</Warn>
-            ))}
-            <div className="rounded-xl overflow-hidden border" style={{ borderColor: "var(--ow-line)" }}>
-              <WindowsTable windows={windows} onSelect={onWindowSelect} />
-            </div>
-            <p className="text-[10px]" style={{ color: "var(--ow-fg-3)" }}>
-              {windows.length} fenêtre{windows.length > 1 ? "s" : ""} comparée{windows.length > 1 ? "s" : ""} · cliquez sur une ligne pour ouvrir la simulation détaillée
-            </p>
-          </div>
-        )}
       </div>
     );
   }
@@ -766,8 +881,6 @@ export function PlanSidebar({
   const hasWarnings = (complexity.warnings?.length ?? 0) > 0 || passage.warnings.length > 0;
   const recapDate = new Date(departure).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
   const recapTime = new Date(departure).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  const archetype = archetypes.find((a) => a.slug === currentArchetypeSlug);
-  const archetypeLabel = archetype?.name ?? currentArchetypeSlug;
 
   return (
     <div className="animate-fade-in">
@@ -834,7 +947,13 @@ export function PlanSidebar({
       {/* Legs — click any row to see the build-up */}
       {(() => {
         const legs = aggregateLegs(passage.segments, waypoints, passage.efficiency);
-        return <LegList legs={legs} archetypeLabel={archetypeLabel} />;
+        return (
+          <LegList
+            legs={legs}
+            openIdx={selectedLegIdx}
+            onOpenChange={onSelectedLegChange}
+          />
+        );
       })()}
 
       {/* Footer */}

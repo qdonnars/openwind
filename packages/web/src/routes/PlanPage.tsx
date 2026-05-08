@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { parsePlanUrl, isParsedOk, buildPlanUrl } from "../plan/parseUrl";
 import { PlanMap, type PlanMapHandle } from "../plan/PlanMap";
 import { PlanSidebar } from "../plan/PlanSidebar";
 import { fetchPassage, fetchPassageByEta, fetchPassageWindows, fetchArchetypes, friendlyError } from "../api/passage";
-import { ThemeToggle } from "../design/theme";
-import { SpotSearch } from "../components/SpotSearch";
+import { Header } from "../components/Header";
 import type { PassageReport, ComplexityScore, Archetype, PassageWindow } from "../plan/types";
 import {
   loadLastSimulation,
@@ -12,9 +11,9 @@ import {
   waypointsEqual,
   type LastSimulation,
 } from "../plan/lastSimulation";
-import { ModeToggle, type PlanMode, type TimeAnchor } from "../plan/ModeToggle";
-import { cxLevel, CX_COLORS } from "../plan/types";
-import { aggregateLegs } from "../plan/aggregateLegs";
+import { type TimeAnchor } from "../plan/ModeToggle";
+import { CX_COLORS } from "../plan/types";
+import { computeLegSegmentRanges } from "../plan/aggregateLegs";
 
 // ── local helpers (mobile components) ────────────────────────────────────────
 
@@ -59,14 +58,6 @@ function fmtDuration(h: number) {
   return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
 }
 
-function RefetchIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M13.5 2.5A7 7 0 1 0 14.5 9" /><path d="M14 1v4h-4" />
-    </svg>
-  );
-}
-
 // Hero stats overlay — absolute, bottom of map, mobile only
 function PlanHeroStats({ passage, complexity }: { passage: PassageReport; complexity: ComplexityScore }) {
   const stats = [
@@ -91,173 +82,28 @@ function PlanHeroStats({ passage, complexity }: { passage: PassageReport; comple
   );
 }
 
-// Compact drawer — replaces sidebar on mobile
-function CompactDrawer({
-  passage,
-  complexity,
-  waypoints,
-  isLoading,
-  error,
-  isStale,
-  onRefetch,
-  mode,
-  onModeChange,
-}: {
-  passage: PassageReport | null;
-  complexity: ComplexityScore | null;
-  waypoints: [number, number][];
-  isLoading: boolean;
-  error: string | null;
-  isStale: boolean;
-  onRefetch: () => void;
-  mode: PlanMode;
-  onModeChange: (m: PlanMode) => void;
-}) {
-  // Mode toggle is always visible at the top so the user can swap between
-  // Simuler / Comparer even when single-mode results are showing.
-  const header = (
-    <div className="px-3 pt-3 pb-2" style={{ background: "var(--ow-bg-1)" }}>
-      <ModeToggle value={mode} onChange={onModeChange} />
-    </div>
-  );
-
-  if (isLoading) {
-    return (
-      <div>
-        {header}
-        <div className="p-3 space-y-2 animate-fade-in">
-          {[0, 1, 2].map((i) => <div key={i} className="skeleton h-9 rounded-lg" />)}
-        </div>
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div>
-        {header}
-        <div className="p-3">
-          <p className="text-xs rounded-lg px-3 py-2" style={{ background: "var(--ow-err-soft)", color: "var(--ow-err)" }}>{error}</p>
-        </div>
-      </div>
-    );
-  }
-  if (!passage || !complexity) return header;
-
-  const legs = aggregateLegs(passage.segments, waypoints);
-
-  return (
-    <div>
-      {header}
-      {/* Sticky header */}
-      <div
-        className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 border-b"
-        style={{ background: "var(--ow-bg-1)", borderColor: "var(--ow-line)" }}
-      >
-        <span className="text-xs font-semibold flex-1" style={{ color: "var(--ow-fg-1)" }}>
-          {legs.length} tronçon{legs.length > 1 ? "s" : ""} · {passage.distance_nm.toFixed(1)} nm
-        </span>
-        {isStale && (
-          <span className="text-[10px] font-medium shrink-0" style={{ color: "var(--ow-warn)" }}>⚠ Obsolète</span>
-        )}
-        <button
-          onClick={onRefetch}
-          className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors"
-          style={{
-            background: isStale ? "var(--ow-accent)" : "var(--ow-bg-2)",
-            color: isStale ? "#fff" : "var(--ow-fg-2)",
-            border: `1px solid ${isStale ? "transparent" : "var(--ow-line-2)"}`,
-          }}
-        >
-          <RefetchIcon />
-          Recalculer
-        </button>
-      </div>
-
-      {/* Leg rows */}
-      <div>
-        {legs.map((leg, i) => {
-          const cx = cxLevel((leg.tws_min + leg.tws_max) / 2);
-          const windLabel = Math.round(leg.tws_min) === Math.round(leg.tws_max)
-            ? `${Math.round(leg.tws_min)} kn`
-            : `${Math.round(leg.tws_min)}–${Math.round(leg.tws_max)} kn`;
-          const seaLabel = leg.hs_avg_m == null
-            ? null
-            : `${leg.hs_avg_m.toFixed(1)}m ${leg.sea_direction}`;
-          return (
-            <div
-              key={i}
-              className="flex items-center gap-2 px-3 py-2.5 border-b text-xs"
-              style={{ borderColor: "var(--ow-line)" }}
-            >
-              <span
-                className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]"
-                style={{ background: CX_COLORS[cx], color: "#fff" }}
-              >
-                {i + 1}
-              </span>
-              <span className="flex-1 tabular-nums" style={{ color: "var(--ow-fg-1)", fontFamily: "var(--ow-font-mono)" }}>
-                {leg.point_of_sail} · {windLabel}{seaLabel ? ` · ${seaLabel}` : ""} · {leg.boat_speed_kn.toFixed(1)} kn
-              </span>
-              <span className="tabular-nums shrink-0" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
-                {fmtTime(leg.end_time)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── CopyLinkButton ────────────────────────────────────────────────────────────
-
-function CopyLinkButton() {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-    } catch {
-      const el = document.createElement("textarea");
-      el.value = window.location.href;
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand("copy");
-      document.body.removeChild(el);
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-  return (
-    <button
-      onClick={copy}
-      className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-      style={{
-        background: copied ? "var(--ow-accent-soft)" : "var(--ow-bg-2)",
-        color: copied ? "var(--ow-accent)" : "var(--ow-fg-1)",
-        border: "1px solid var(--ow-line-2)",
-      }}
-    >
-      {copied ? "Copié ✓" : "🔗"}
-    </button>
-  );
-}
-
 // ── ResizableMobileDrawer ────────────────────────────────────────────────────
 // User-resizable bottom drawer: a 4 px grab-handle at the top responds to
 // pointer drag (mouse or touch) and adjusts the drawer height in vh. The
 // chosen height persists in localStorage so reload feels stable.
+//
+// Exposes an imperative `.expand()` so callers (e.g. the mode-picker click)
+// can pop the drawer up to a sensible reading height when the panel content
+// gets richer.
 
 const DRAWER_HEIGHT_KEY = "ow_drawer_vh_v1";
 const DRAWER_MIN_VH = 12;
 const DRAWER_MAX_VH = 90;
+const DRAWER_EXPANDED_VH = 75;
 
-function ResizableMobileDrawer({
-  defaultVh,
-  children,
-}: {
+interface DrawerHandle {
+  expand: () => void;
+}
+
+const ResizableMobileDrawer = forwardRef<DrawerHandle, {
   defaultVh: number;
   children: React.ReactNode;
-}) {
+}>(function ResizableMobileDrawer({ defaultVh, children }, ref) {
   const [vh, setVh] = useState<number>(() => {
     try {
       const raw = localStorage.getItem(DRAWER_HEIGHT_KEY);
@@ -272,6 +118,16 @@ function ResizableMobileDrawer({
   function persist(next: number) {
     try { localStorage.setItem(DRAWER_HEIGHT_KEY, String(next)); } catch { /* best-effort */ }
   }
+
+  useImperativeHandle(ref, () => ({
+    expand: () => {
+      setVh((prev) => {
+        const next = Math.max(prev, DRAWER_EXPANDED_VH);
+        if (next !== prev) persist(next);
+        return next;
+      });
+    },
+  }), []);
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     e.preventDefault();
@@ -317,7 +173,7 @@ function ResizableMobileDrawer({
       <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
     </div>
   );
-}
+});
 
 // ── ResizableDesktopSidebar ──────────────────────────────────────────────────
 // Desktop equivalent of ResizableMobileDrawer: vertical grab-handle on the left
@@ -406,6 +262,7 @@ function ResizableDesktopSidebar({
 
 export function PlanPage() {
   const mapRef = useRef<PlanMapHandle>(null);
+  const drawerRef = useRef<DrawerHandle>(null);
   const initialParsed = parsePlanUrl(window.location.search);
 
   const [waypoints, setWaypoints] = useState<[number, number][]>(
@@ -439,6 +296,11 @@ export function PlanPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [sweepInterval, setSweepInterval] = useState<number>(3);
+  // Selected leg for the sidebar's expanded "Comment c'est calculé" — also
+  // drives the highlight overlay on the map. Cleared whenever the route or
+  // its segments change so we never highlight stale ranges.
+  const [selectedLegIdx, setSelectedLegIdx] = useState<number | null>(null);
+  useEffect(() => { setSelectedLegIdx(null); }, [waypoints, passage]);
   const [windows, setWindows] = useState<PassageWindow[] | null>(null);
   const [metaWarnings, setMetaWarnings] = useState<string[]>([]);
 
@@ -683,21 +545,9 @@ export function PlanPage() {
       className="h-screen flex flex-col overflow-hidden"
       style={{ background: "var(--ow-bg-0)", color: "var(--ow-fg-0)" }}
     >
-      {/* Header */}
-      <header
-        className="shrink-0 h-12 flex items-center px-3 gap-2 border-b"
-        style={{ background: "var(--ow-bg-1)", borderColor: "var(--ow-line)" }}
-      >
-        <div className="flex-1 flex justify-center px-1">
-          <SpotSearch
-            onSelect={(spot) => mapRef.current?.recenter(spot.latitude, spot.longitude)}
-          />
-        </div>
-        <div className="flex items-center gap-1">
-          <CopyLinkButton />
-          <ThemeToggle />
-        </div>
-      </header>
+      <Header
+        onSelectSpot={(spot) => mapRef.current?.recenter(spot.latitude, spot.longitude)}
+      />
 
       {/* Body */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
@@ -712,6 +562,11 @@ export function PlanPage() {
             onWptAdd={waypoints.length >= 2 ? handleWptAdd : undefined}
             onWptDelete={handleWptDelete}
             onMapClick={handleMapClick}
+            highlightedSegmentRange={
+              selectedLegIdx != null && passage
+                ? computeLegSegmentRanges(passage.segments as { start: { lat: number; lon: number } }[], waypoints)[selectedLegIdx] ?? null
+                : null
+            }
           />
           {/* Back-to-explore FAB — mirrors the compass FAB on the home map */}
           <a
@@ -733,8 +588,10 @@ export function PlanPage() {
               </div>
             </div>
           )}
-          {/* Hero stats overlay — mobile only, floats above compact drawer */}
-          {passage && complexity && (
+          {/* Hero stats overlay — mobile only, floats above the drawer.
+              Hidden in compare mode (no single passage to summarise — the
+              windows table inside the drawer is the relevant view). */}
+          {passage && complexity && planMode === "single" && (
             <div className="lg:hidden absolute bottom-2 left-2 right-2 z-[400] pointer-events-none">
               <PlanHeroStats passage={passage} complexity={complexity} />
             </div>
@@ -772,56 +629,48 @@ export function PlanPage() {
             metaWarnings={metaWarnings}
             onCompareFetch={doFetchWindows}
             onWindowSelect={handleWindowSelect}
+            selectedLegIdx={selectedLegIdx}
+            onSelectedLegChange={setSelectedLegIdx}
+            onExpandDrawer={() => drawerRef.current?.expand()}
           />
         </ResizableDesktopSidebar>
       </div>
 
       {/* Mobile drawer — below map. User-resizable via the handle bar at the top. */}
-      <ResizableMobileDrawer defaultVh={passage ? 38 : 60}>
-        {passage && complexity && planMode === "single" ? (
-          <CompactDrawer
-            passage={passage}
-            complexity={complexity}
-            waypoints={waypoints}
-            isLoading={isLoading}
-            error={apiError}
-            isStale={isStale}
-            onRefetch={handleRefetch}
-            mode={planMode}
-            onModeChange={handleModeChange}
-          />
-        ) : (
-          <PlanSidebar
-            passage={passage}
-            complexity={complexity}
-            isLoading={isLoading}
-            error={apiError}
-            archetypes={archetypes}
-            currentArchetypeSlug={archetype}
-            onArchetypeChange={handleArchetypeChange}
-            departure={departure}
-            onDepartureChange={handleDepartureChange}
-            isStale={isStale}
-            onRefetch={handleRefetch}
-            forecastUpdatedAt={forecastUpdatedAt}
-            waypointCount={waypoints.length}
-            waypoints={waypoints}
-            timeAnchor={timeAnchor}
-            onTimeAnchorChange={handleTimeAnchorChange}
-            mode={planMode}
-            onModeChange={handleModeChange}
-            sweepEarliest={sweepEarliest}
-            sweepLatest={sweepLatest}
-            sweepIntervalHours={sweepInterval}
-            onSweepEarliestChange={setSweepEarliest}
-            onSweepLatestChange={setSweepLatest}
-            onSweepIntervalChange={setSweepInterval}
-            windows={windows}
-            metaWarnings={metaWarnings}
-            onCompareFetch={doFetchWindows}
-            onWindowSelect={handleWindowSelect}
-          />
-        )}
+      <ResizableMobileDrawer ref={drawerRef} defaultVh={passage ? 38 : 60}>
+        <PlanSidebar
+          passage={passage}
+          complexity={complexity}
+          isLoading={isLoading}
+          error={apiError}
+          archetypes={archetypes}
+          currentArchetypeSlug={archetype}
+          onArchetypeChange={handleArchetypeChange}
+          departure={departure}
+          onDepartureChange={handleDepartureChange}
+          isStale={isStale}
+          onRefetch={handleRefetch}
+          forecastUpdatedAt={forecastUpdatedAt}
+          waypointCount={waypoints.length}
+          waypoints={waypoints}
+          timeAnchor={timeAnchor}
+          onTimeAnchorChange={handleTimeAnchorChange}
+          mode={planMode}
+          onModeChange={handleModeChange}
+          sweepEarliest={sweepEarliest}
+          sweepLatest={sweepLatest}
+          sweepIntervalHours={sweepInterval}
+          onSweepEarliestChange={setSweepEarliest}
+          onSweepLatestChange={setSweepLatest}
+          onSweepIntervalChange={setSweepInterval}
+          windows={windows}
+          metaWarnings={metaWarnings}
+          onCompareFetch={doFetchWindows}
+          onWindowSelect={handleWindowSelect}
+          selectedLegIdx={selectedLegIdx}
+          onSelectedLegChange={setSelectedLegIdx}
+          onExpandDrawer={() => drawerRef.current?.expand()}
+        />
       </ResizableMobileDrawer>
     </div>
   );
