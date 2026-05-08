@@ -278,39 +278,70 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
   const [curLx, curLy] = currentAngle != null ? polarXY(currentLabelAngle, LABEL_R) : [0, 0];
   const curLabel = currentAngle != null ? labelLayout(currentLabelAngle) : { anchor: "middle" as const, dx: 0 };
 
+  // Build-up of the absolute (over-ground) target speed, shown as a small
+  // signed list under the headline number. Sign is explicit ("+", "−") on
+  // every line so the addition reads at a glance.
+  const fmtSigned1 = (n: number) => {
+    if (Math.abs(n) < 0.05) return "+0,0";
+    const sign = n > 0 ? "+" : "−";
+    return `${sign}${fmtFR1(Math.abs(n))}`;
+  };
+
   return (
     <div className="px-4 pb-4 pt-1">
       {/* Section header */}
       <div
-        className="flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase"
+        className="mb-2 text-[10px] font-bold uppercase"
         style={{ color: "var(--ow-accent)", letterSpacing: "0.1em" }}
       >
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="8" cy="8" r="6" />
-          <path d="M8 4 L8 8 L11 10" />
-        </svg>
         Vitesse absolue
       </div>
 
-      {/* Speed + allure + cap */}
-      <div className="flex items-baseline justify-between mb-2">
-        <div className="flex items-baseline gap-3">
-          <span
-            className="text-2xl font-bold tabular-nums"
-            style={{ color: "var(--ow-accent)", fontFamily: "var(--ow-font-mono)", letterSpacing: "-0.02em", lineHeight: 1 }}
-          >
-            {leg.target_speed_kn.toFixed(1)} kn
-          </span>
-          <span
-            className="text-xl font-bold"
-            style={{ color: "var(--ow-fg-0)", letterSpacing: "-0.01em", lineHeight: 1 }}
-          >
-            {leg.point_of_sail}
-          </span>
-        </div>
+      {/* Headline speed + cap */}
+      <div className="flex items-baseline justify-between mb-1.5">
+        <span
+          className="text-2xl font-bold tabular-nums"
+          style={{ color: "var(--ow-accent)", fontFamily: "var(--ow-font-mono)", letterSpacing: "-0.02em", lineHeight: 1 }}
+        >
+          {leg.target_speed_kn.toFixed(1)} kn
+        </span>
         <span className="text-[10px] tabular-nums" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
           cap {Math.round(leg.bearing_avg_deg)}°
         </span>
+      </div>
+
+      {/* Build-up: polaire (+) / mer (−) / courant (±) → cible */}
+      <div
+        className="text-[10px] tabular-nums leading-snug mb-2"
+        style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}
+      >
+        <div className="flex items-baseline gap-2">
+          <span className="w-10 tabular-nums">{fmtSigned1(leg.polar_after_eff_kn)}</span>
+          <span>polaire</span>
+        </div>
+        {hasWaves && Math.abs(leg.wave_delta_kn) > 0.05 && (
+          <div className="flex items-baseline gap-2">
+            <span className="w-10 tabular-nums" style={{ color: "var(--ow-warn)" }}>{fmtSigned1(leg.wave_delta_kn)}</span>
+            <span>mer</span>
+          </div>
+        )}
+        {leg.current_delta_kn != null && Math.abs(leg.current_delta_kn) > 0.05 && (
+          <div className="flex items-baseline gap-2">
+            <span
+              className="w-10 tabular-nums"
+              style={{ color: leg.current_delta_kn >= 0 ? "var(--ow-ok)" : "var(--ow-warn)" }}
+            >
+              {fmtSigned1(leg.current_delta_kn)}
+            </span>
+            <span>courant</span>
+          </div>
+        )}
+        <div className="flex items-baseline gap-2 mt-0.5 pt-0.5" style={{ borderTop: "1px solid var(--ow-line)" }}>
+          <span className="w-10 tabular-nums font-semibold" style={{ color: "var(--ow-fg-0)" }}>
+            {fmtFR1(leg.target_speed_kn)}
+          </span>
+          <span style={{ color: "var(--ow-fg-1)" }}>kn</span>
+        </div>
       </div>
 
       {/* Compass diagram */}
