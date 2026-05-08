@@ -471,6 +471,11 @@ function ArchetypeSelector({
 // Click-to-expand list of legs, with the "Comment c'est calculé" build-up
 // rendered inline for the open leg.
 
+// Shared 4-column template for the leg sub-line — kept as a constant so the
+// sidebar's legend header and every row use the same widths and the values
+// (allure / vent / vagues / distance) line up vertically across rows.
+const SEG_SUBLINE_COLS = "minmax(50px,0.7fr) minmax(40px,0.5fr) minmax(82px,1fr) minmax(44px,0.5fr)";
+
 function LegRow({
   leg,
   index,
@@ -486,7 +491,7 @@ function LegRow({
   const tws = Math.round(leg.tws_avg_kn);
   const seaPart = leg.hs_avg_m != null
     ? `${leg.hs_avg_m.toFixed(1)}m ${leg.sea_direction ?? ""}`.trim()
-    : null;
+    : "—";
   const fmtHM = (iso: string) =>
     new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   return (
@@ -507,8 +512,14 @@ function LegRow({
           <div className="text-xs font-semibold truncate" style={{ color: "var(--ow-fg-0)" }}>
             Tronçon {index + 1}
           </div>
-          <div className="text-[10px] mt-0.5 tabular-nums" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
-            {leg.point_of_sail} · {tws} kn{seaPart ? ` · ${seaPart}` : ""} · {leg.distance_nm.toFixed(1)} nm
+          <div
+            className="grid gap-2 mt-0.5 text-[10px] tabular-nums"
+            style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)", gridTemplateColumns: SEG_SUBLINE_COLS }}
+          >
+            <span className="truncate">{leg.point_of_sail}</span>
+            <span>{tws} kn</span>
+            <span className="truncate">{seaPart}</span>
+            <span>{leg.distance_nm.toFixed(1)} nm</span>
           </div>
           <div className="text-[10px] mt-0.5 tabular-nums" style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}>
             {fmtHM(leg.start_time)} → {fmtHM(leg.end_time)}
@@ -557,11 +568,21 @@ function LegList({
         </span>
       </div>
       <div
-        className="px-4 pb-1.5 text-[9px]"
+        className="flex items-center gap-2.5 px-4 pb-1.5 text-[9px]"
         style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}
       >
-        <span className="ml-[34px]">allure · vent · vagues · distance</span>
-        <span className="float-right">vitesse cible</span>
+        <span className="shrink-0 w-6" />
+        <div
+          className="flex-1 min-w-0 grid gap-2"
+          style={{ gridTemplateColumns: SEG_SUBLINE_COLS }}
+        >
+          <span>allure</span>
+          <span>vent</span>
+          <span>vagues</span>
+          <span>distance</span>
+        </div>
+        <span className="shrink-0">vitesse cible</span>
+        <span className="shrink-0 w-[14px]" />
       </div>
       <div style={{ borderTop: "1px solid var(--ow-line)" }}>
         {legs.map((leg, i) => (

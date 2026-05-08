@@ -218,29 +218,6 @@ function CardinalMarkers() {
   );
 }
 
-function LegendItem({ color, swatch, label }: { color: string; swatch: "arrow" | "windDouble" | "wave"; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[10px]" style={{ color: "var(--ow-fg-1)" }}>
-      {swatch === "windDouble" ? (
-        <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true">
-          <line x1="2" y1="3" x2="13" y2="3" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
-          <line x1="2" y1="7" x2="13" y2="7" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
-          <path d="M 13 1 L 18 5 L 13 9" stroke={color} strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      ) : swatch === "arrow" ? (
-        <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true">
-          <line x1="2" y1="5" x2="14" y2="5" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
-          <path d="M 11 2 L 16 5 L 11 8" stroke={color} strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      ) : (
-        <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true">
-          <path d="M 1 5 Q 5 1 9 5 T 17 5" stroke={color} strokeWidth="1.6" fill="none" strokeLinecap="round" />
-        </svg>
-      )}
-      <span>{label}</span>
-    </span>
-  );
-}
 
 // ── Main component ────────────────────────────────────────────────────────────
 export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
@@ -353,34 +330,42 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
           {/* Wind arrow (double-shaft, distinctive) */}
           <WindArrow fromR={ARROW_TAIL_R} toR={ARROW_TIP_R} angleDeg={windAngle} color={COLORS.wind} />
 
-          {/* Wind label at wind direction */}
+          {/* Wind label — caption above the value, same color & font as the arrow */}
           <text
             x={windLx + windLabel.dx}
-            y={windLy}
+            y={windLy - 7}
             textAnchor={windLabel.anchor}
             dominantBaseline="middle"
-            fontSize="12"
             fill={COLORS.wind}
-            style={{ fontFamily: "var(--ow-font-mono)", fontWeight: 700 }}
+            style={{ fontFamily: "var(--ow-font-mono)" }}
           >
-            {windLine}
+            <tspan fontSize="9" fontWeight="500">
+              {leg.gust_max_kn != null && leg.gust_max_kn > tws + 1 ? "Vent (rafales)" : "Vent"}
+            </tspan>
+            <tspan x={windLx + windLabel.dx} dy="13" fontSize="12" fontWeight="700">
+              {windLine}
+            </tspan>
           </text>
 
           {/* Waves wavy line at wave direction (offset 30° from wind so they
-              never share a shaft), with its own label */}
+              never share a shaft), with its own captioned label */}
           {hasWaves && (
             <>
               <WaveMark angleDeg={waveAngle} color={COLORS.waves} />
               <text
                 x={waveLx + waveLabel.dx}
-                y={waveLy}
+                y={waveLy - 7}
                 textAnchor={waveLabel.anchor}
                 dominantBaseline="middle"
-                fontSize="12"
                 fill={COLORS.waves}
-                style={{ fontFamily: "var(--ow-font-mono)", fontWeight: 700 }}
+                style={{ fontFamily: "var(--ow-font-mono)" }}
               >
-                {waveLine}
+                <tspan fontSize="9" fontWeight="500">
+                  {leg.tp_avg_s != null ? "Hauteur vagues (période)" : "Hauteur vagues"}
+                </tspan>
+                <tspan x={waveLx + waveLabel.dx} dy="13" fontSize="12" fontWeight="700">
+                  {waveLine}
+                </tspan>
               </text>
             </>
           )}
@@ -391,27 +376,20 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
               <CurrentFlowField flowAngleDeg={currentAngle} color={currentColor} />
               <text
                 x={curLx + curLabel.dx}
-                y={curLy}
+                y={curLy - 7}
                 textAnchor={curLabel.anchor}
                 dominantBaseline="middle"
-                fontSize="12"
                 fill={currentColor}
-                style={{ fontFamily: "var(--ow-font-mono)", fontWeight: 700 }}
+                style={{ fontFamily: "var(--ow-font-mono)" }}
               >
-                {leg.current_speed_kn?.toFixed(1) ?? "—"} kn
+                <tspan fontSize="9" fontWeight="500">Courant</tspan>
+                <tspan x={curLx + curLabel.dx} dy="13" fontSize="12" fontWeight="700">
+                  {leg.current_speed_kn != null ? `${leg.current_speed_kn.toFixed(1).replace(".", ",")} kn` : "— kn"}
+                </tspan>
               </text>
             </>
           )}
         </svg>
-      </div>
-
-      {/* Color legend — only the forces we're drawing */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center mt-1 mb-1">
-        <LegendItem color={COLORS.wind} swatch="windDouble" label="Vent" />
-        {hasWaves && <LegendItem color={COLORS.waves} swatch="wave" label="Vagues" />}
-        {currentAngle != null && (
-          <LegendItem color={currentColor} swatch="arrow" label="Courant" />
-        )}
       </div>
     </div>
   );
