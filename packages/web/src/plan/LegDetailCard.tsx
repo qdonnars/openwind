@@ -8,14 +8,14 @@ import type { AggregatedLeg } from "./aggregateLegs";
 //   white = vent, amber wavy = vagues,
 //   green/orange/grey arrow = courant (portant / contraire / travers).
 
-const SIZE = 280;
+const SIZE = 320;
 const CENTER = SIZE / 2;
-const COMPASS_R = 96;
-const ARROW_TAIL_R = 92;
-const ARROW_TIP_R = 56;
+const COMPASS_R = 104;
+const ARROW_TAIL_R = 100;
+const ARROW_TIP_R = 58;
 const CURRENT_TAIL_R = 38;
-const CURRENT_TIP_R = 88;
-const LABEL_R = 116;
+const CURRENT_TIP_R = 92;
+const LABEL_R = 122;
 
 const COLORS = {
   wind: "var(--ow-fg-0)",
@@ -24,10 +24,6 @@ const COLORS = {
   currentContraire: "#fb923c", // distinct from waves' amber so the eye doesn't merge them
   currentTravers: "var(--ow-fg-1)",
 };
-
-const COMPASS_16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"] as const;
-const compass16 = (deg: number): string =>
-  COMPASS_16[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
 
 // 0° = up (12 o'clock), increasing clockwise. Returns [x, y] in SVG coords.
 function polarXY(angleDeg: number, r: number): [number, number] {
@@ -180,19 +176,20 @@ function LegendItem({ color, swatch, label }: { color: string; swatch: "arrow" |
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function LegDetailCard({ leg, archetypeLabel }: { leg: AggregatedLeg; archetypeLabel: string }) {
+export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
   // Absolute compass bearings — boat is rotated to its actual heading and
   // every force sits at its true direction on the North-up dial.
   const windAngle = leg.twd_avg_deg;     // wind comes FROM this compass bearing
   const waveAngle = leg.twd_avg_deg + 6; // small offset; Med assumption (wind = waves)
   const tws = Math.round(leg.tws_avg_kn);
-  const gustNote =
+  const windLine =
     leg.gust_max_kn != null && leg.gust_max_kn > tws + 1
-      ? ` · raf. ${Math.round(leg.gust_max_kn)}`
-      : "";
-
-  // For sailing context, surface TWA in the footer (built from twd-bearing).
-  const twa = Math.abs(leg.twa_avg_deg) > 180 ? 360 - Math.abs(leg.twa_avg_deg) : Math.abs(leg.twa_avg_deg);
+      ? `${tws} (${Math.round(leg.gust_max_kn)}) kn`
+      : `${tws} kn`;
+  const fmtFR1 = (n: number) => n.toFixed(1).replace(".", ",");
+  const waveLine = leg.hs_avg_m != null
+    ? `${fmtFR1(leg.hs_avg_m)} m${leg.tp_avg_s != null ? ` (${Math.round(leg.tp_avg_s)} s)` : ""}`
+    : "";
   const hasWaves = leg.hs_avg_m != null;
 
   // Current arrow points OUTWARD from the boat in the direction water flows.
@@ -223,27 +220,36 @@ export function LegDetailCard({ leg, archetypeLabel }: { leg: AggregatedLeg; arc
         Conditions vues du bateau
       </div>
 
-      {/* Speed pill + heading caption */}
+      {/* Speed + allure + cap */}
       <div className="flex items-baseline justify-between mb-2">
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-baseline gap-3">
           <span
             className="text-2xl font-bold tabular-nums"
             style={{ color: "var(--ow-accent)", fontFamily: "var(--ow-font-mono)", letterSpacing: "-0.02em", lineHeight: 1 }}
           >
             {leg.target_speed_kn.toFixed(1)} kn
           </span>
-          <span className="text-[10px]" style={{ color: "var(--ow-fg-2)" }}>
-            vitesse cible
+          <span
+            className="text-xl font-bold"
+            style={{ color: "var(--ow-fg-0)", letterSpacing: "-0.01em", lineHeight: 1 }}
+          >
+            {leg.point_of_sail}
           </span>
         </div>
         <span className="text-[10px] tabular-nums" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
-          cap {Math.round(leg.bearing_avg_deg)}° {compass16(leg.bearing_avg_deg)}
+          cap {Math.round(leg.bearing_avg_deg)}°
         </span>
       </div>
 
       {/* Compass diagram */}
       <div className="flex justify-center">
-        <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-label="Conditions autour du bateau (vue Nord en haut)">
+        <svg
+          width={SIZE}
+          height={SIZE}
+          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          aria-label="Conditions autour du bateau (vue Nord en haut)"
+          style={{ overflow: "visible" }}
+        >
           {/* Outer dashed dial */}
           <circle cx={CENTER} cy={CENTER} r={COMPASS_R} fill="none" stroke="var(--ow-line-2)" strokeWidth="1" strokeDasharray="2 4" />
 
@@ -255,8 +261,8 @@ export function LegDetailCard({ leg, archetypeLabel }: { leg: AggregatedLeg; arc
             <BoatHull />
           </g>
 
-          {/* Wind arrow */}
-          <ForceArrow fromR={ARROW_TAIL_R} toR={ARROW_TIP_R} angleDeg={windAngle} color={COLORS.wind} />
+          {/* Wind arrow — drawn thicker than the rest so it reads first */}
+          <ForceArrow fromR={ARROW_TAIL_R} toR={ARROW_TIP_R} angleDeg={windAngle} color={COLORS.wind} width={3} />
 
           {/* Waves wavy line, slightly offset so it doesn't overlap the wind shaft */}
           {hasWaves && <WaveMark angleDeg={waveAngle} color={COLORS.waves} />}
@@ -264,27 +270,17 @@ export function LegDetailCard({ leg, archetypeLabel }: { leg: AggregatedLeg; arc
           {/* Combined wind + wave label, stacked rows, single anchor outside the dial */}
           <text
             x={windWaveLx + windLabel.dx}
-            y={windWaveLy - (hasWaves ? 12 : 0)}
+            y={windWaveLy - (hasWaves ? 10 : 0)}
             textAnchor={windLabel.anchor}
             dominantBaseline="middle"
-            fontSize="11"
+            fontSize="12"
             fill={COLORS.wind}
-            style={{ fontFamily: "var(--ow-font-mono)", fontWeight: 600 }}
+            style={{ fontFamily: "var(--ow-font-mono)", fontWeight: 700 }}
           >
-            <tspan>{tws} kn{gustNote}</tspan>
-            <tspan x={windWaveLx + windLabel.dx} dy="12" fill="var(--ow-fg-2)" fontWeight="500">
-              {compass16(leg.twd_avg_deg)}
+            <tspan>{windLine}</tspan>
+            <tspan x={windWaveLx + windLabel.dx} dy="13" fill={COLORS.waves} fontWeight="600">
+              {hasWaves ? waveLine : ""}
             </tspan>
-            {hasWaves && (
-              <>
-                <tspan x={windWaveLx + windLabel.dx} dy="14" fill={COLORS.waves} fontWeight="600">
-                  Hs {leg.hs_avg_m!.toFixed(1)} m
-                </tspan>
-                <tspan x={windWaveLx + windLabel.dx} dy="12" fill="var(--ow-fg-2)" fontWeight="500">
-                  {leg.tp_avg_s != null ? `Tp ${leg.tp_avg_s.toFixed(1)} s` : ""}
-                </tspan>
-              </>
-            )}
           </text>
 
           {/* Current arrow (water flows toward `current_direction_to_deg`) */}
@@ -310,18 +306,19 @@ export function LegDetailCard({ leg, archetypeLabel }: { leg: AggregatedLeg; arc
         </svg>
       </div>
 
-      {/* Color legend */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center mt-1 mb-2">
+      {/* Color legend — current entry only when a current is actually drawn */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center mt-1 mb-1">
         <LegendItem color={COLORS.wind} swatch="arrow" label="Vent" />
-        <LegendItem color={COLORS.waves} swatch="wave" label="Vagues" />
-        <LegendItem color={COLORS.currentPortant} swatch="arrow" label="Courant portant" />
-        <LegendItem color={COLORS.currentContraire} swatch="arrow" label="contraire" />
-        <LegendItem color={COLORS.currentTravers} swatch="arrow" label="travers" />
-      </div>
-
-      {/* Footer line */}
-      <div className="text-[10px] mt-1 leading-relaxed text-center" style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}>
-        Polaire {archetypeLabel} · TWA {Math.round(twa)}° · efficacité {Math.round(leg.efficiency * 100)}%
+        {hasWaves && <LegendItem color={COLORS.waves} swatch="wave" label="Vagues" />}
+        {currentAngle != null && leg.current_relative === "portant" && (
+          <LegendItem color={COLORS.currentPortant} swatch="arrow" label="Courant portant" />
+        )}
+        {currentAngle != null && leg.current_relative === "contraire" && (
+          <LegendItem color={COLORS.currentContraire} swatch="arrow" label="Courant contraire" />
+        )}
+        {currentAngle != null && leg.current_relative === "travers" && (
+          <LegendItem color={COLORS.currentTravers} swatch="arrow" label="Courant travers" />
+        )}
       </div>
     </div>
   );

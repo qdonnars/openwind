@@ -475,13 +475,11 @@ function LegRow({
   leg,
   index,
   expanded,
-  archetypeLabel,
   onToggle,
 }: {
   leg: AggregatedLeg;
   index: number;
   expanded: boolean;
-  archetypeLabel: string;
   onToggle: () => void;
 }) {
   const cx = cxLevel((leg.tws_min + leg.tws_max) / 2);
@@ -533,12 +531,12 @@ function LegRow({
           </svg>
         </span>
       </button>
-      {expanded && <LegDetailCard leg={leg} archetypeLabel={archetypeLabel} />}
+      {expanded && <LegDetailCard leg={leg} />}
     </div>
   );
 }
 
-function LegList({ legs, archetypeLabel }: { legs: AggregatedLeg[]; archetypeLabel: string }) {
+function LegList({ legs }: { legs: AggregatedLeg[] }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   return (
     <div>
@@ -565,7 +563,6 @@ function LegList({ legs, archetypeLabel }: { legs: AggregatedLeg[]; archetypeLab
             leg={leg}
             index={i}
             expanded={openIdx === i}
-            archetypeLabel={archetypeLabel}
             onToggle={() => setOpenIdx((cur) => (cur === i ? null : i))}
           />
         ))}
@@ -908,7 +905,7 @@ export function PlanSidebar({
       {/* Legs — click any row to see the build-up */}
       {(() => {
         const legs = aggregateLegs(passage.segments, waypoints, passage.efficiency);
-        return <LegList legs={legs} archetypeLabel={archetypeLabel} />;
+        return <LegList legs={legs} />;
       })()}
 
       {/* Footer */}
