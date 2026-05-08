@@ -7,11 +7,6 @@ interface PillsProps {
   showWaves: boolean;
   showTides: boolean;
   showCurrents: boolean;
-  // ``"marc_<atlas>_<res>m"`` when MARC PREVIMER overrides tide+current; we
-  // use this to drive a small "MARC <res>" badge on the Tides/Currents pills
-  // so users know the precision they're getting.
-  currentSource?: string;
-  marcResolutionM?: number;
 }
 
 interface PillDef {
@@ -19,14 +14,6 @@ interface PillDef {
   label: string;
   visible: boolean;
   icon: ReactNode;
-  badge?: string;
-}
-
-// Render the resolution as the unit a sailor would expect: 250 m, 700 m, 2 km.
-function formatMarcBadge(resolutionM: number | undefined): string {
-  if (resolutionM == null) return "MARC";
-  if (resolutionM >= 1000) return `MARC ${(resolutionM / 1000).toFixed(0)} km`;
-  return `MARC ${resolutionM} m`;
 }
 
 // Wind: stacked airflow lines (mirrors the brand mark in Header).
@@ -68,16 +55,12 @@ export function MetricPills({
   showWaves,
   showTides,
   showCurrents,
-  currentSource,
-  marcResolutionM,
 }: PillsProps) {
-  const marcActive = currentSource != null && currentSource.startsWith("marc_");
-  const marcBadge = marcActive ? formatMarcBadge(marcResolutionM) : undefined;
   const pills: PillDef[] = [
     { view: "wind", label: "Wind", visible: true, icon: WindIcon },
     { view: "waves", label: "Waves", visible: showWaves, icon: WavesIcon },
-    { view: "tides", label: "Tides", visible: showTides, icon: TidesIcon, badge: marcBadge },
-    { view: "currents", label: "Currents", visible: showCurrents, icon: CurrentsIcon, badge: marcBadge },
+    { view: "tides", label: "Tides", visible: showTides, icon: TidesIcon },
+    { view: "currents", label: "Currents", visible: showCurrents, icon: CurrentsIcon },
   ];
   const visible = pills.filter((p) => p.visible);
   if (visible.length <= 1) return null;
@@ -105,18 +88,6 @@ export function MetricPills({
           >
             <span aria-hidden className="shrink-0">{p.icon}</span>
             <span>{p.label}</span>
-            {p.badge && (
-              <span
-                className="ml-0.5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded"
-                style={{
-                  background: active ? "var(--ow-accent)" : "var(--ow-line-2)",
-                  color: active ? "#fff" : "var(--ow-fg-2)",
-                }}
-                title={`Source: ${p.badge}`}
-              >
-                {p.badge}
-              </span>
-            )}
           </button>
         );
       })}
