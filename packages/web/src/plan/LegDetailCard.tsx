@@ -250,21 +250,23 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
 
   // Each force gets its own label outside the dial at its own angle.
   // Wind & wave are spread by construction (30° angular offset). The current's
-  // angle is independent — when it lands within 40° of either wind or wave,
-  // pin its label opposite the wind direction so labels never share screen
-  // space. Two-line labels (caption + value) made the previous radial bump
-  // insufficient. The user is fine with the current label's position being
-  // arbitrary in this case; the on-dial flow field still shows the true
-  // flow direction.
+  // angle is independent — collision rules (user spec):
+  //   – close (<40°) to wind only   → label opposite the wind
+  //   – close (<40°) to wave only   → label opposite the wind (still ≥150° away)
+  //   – close to BOTH wind and wave → label perpendicular to the wind (+90°)
+  // The on-dial flow field still draws at the true current direction; only
+  // the textual annotation moves.
   const angularGap = (a: number, b: number): number => {
     const d = ((a - b + 540) % 360) - 180;
     return Math.abs(d);
   };
   let currentLabelAngle = currentAngle ?? 0;
   if (currentAngle != null) {
-    const tooCloseToWind = angularGap(currentAngle, windAngle) < 40;
-    const tooCloseToWave = angularGap(currentAngle, waveAngle) < 40;
-    if (tooCloseToWind || tooCloseToWave) {
+    const closeToWind = angularGap(currentAngle, windAngle) < 40;
+    const closeToWave = angularGap(currentAngle, waveAngle) < 40;
+    if (closeToWind && closeToWave) {
+      currentLabelAngle = (windAngle + 90) % 360;
+    } else if (closeToWind || closeToWave) {
       currentLabelAngle = (windAngle + 180) % 360;
     }
   }
