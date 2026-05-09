@@ -45,66 +45,26 @@ export function InfoPanel() {
           className="text-sm font-semibold mb-1.5 uppercase tracking-wider"
           style={{ color: "var(--ow-accent)" }}
         >
-          Sources des données
+          Sources des données et méthodologie
         </h3>
-        <ul
-          className="text-sm leading-relaxed space-y-1"
-          style={{ color: "var(--ow-fg-1)" }}
+        <p className="text-sm leading-relaxed mb-3" style={{ color: "var(--ow-fg-1)" }}>
+          Modèles vent (AROME, ICON, ECMWF, GFS), vagues et niveau de la mer
+          (Open-Meteo Marine, WaveWatch III), courants (SMOC Copernicus + atlas
+          haute résolution MARC PREVIMER pour l'Atlantique), conventions, équations
+          de planification de passage et notation de complexité : tout est détaillé
+          sur la page méthodologie.
+        </p>
+        <a
+          href="/methodologie"
+          className="inline-flex items-center gap-2 text-sm font-medium transition-opacity hover:opacity-80"
+          style={{ color: "var(--ow-accent)" }}
         >
-          <li>
-            Vent (multi-modèle) :{" "}
-            <a
-              href="https://open-meteo.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-              style={{ color: "var(--ow-accent)" }}
-            >
-              Open-Meteo Forecast
-            </a>
-            , CC BY 4.0
-          </li>
-          <li>
-            Vagues, courants, hauteur d'eau :{" "}
-            <a
-              href="https://open-meteo.com/en/docs/marine-weather-api"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-              style={{ color: "var(--ow-accent)" }}
-            >
-              Open-Meteo Marine
-            </a>{" "}
-            (SMOC pour les courants), CC BY 4.0
-          </li>
-          <li>
-            Atlas haute résolution courants &amp; marée (Atlantique, passes
-            critiques) :{" "}
-            <a
-              href="https://marc.ifremer.fr/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-              style={{ color: "var(--ow-accent)" }}
-            >
-              IFREMER MARC PREVIMER
-            </a>{" "}
-            (250 m / 2 km)
-          </li>
-          <li>
-            Cartographie :{" "}
-            <a
-              href="https://www.openstreetmap.org/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-              style={{ color: "var(--ow-accent)" }}
-            >
-              OpenStreetMap
-            </a>
-            , ODbL
-          </li>
-        </ul>
+          Voir la méthodologie complète
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="5" y1="12" x2="19" y2="12" />
+            <polyline points="12 5 19 12 12 19" />
+          </svg>
+        </a>
       </section>
 
       <section

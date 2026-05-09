@@ -1,0 +1,180 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 760" role="img" aria-labelledby="title desc" font-family="ui-sans-serif, system-ui, -apple-system, sans-serif">
+  <title id="title">Découpage d'une route en sous-segments</title>
+  <desc id="desc">Trois scénarios illustrent la règle n = ceil(d / L) : un tronçon court reste entier, un tronçon moyen est subdivisé, une route longue voit L étiré. Les barres verticales marquent les frontières de sous-segments, les disques teal marquent les points où vent, courant et vagues sont récupérés.</desc>
+
+  <defs>
+    <style>
+      .label   { font-size: 13px; fill: currentColor; }
+      .small   { font-size: 11px; fill: currentColor; opacity: 0.7; }
+      .title   { font-size: 15px; font-weight: 600; fill: currentColor; }
+      .formula { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; fill: currentColor; }
+      .accent-text { fill: #14b8a6; font-size: 12px; font-weight: 500; }
+      .leg     { stroke: #14b8a6; stroke-width: 2.5; }
+      .wp      { fill: currentColor; }
+      .met     { fill: #14b8a6; stroke: #0f766e; stroke-width: 1; }
+      .sep     { stroke: currentColor; stroke-width: 2; opacity: 0.5; }
+      .callout { stroke: #14b8a6; stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; }
+      .bracket { stroke: currentColor; stroke-width: 1; opacity: 0.35; }
+    </style>
+  </defs>
+
+  <!-- ============================================================ -->
+  <!-- SCENARIO 1 — Leg court (8 mn ≤ L=10), reste entier -->
+  <!-- ============================================================ -->
+  <g transform="translate(0,20)">
+    <text x="40" y="20" class="title">Cas 1 : tronçon court (8 mn ≤ L = 10 mn) → 1 segment</text>
+
+    <!-- route -->
+    <line x1="120" y1="100" x2="560" y2="100" class="leg"/>
+    <!-- waypoints -->
+    <circle cx="120" cy="100" r="7" class="wp"/>
+    <circle cx="560" cy="100" r="7" class="wp"/>
+    <text x="120" y="125" class="label" text-anchor="middle">A</text>
+    <text x="560" y="125" class="label" text-anchor="middle">B</text>
+
+    <!-- met sampling point at midpoint -->
+    <circle cx="340" cy="100" r="7" class="met"/>
+    <line x1="340" y1="100" x2="340" y2="65" class="callout"/>
+    <text x="340" y="58" class="accent-text" text-anchor="middle">vent + courant + vagues</text>
+
+    <!-- distance bracket -->
+    <line x1="120" y1="145" x2="560" y2="145" class="bracket"/>
+    <line x1="120" y1="140" x2="120" y2="150" class="bracket"/>
+    <line x1="560" y1="140" x2="560" y2="150" class="bracket"/>
+    <text x="340" y="165" class="small" text-anchor="middle">d = 8 mn</text>
+
+    <!-- formula -->
+    <text x="600" y="95" class="formula">n = ceil(8 / 10) = 1</text>
+    <text x="600" y="113" class="small">→ pas de découpe</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- SCENARIO 2 — Leg moyen (25 mn > L=10), 3 sous-segments -->
+  <!-- ============================================================ -->
+  <g transform="translate(0,220)">
+    <text x="40" y="20" class="title">Cas 2 : tronçon moyen (25 mn &gt; L) → 3 sous-segments d'environ 8 mn</text>
+
+    <!-- route -->
+    <line x1="120" y1="100" x2="560" y2="100" class="leg"/>
+
+    <!-- waypoints -->
+    <circle cx="120" cy="100" r="7" class="wp"/>
+    <circle cx="560" cy="100" r="7" class="wp"/>
+    <text x="120" y="135" class="label" text-anchor="middle">A</text>
+    <text x="560" y="135" class="label" text-anchor="middle">B</text>
+
+    <!-- VERTICAL SEPARATORS at sub-segment boundaries -->
+    <line x1="266" y1="80" x2="266" y2="120" class="sep"/>
+    <line x1="412" y1="80" x2="412" y2="120" class="sep"/>
+
+    <!-- met sampling points at each sub-segment midpoint -->
+    <circle cx="193" cy="100" r="7" class="met"/>
+    <circle cx="339" cy="100" r="7" class="met"/>
+    <circle cx="486" cy="100" r="7" class="met"/>
+
+    <!-- single label spanning the 3 dots -->
+    <line x1="193" y1="100" x2="193" y2="62" class="callout"/>
+    <line x1="339" y1="100" x2="339" y2="50" class="callout"/>
+    <line x1="486" y1="100" x2="486" y2="62" class="callout"/>
+    <line x1="193" y1="50" x2="486" y2="50" class="callout"/>
+    <text x="339" y="42" class="accent-text" text-anchor="middle">3 sondages indépendants : vent + courant + vagues</text>
+
+    <!-- distance per sub-segment -->
+    <text x="193" y="170" class="small" text-anchor="middle">~8 mn</text>
+    <text x="339" y="170" class="small" text-anchor="middle">~8 mn</text>
+    <text x="486" y="170" class="small" text-anchor="middle">~8 mn</text>
+    <line x1="120" y1="150" x2="266" y2="150" class="bracket"/>
+    <line x1="266" y1="150" x2="412" y2="150" class="bracket"/>
+    <line x1="412" y1="150" x2="560" y2="150" class="bracket"/>
+    <line x1="120" y1="145" x2="120" y2="155" class="bracket"/>
+    <line x1="266" y1="145" x2="266" y2="155" class="bracket"/>
+    <line x1="412" y1="145" x2="412" y2="155" class="bracket"/>
+    <line x1="560" y1="145" x2="560" y2="155" class="bracket"/>
+
+    <!-- formula -->
+    <text x="600" y="95" class="formula">n = ceil(25 / 10) = 3</text>
+    <text x="600" y="113" class="small">→ 25/3 ≈ 8.3 mn par segment</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- SCENARIO 3 — Route longue (200 mn), L étiré à 20 mn -->
+  <!-- ============================================================ -->
+  <g transform="translate(0,440)">
+    <text x="40" y="20" class="title">Cas 3 : route longue (200 mn sur 2 tronçons) → L étiré à 20 mn pour rester sous 10 sondages</text>
+
+    <!-- LEG A→B (140 mn → 7 sub-segments) -->
+    <line x1="80" y1="100" x2="480" y2="100" class="leg"/>
+    <!-- LEG B→C (60 mn → 3 sub-segments) -->
+    <line x1="480" y1="100" x2="650" y2="100" class="leg"/>
+
+    <!-- waypoints A, B, C -->
+    <circle cx="80"  cy="100" r="7" class="wp"/>
+    <circle cx="480" cy="100" r="7" class="wp"/>
+    <circle cx="650" cy="100" r="7" class="wp"/>
+    <text x="80"  y="135" class="label" text-anchor="middle">A</text>
+    <text x="480" y="135" class="label" text-anchor="middle">B</text>
+    <text x="650" y="135" class="label" text-anchor="middle">C</text>
+
+    <!-- separators within leg A→B (6 boundaries between 7 sub-segments) -->
+    <g class="sep">
+      <line x1="137" y1="84" x2="137" y2="116"/>
+      <line x1="194" y1="84" x2="194" y2="116"/>
+      <line x1="251" y1="84" x2="251" y2="116"/>
+      <line x1="309" y1="84" x2="309" y2="116"/>
+      <line x1="366" y1="84" x2="366" y2="116"/>
+      <line x1="423" y1="84" x2="423" y2="116"/>
+    </g>
+    <!-- separators within leg B→C (2 boundaries between 3 sub-segments) -->
+    <g class="sep">
+      <line x1="537" y1="84" x2="537" y2="116"/>
+      <line x1="594" y1="84" x2="594" y2="116"/>
+    </g>
+
+    <!-- met sampling points (10 total) -->
+    <g class="met">
+      <!-- leg A→B: midpoints of 7 sub-segments -->
+      <circle cx="109" cy="100" r="5"/>
+      <circle cx="166" cy="100" r="5"/>
+      <circle cx="223" cy="100" r="5"/>
+      <circle cx="280" cy="100" r="5"/>
+      <circle cx="338" cy="100" r="5"/>
+      <circle cx="395" cy="100" r="5"/>
+      <circle cx="452" cy="100" r="5"/>
+      <!-- leg B→C: midpoints of 3 sub-segments -->
+      <circle cx="508" cy="100" r="5"/>
+      <circle cx="565" cy="100" r="5"/>
+      <circle cx="622" cy="100" r="5"/>
+    </g>
+
+    <text x="365" y="62" class="accent-text" text-anchor="middle">10 sondages : vent + courant + vagues à chaque point teal</text>
+
+    <!-- distance annotations -->
+    <text x="280" y="170" class="small" text-anchor="middle">tronçon A→B = 140 mn (7 segments)</text>
+    <text x="565" y="170" class="small" text-anchor="middle">tronçon B→C = 60 mn (3 segments)</text>
+    <line x1="80" y1="150" x2="480" y2="150" class="bracket"/>
+    <line x1="80" y1="145" x2="80" y2="155" class="bracket"/>
+    <line x1="480" y1="145" x2="480" y2="155" class="bracket"/>
+    <line x1="480" y1="150" x2="650" y2="150" class="bracket"/>
+    <line x1="650" y1="145" x2="650" y2="155" class="bracket"/>
+
+    <!-- formula -->
+    <text x="660" y="95" class="formula">L étiré : 10 → 20 mn</text>
+    <text x="660" y="113" class="small">plafond : 10 segments / route</text>
+
+    <text x="40" y="210" class="small">À 10 mn par défaut, la route ferait 20 segments → 20 requêtes Open-Meteo. On étire L pour rester sous 10.</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- LEGEND -->
+  <!-- ============================================================ -->
+  <g transform="translate(40, 700)">
+    <circle cx="8" cy="8" r="6" class="wp"/>
+    <text x="22" y="12" class="small" style="opacity:0.85">point de route (utilisateur)</text>
+
+    <line x1="200" y1="-4" x2="200" y2="20" class="sep"/>
+    <text x="212" y="12" class="small" style="opacity:0.85">frontière de sous-segment</text>
+
+    <circle cx="400" cy="8" r="6" class="met"/>
+    <text x="414" y="12" class="small" style="opacity:0.85">sondage météo (vent + courant + vagues)</text>
+  </g>
+</svg>
