@@ -96,13 +96,14 @@ class TestReadMe:
 
 
 class TestListArchetypes:
-    async def test_returns_five_archetypes_with_metadata(self) -> None:
+    async def test_returns_archetypes_with_metadata(self) -> None:
         server = build_server(adapter=StubAdapter())
         out = await _call(server, "list_boat_archetypes", {})
         items = out["result"] if isinstance(out, dict) and "result" in out else out
-        assert len(items) == 5
+        assert len(items) == 7
         names = {a["name"] for a in items}
         assert "cruiser_40ft" in names
+        assert {"cruiser_20ft", "cruiser_25ft"} <= names
         for a in items:
             assert {"length_ft", "type", "category", "performance_class", "examples"} <= a.keys()
 
@@ -155,6 +156,7 @@ class TestPlanPassage:
     async def test_ui_resource_registered(self) -> None:
         # MCP Apps: the host needs to be able to fetch ui://openwind/plan-passage.
         from openwind_mcp_core.server import PLAN_UI_RESOURCE_URI
+
         server = build_server(adapter=StubAdapter())
         resources = await server.list_resources()
         uris = [str(r.uri) for r in resources]
@@ -202,12 +204,25 @@ class TestPlanPassageSweep:
         server = build_server(adapter=StubAdapter())
         out = await _call(server, "plan_passage", _SWEEP_ARGS)
         w = out["windows"][0]
-        assert {"departure", "arrival", "duration_h", "distance_nm", "complexity",
-                "conditions_summary", "warnings", "openwind_url"} <= w.keys()
+        assert {
+            "departure",
+            "arrival",
+            "duration_h",
+            "distance_nm",
+            "complexity",
+            "conditions_summary",
+            "warnings",
+            "openwind_url",
+        } <= w.keys()
         assert 1 <= w["complexity"]["level"] <= 5
         cs = w["conditions_summary"]
-        assert {"tws_min_kn", "tws_max_kn", "predominant_sail_angle",
-                "hs_min_m", "hs_max_m"} <= cs.keys()
+        assert {
+            "tws_min_kn",
+            "tws_max_kn",
+            "predominant_sail_angle",
+            "hs_min_m",
+            "hs_max_m",
+        } <= cs.keys()
         assert cs["predominant_sail_angle"] in ("pres", "travers", "largue", "portant")
 
     async def test_html_never_rendered_in_sweep(self) -> None:
@@ -227,9 +242,11 @@ class TestPlanPassageSweep:
 
     async def test_sweep_departures_ordered_and_spaced(self) -> None:
         server = build_server(adapter=StubAdapter())
-        args = {**_BASE_PLAN_ARGS,
-                "latest_departure": datetime(2026, 5, 1, 8, 0, tzinfo=UTC).isoformat(),
-                "sweep_interval_hours": 1}
+        args = {
+            **_BASE_PLAN_ARGS,
+            "latest_departure": datetime(2026, 5, 1, 8, 0, tzinfo=UTC).isoformat(),
+            "sweep_interval_hours": 1,
+        }
         out = await _call(server, "plan_passage", args)
         windows = out["windows"]
         assert len(windows) == 3  # 06:00, 07:00, 08:00
@@ -262,7 +279,7 @@ class TestPlanPassageSweep:
         assert len(out["windows"]) >= 1
 
     async def test_sweep_cap_exceeded_raises(self) -> None:
-        import pytest
+
         server = build_server(adapter=StubAdapter())
         args = {
             **_BASE_PLAN_ARGS,

@@ -53,7 +53,7 @@ card.
 
 - **Free & keyless** wind + sea data via [Open-Meteo](https://open-meteo.com) (CC BY 4.0).
 - **Mediterranean-tuned** AROME 1.3 km by default, catches thermals & mistral. ICON-EU → ECMWF → GFS for longer reach.
-- **Boat-aware** 5 archetypes, real polars, `efficiency` parameter for trim and crew level.
+- **Boat-aware** 7 archetypes from 20 to 50 ft, real polars, `efficiency` parameter for trim and crew level.
 - **Window-aware** one call sweeps up to 14 days of hourly departures so the LLM can pick the calmest slot.
 - **Client-agnostic** one HTTP MCP endpoint, no vendor lock-in. Rich [MCP Apps](https://modelcontextprotocol.io/extensions/client-matrix) widget on supporting hosts; clean deep-link fallback on the rest.
 - **Open source, MIT** self-host on Fly, Modal, your VPS in minutes.
@@ -62,7 +62,7 @@ card.
 
 | Tool                      | What it does                                                              |
 |---------------------------|---------------------------------------------------------------------------|
-| `list_boat_archetypes`    | Five descriptive archetypes; the LLM maps "Sun Odyssey 36" → `cruiser_30ft`. |
+| `list_boat_archetypes`    | Seven descriptive archetypes; the LLM maps "Sun Odyssey 36" → `cruiser_30ft`. |
 | `get_marine_forecast`     | Wind + sea around a point/window, multi-model.                            |
 | `plan_passage`            | End-to-end: per-leg timing + 1–5 complexity + openwind.fr deep-link, in one call. Pass `latest_departure` and it walks every hourly window up to 14 days out so the LLM can compare side-by-side. Declares an MCP Apps UI resource supporting hosts auto-render the live plan in a sandboxed iframe. |
 | `read_me`                 | Returns OpenWind's calculation methodology call when the user asks how things are computed. |

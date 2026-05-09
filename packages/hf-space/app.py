@@ -231,7 +231,7 @@ LANDING_HTML = """<!doctype html>
     <li><strong>Free &amp; keyless.</strong> Wind + sea via
       <a href="https://open-meteo.com">Open-Meteo</a> (CC BY 4.0).</li>
     <li><strong>Mediterranean-tuned.</strong> AROME 1.3 km by default; ICON-EU &rarr; ECMWF &rarr; GFS for longer reach.</li>
-    <li><strong>Boat-aware.</strong> Five archetypes, real polars, an <code>efficiency</code> parameter for trim and crew level.</li>
+    <li><strong>Boat-aware.</strong> Seven archetypes from 20 to 50 ft, real polars, an <code>efficiency</code> parameter for trim and crew level.</li>
     <li><strong>Window-aware.</strong> One call sweeps up to 14 days of hourly departures so the LLM can pick the calmest slot.</li>
     <li><strong>Client-agnostic.</strong> One HTTP MCP endpoint. No vendor lock-in.</li>
     <li><strong>Open source, MIT.</strong> Self-host on Fly, Modal, your VPS.</li>
