@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import type { Spot, GeocodingResult } from "../types";
 import { searchSpots } from "../api/openmeteo";
 
@@ -10,17 +11,34 @@ export function SpotSearch({ onSelect }: SpotSearchProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GeocodingResult[]>([]);
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const updatePos = useCallback(() => {
+    if (!containerRef.current) return;
+    const r = containerRef.current.getBoundingClientRect();
+    setPos({ top: r.bottom + 6, left: r.left, width: r.width });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePos();
+    window.addEventListener("resize", updatePos);
+    window.addEventListener("scroll", updatePos, true);
+    return () => {
+      window.removeEventListener("resize", updatePos);
+      window.removeEventListener("scroll", updatePos, true);
+    };
+  }, [open, updatePos]);
+
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (containerRef.current?.contains(target)) return;
+      const dropdown = document.getElementById("ow-search-dropdown-portal");
+      if (dropdown?.contains(target)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -71,8 +89,12 @@ export function SpotSearch({ onSelect }: SpotSearchProps) {
           className="ow-search-input w-full pl-9 pr-3 py-2.5 min-h-[44px] rounded-xl text-sm transition-all"
         />
       </div>
-      {open && (
-        <ul className="ow-search-dropdown absolute top-full left-0 right-0 mt-1.5 rounded-xl overflow-hidden z-50 animate-fade-in">
+      {open && pos && createPortal(
+        <ul
+          id="ow-search-dropdown-portal"
+          className="ow-search-dropdown rounded-xl overflow-hidden animate-fade-in"
+          style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, zIndex: 1000 }}
+        >
           {results.map((r) => (
             <li
               key={r.id}
@@ -86,7 +108,8 @@ export function SpotSearch({ onSelect }: SpotSearchProps) {
               <span style={{ color: 'var(--ow-fg-2)' }}> — {r.country}</span>
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body
       )}
     </div>
   );
