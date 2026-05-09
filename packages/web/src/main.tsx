@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App";
 import { PlanPage } from "./routes/PlanPage";
+import { MethodologiePage } from "./routes/MethodologiePage";
 import { ThemeProvider } from "./design/theme";
 
 // GitHub Pages 404.html redirect: restore original path stored in sessionStorage
@@ -12,12 +13,14 @@ if (spaRedirect) {
   window.history.replaceState(null, "", spaRedirect);
 }
 
-const isPlan = window.location.pathname === "/plan";
+const path = window.location.pathname;
+const isPlan = path === "/plan";
+const isMethodologie = path === "/methodologie";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
-      {isPlan ? <PlanPage /> : <App />}
+      {isPlan ? <PlanPage /> : isMethodologie ? <MethodologiePage /> : <App />}
     </ThemeProvider>
   </StrictMode>
 );
