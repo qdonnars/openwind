@@ -1,6 +1,7 @@
 # Boat archetypes — V1 polars and assumptions
 
-OpenWind ships 5 archetypes covering the bulk of Mediterranean cruising fleets.
+OpenWind ships 7 archetypes covering the bulk of French cruising fleets, from
+small trailerable cruisers to bluewater 50-footers and a racer-cruiser.
 The LLM client is expected to map a user's commercial boat name (e.g. *"Sun
 Odyssey 32"*) onto the closest archetype using the fields exposed by
 `list_archetypes()` — there is no server-side mapping table.
@@ -9,6 +10,8 @@ Odyssey 32"*) onto the closest archetype using the fields exposed by
 
 | Name              | Length | Type      | Category       | Performance class | Indicative models                                      |
 |-------------------|--------|-----------|----------------|-------------------|--------------------------------------------------------|
+| `cruiser_20ft`    | 20 ft  | monohull  | cruising       | slow              | Beneteau First 210, Catalina 22, Jeanneau Tonic 23, Sun 2000 |
+| `cruiser_25ft`    | 25 ft  | monohull  | cruising       | slow              | Beneteau First 25, Catalina 25, Sun Odyssey 24, Oceanis 251  |
 | `cruiser_30ft`    | 30 ft  | monohull  | cruising       | slow              | Sun Odyssey 32, Bavaria 31, Beneteau Oceanis 31        |
 | `cruiser_40ft`    | 40 ft  | monohull  | cruising       | average           | Sun Odyssey 410, Bavaria 41 Cruiser, Hanse 418         |
 | `cruiser_50ft`    | 50 ft  | monohull  | cruising       | fast              | Sun Odyssey 519, Bavaria C50, Hanse 508                |

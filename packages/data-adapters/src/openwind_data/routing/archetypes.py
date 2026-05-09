@@ -1,9 +1,9 @@
 """Boat archetype registry — loads ORC-style polars from `polars/*.json`.
 
-V1 ships 5 archetypes (3 monohull cruisers, 1 catamaran, 1 racer-cruiser). The
-LLM is expected to map a user's commercial boat name (e.g. "Sun Odyssey 32") to
-the closest archetype using `examples`, `length_ft`, `type`, and
-`performance_class`. No server-side mapping table.
+V1 ships 7 archetypes (5 monohull cruisers from 20 to 50 ft, 1 catamaran, 1
+racer-cruiser). The LLM is expected to map a user's commercial boat name
+(e.g. "Sun Odyssey 32") to the closest archetype using `examples`, `length_ft`,
+`type`, and `performance_class`. No server-side mapping table.
 
 Polars are symmetric around the wind axis: `lookup_polar` clamps TWA to [0, 180]
 and TWS to the polar's grid edges. Bilinear interpolation in (TWS, TWA) inside
@@ -47,6 +47,8 @@ def _load_one(name: str) -> BoatPolar:
 
 
 _ARCHETYPE_NAMES = (
+    "cruiser_20ft",
+    "cruiser_25ft",
     "cruiser_30ft",
     "cruiser_40ft",
     "cruiser_50ft",

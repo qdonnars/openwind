@@ -10,6 +10,8 @@ from openwind_data.routing.archetypes import (
 )
 
 EXPECTED_ARCHETYPES = {
+    "cruiser_20ft",
+    "cruiser_25ft",
     "cruiser_30ft",
     "cruiser_40ft",
     "cruiser_50ft",
@@ -19,7 +21,7 @@ EXPECTED_ARCHETYPES = {
 
 
 class TestRegistry:
-    def test_list_returns_all_five(self) -> None:
+    def test_list_returns_all_archetypes(self) -> None:
         archetypes = list_archetypes()
         assert {a.name for a in archetypes} == EXPECTED_ARCHETYPES
 
