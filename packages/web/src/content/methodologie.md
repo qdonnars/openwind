@@ -78,6 +78,8 @@ sinon                                                          →  Open-Meteo S
 
 Conséquence : précision native sur Goulet du Morbihan / Tascon (pic ~7 kt en vives-eaux), Goulet de Brest, Raz de Sein, Fromveur, Saint-Malo, Hague. Continuité harmonique sur tout le plateau atlantique français entre les cartouches SHOM. Solution de repli globale et homogène ailleurs.
 
+![Couverture des atlas de courants haute précision : MARC PREVIMER (bleu) couvre tout le plateau atlantique français et la Manche, SHOM Atlas C2D (rouge) ajoute des cartouches haute densité sur les passes critiques (Iroise, Bretagne sud, Saint-Malo, Pas-de-Calais). En dehors, on retombe sur Open-Meteo SMOC à 8 km — c'est le cas de la Méditerranée et de l'open Atlantique au large.](/methodologie/coverage_map.png)
+
 Le champ `current_source` exposé sur chaque tronçon de route indique la source effectivement utilisée : `shom_c2d_558_morbihan`, `marc_finis_250m`, `openmeteo_smoc`, etc.
 
 ## Comment on estime un passage

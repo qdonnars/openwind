@@ -262,6 +262,28 @@ class ShomC2dRegistry:
         idx = int(np.argmax(heights) if port.ref_tide == "PM" else np.argmin(heights))
         return scan_times[idx]
 
+    def tide_coefficient(self, target_t: datetime) -> int:
+        """National tidal coefficient (Brest-anchored) at ``target_t``.
+
+        Returns an integer in [20, 120] matching the SHOM annuaire's daily
+        coefficient. The French tidal coefficient is defined by convention
+        at Brest (100 = mean-equinox vives-eaux range = 6.1 m), so the
+        same value applies nationwide regardless of where the query point
+        sits. Internally delegates to :meth:`_coefficient_for_day`, which
+        already anchors on Brest's harmonic constants.
+
+        Used by the web client to render the "Coef 87 — vives-eaux" pill
+        next to the tide chart, and by the MCP layer to surface the coef
+        of the departure day in ``plan_passage``.
+        """
+        brest = self.ref_ports.get("BREST")
+        if brest is None:
+            # Defensive: Brest should always be among the ref ports since
+            # it anchors atlas 560. Falling back to coef 20 is intentionally
+            # conservative — better than crashing the response.
+            return 20
+        return round(self._coefficient_for_day(brest, target_t))
+
     def _coefficient_for_day(self, port: _RefPortMeta, target_t: datetime) -> float:
         """National tidal coefficient (Brest-anchored) at ``target_t``.
 

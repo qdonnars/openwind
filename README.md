@@ -3,9 +3,11 @@
 > **Talk to your LLM. Cast off with confidence.**
 >
 > OpenWind turns any MCP-capable assistant Claude, Le Chat, Cursor, Goose,
-> Zed, Continue into a Mediterranean passage planner. Ask in plain
-> language. Get a per-leg ETA, a 1‑5 complexity score, and a deep-link to
-> the full plan. Free, keyless, open source.
+> Zed, Continue into a sailing planner for the French Atlantic and
+> Mediterranean coasts. Ask in plain language. Get a per-leg ETA, a 1‑5
+> complexity score, high-precision tidal currents on the Atlantic
+> (SHOM Atlas C2D and MARC PREVIMER), and a deep-link to the full plan.
+> Free, keyless, open source.
 
 [**openwind.fr**](https://openwind.fr) · [`mcp.openwind.fr`](https://qdonnars-openwind-mcp.hf.space/) · MIT
 
