@@ -36,6 +36,7 @@ from openwind_data.adapters.openmeteo import (
     DEFAULT_MODEL,
     OpenMeteoAdapter,
 )
+from openwind_data.currents.narrow_pass import confidence_for_point
 from openwind_data.routing.archetypes import BoatPolar, get_polar, lookup_polar
 from openwind_data.routing.geometry import (
     Point,
@@ -182,6 +183,13 @@ class SegmentReport:
     # ``"marc_finis_250m"``) when MARC PREVIMER atlas data overrides Open-Meteo
     # in covered zones. ``None`` when no current data is available.
     current_source: str | None = None
+    # Qualitative confidence in the current/tide value: ``"high"`` (MARC 250 m
+    # to 2 km, in coverage), ``"medium"`` (Open-Meteo SMOC 8 km global), or
+    # ``"low"`` (waypoint falls inside a known narrow tidal pass where every
+    # open product under-resolves the choke — Goulet de Brest, Raz de Sein,
+    # Fromveur, Goulet du Morbihan, Téignouse, Raz Blanchard, Raz de Barfleur,
+    # Chenal du Four). ``None`` when no current data is available.
+    current_confidence: str | None = None
     gust_kn: float | None = None
     wave_period_s: float | None = None
 
@@ -387,7 +395,7 @@ async def _estimate_with_model(
     reports: list[SegmentReport] = []
     cumulative_actual = timedelta(0)
     min_boat_speed = float("inf")
-    for seg, mid_time, _mid_pt, bundle in zip(
+    for seg, mid_time, mid_pt, bundle in zip(
         segments, seg_mid_times, seg_mid_points, bundles, strict=True
     ):
         wind_series = bundle.wind_by_model.get(model)
@@ -412,6 +420,7 @@ async def _estimate_with_model(
         cur_kn = sea_pt.current_speed_kn if sea_pt else None
         cur_to = sea_pt.current_direction_to_deg if sea_pt else None
         cur_src = sea_pt.current_source if sea_pt else None
+        cur_conf = confidence_for_point(mid_pt.lat, mid_pt.lon, cur_src)
         derate = 1.0
         if use_wave_correction and hs_m is not None:
             derate = wave_derate(hs_m, twa)
@@ -443,6 +452,7 @@ async def _estimate_with_model(
                 current_direction_to_deg=cur_to,
                 sog_kn=sog,
                 current_source=cur_src,
+                current_confidence=cur_conf,
                 gust_kn=wp.gust_kn,
                 wave_period_s=tp_s,
             )
@@ -533,8 +543,12 @@ async def _estimate_backward_with_model(
     reverse_reports: list[SegmentReport] = []
     end_time = target_utc
     min_boat_speed = float("inf")
-    for seg, mid_time, bundle in zip(
-        reversed(segments), reversed(seg_mid_times), reversed(bundles), strict=True
+    for seg, mid_time, mid_pt, bundle in zip(
+        reversed(segments),
+        reversed(seg_mid_times),
+        reversed(seg_mid_points),
+        reversed(bundles),
+        strict=True,
     ):
         wind_series = bundle.wind_by_model.get(model)
         if wind_series is None or not wind_series.points:
@@ -553,6 +567,7 @@ async def _estimate_backward_with_model(
         cur_kn = sea_pt.current_speed_kn if sea_pt else None
         cur_to = sea_pt.current_direction_to_deg if sea_pt else None
         cur_src = sea_pt.current_source if sea_pt else None
+        cur_conf = confidence_for_point(mid_pt.lat, mid_pt.lon, cur_src)
         derate = 1.0
         if use_wave_correction and hs_m is not None:
             derate = wave_derate(hs_m, twa)
@@ -582,6 +597,7 @@ async def _estimate_backward_with_model(
                 current_source=cur_src,
                 current_direction_to_deg=cur_to,
                 sog_kn=sog,
+                current_confidence=cur_conf,
                 gust_kn=wp.gust_kn,
                 wave_period_s=tp_s,
             )

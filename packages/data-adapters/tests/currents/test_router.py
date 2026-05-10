@@ -19,6 +19,7 @@ from openwind_data.adapters.base import (
 )
 from openwind_data.currents.marc_atlas import MarcAtlasRegistry
 from openwind_data.currents.router import CompositeMarineAdapter
+from openwind_data.currents.shom_c2d_registry import ShomC2dRegistry
 
 
 class _MockUpstream:
@@ -181,3 +182,84 @@ async def test_wind_unchanged(fixture_atlas: Path) -> None:
     composite = CompositeMarineAdapter(upstream=upstream, marc=reg)
     out = await composite.fetch(48.355, -4.795, bundle.start, bundle.end)
     assert out.wind_by_model == bundle.wind_by_model
+
+
+def _make_shom_registry(out_dir: Path, lat: float, lon: float) -> ShomC2dRegistry:
+    """Persist a one-point synthetic SHOM artefact and load it back.
+
+    The single point sits exactly at (lat, lon) so the brute-force nearest
+    lookup always picks it. The U/V series carry distinctive non-zero values
+    so the cascade-priority test can detect that the override actually
+    fired (vs falling through to MARC or SMOC).
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    constant_u_ve = [3.0] * 13  # 3 kt eastward at every hour offset
+    zero_v = [0.0] * 13
+    pl.DataFrame(
+        [
+            {
+                "atlas_id": 560,
+                "zone": "TEST",
+                "ref_port_key": "BREST",
+                "ref_tide": "PM",
+                "lat": lat,
+                "lon": lon,
+                "u_ve_kn": constant_u_ve,
+                "v_ve_kn": zero_v,
+                "u_me_kn": constant_u_ve,  # same in mortes-eaux: predictor coefficient-independent
+                "v_me_kn": zero_v,
+            }
+        ]
+    ).with_columns(
+        pl.col("atlas_id").cast(pl.Int16),
+        pl.col("lat").cast(pl.Float32),
+        pl.col("lon").cast(pl.Float32),
+        pl.col("u_ve_kn").cast(pl.List(pl.Float32)),
+        pl.col("v_ve_kn").cast(pl.List(pl.Float32)),
+        pl.col("u_me_kn").cast(pl.List(pl.Float32)),
+        pl.col("v_me_kn").cast(pl.List(pl.Float32)),
+    ).write_parquet(out_dir / "shom_c2d_points.parquet")
+    (out_dir / "shom_c2d_ref_ports.json").write_text(
+        json.dumps(
+            {
+                "BREST": {
+                    "display_name": "Brest",
+                    "lat": 48.3833,
+                    "lon": -4.4956,
+                    "ref_tide": "PM",
+                    "constants": {"M2": [2.0, 150.0]},
+                }
+            }
+        )
+    )
+    return ShomC2dRegistry.from_directory(out_dir)
+
+
+@pytest.mark.asyncio
+async def test_shom_overrides_marc_when_both_cover(fixture_atlas: Path, tmp_path: Path) -> None:
+    """Cascade priority: SHOM wins over MARC when both cover the same point."""
+    marc = MarcAtlasRegistry.from_directory(fixture_atlas)
+    shom = _make_shom_registry(tmp_path / "shom", lat=48.355, lon=-4.795)
+    bundle = _make_bundle(48.355, -4.795)
+    upstream = _MockUpstream(bundle)
+    composite = CompositeMarineAdapter(upstream=upstream, marc=marc, shom=shom)
+    out = await composite.fetch(48.355, -4.795, bundle.start, bundle.end)
+    for p in out.sea.points:
+        # Source label must start with shom_c2d_, never with marc_ or openmeteo_smoc.
+        assert p.current_source is not None and p.current_source.startswith("shom_c2d_")
+        # Wave fields untouched.
+        assert p.wave_height_m == 1.0
+
+
+@pytest.mark.asyncio
+async def test_marc_kicks_in_outside_shom_coverage(fixture_atlas: Path, tmp_path: Path) -> None:
+    """When the query point is outside SHOM but inside MARC, MARC fires."""
+    marc = MarcAtlasRegistry.from_directory(fixture_atlas)
+    # Place SHOM coverage 100 km away so it doesn't fire at our query point.
+    shom = _make_shom_registry(tmp_path / "shom", lat=49.5, lon=-3.0)
+    bundle = _make_bundle(48.355, -4.795)
+    upstream = _MockUpstream(bundle)
+    composite = CompositeMarineAdapter(upstream=upstream, marc=marc, shom=shom)
+    out = await composite.fetch(48.355, -4.795, bundle.start, bundle.end)
+    for p in out.sea.points:
+        assert p.current_source == "marc_finis_250m"

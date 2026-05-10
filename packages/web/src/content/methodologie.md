@@ -8,7 +8,7 @@ OpenWind est un planificateur de navigation à la voile open source pour les cô
   - [Vent : cascade multi-modèles](#vent--cascade-multi-modèles)
   - [Vagues et niveau de la mer](#vagues-et-niveau-de-la-mer)
   - [Courants : produit SMOC global](#courants--produit-smoc-global)
-  - [Marées et courants haute précision : atlas MARC](#marées-et-courants-haute-précision--atlas-marc)
+  - [Courants côtiers haute précision : SHOM Atlas C2D et MARC PREVIMER](#courants-côtiers-haute-précision--shom-atlas-c2d-et-marc-previmer)
 - [Comment on estime un passage](#comment-on-estime-un-passage)
   - [1. Choix du voilier-type](#1-choix-du-voilier-type)
   - [2. Découpage de la route](#2-découpage-de-la-route)
@@ -21,6 +21,7 @@ OpenWind est un planificateur de navigation à la voile open source pour les cô
 - [Les conventions du domaine](#les-conventions-du-domaine)
 - [Ce qu'OpenWind ne fait pas](#ce-quopenwind-ne-fait-pas)
 - [Sources et licences](#sources-et-licences)
+- [Hébergement](#hébergement)
 - [Code et contributions](#code-et-contributions)
 
 ## Les sources de données
@@ -57,20 +58,27 @@ Référence académique : **Lellouche, J.-M. et al. (2018)**. *Recent updates to
 
 Limite assumée : 8 km est suffisant au large mais reste trop grossier pour les passes étroites de l'Atlantique français, où l'on bascule sur les atlas MARC ci-dessous.
 
-### Marées et courants haute précision : atlas MARC
+### Courants côtiers haute précision : SHOM Atlas C2D et MARC PREVIMER
 
-Pour les passes critiques de la façade Atlantique, OpenWind s'appuie sur les **atlas harmoniques MARC** (Modélisation et Analyse pour la Recherche Côtière), produits par le programme PREVIMER (système opérationnel de prévisions côtières, Ifremer) en collaboration avec le SHOM (Service Hydrographique et Océanographique de la Marine). Résolutions : 250 m sur le Finistère, la Manche, le Sud Bretagne et l'Aquitaine, 700 m en Manche et Golfe de Gascogne, 2 km sur le large.
+Pour les passes critiques de la façade Atlantique, OpenWind ne se contente pas du SMOC à 8 km. La cascade de courants empile trois sources, du plus fin au plus large :
 
-Ces atlas reconstruisent la marée par prédicteur Schureman/Cartwright à partir de 38 constituants harmoniques. La validation contre le marégraphe REFMAR (Réseau de Référence des Observations Marégraphiques) de Brest (2008, 8000+ observations horaires) donne un RMSE (Root Mean Square Error, erreur quadratique moyenne) de 14 cm et un r² de 0.99.
+**1. SHOM Atlas C2D — la référence du SHOM (Service Hydrographique et Océanographique de la Marine).** Les atlas C2D rassemblent les courants de marée des côtes de France (Manche et Atlantique) sous forme de points scattered placés à la main par les hydrographes sur les axes de flux des passes navigationnelles. Édition 2005, 9 atlas (557 Pas de Calais, 558 Bretagne sud, 559 Vendée-Gironde, 560 Iroise / Brest, 561 Baie de Seine, 562 Golfe Normand-Breton, 563 Bretagne nord, 564 Manche, 565 Gascogne), environ 13 000 points au total. La couverture n'est pas continue : ce sont des cartouches centrés sur les zones d'intérêt nautique (Goulet de Brest, Rade de Brest, Raz de Sein, Goulet du Morbihan, Quiberon, Saint-Malo, Hague, etc.). Distribué par data.gouv.fr sous Licence Ouverte v2.0 Etalab. À chaque point, deux séries horaires de 13 valeurs U/V (composantes est-ouest et nord-sud) sont stockées, l'une pour les vives-eaux (coefficient 95), l'autre pour les mortes-eaux (coefficient 45), heures de -6 h à +6 h relatives à la pleine mer (ou basse mer) du port de référence de la zone (Port-Navalo, Brest, Saint-Malo…).
 
-À chaque point de route, OpenWind applique la règle suivante :
+**2. MARC PREVIMER (Modélisation et Analyse pour la Recherche Côtière, Ifremer + SHOM).** Atlas harmoniques continus à grille régulière qui complètent SHOM C2D là où ses cartouches ne sont pas placés. Résolutions : 250 m sur le Finistère et la Bretagne sud, 700 m en Manche et Golfe de Gascogne, 2 km sur l'Atlantique nord-est. 38 constituants harmoniques par cellule, prédicteur Schureman/Cartwright. Validation contre le marégraphe REFMAR de Brest (2008, 8000+ observations horaires) : RMSE 14 cm, r² 0.99 sur la hauteur.
+
+**3. Open-Meteo SMOC — fallback global** (déjà décrit ci-dessus, 8 km).
+
+À chaque point de route, OpenWind applique la cascade :
 
 ```
-si point ∈ emprise MARC valide  →  MARC (résolution la plus fine)
-sinon                            →  Open-Meteo SMOC
+si point ∈ emprise SHOM C2D (≤ 5 km du point le plus proche)  →  SHOM (référence française)
+sinon si point ∈ emprise MARC valide                          →  MARC (couverture continue)
+sinon                                                          →  Open-Meteo SMOC (fallback)
 ```
 
-Conséquence : précision native sur le Raz de Sein, le Goulet de Brest, le Raz Blanchard. Solution de repli globale et homogène ailleurs.
+Conséquence : précision native sur Goulet du Morbihan / Tascon (pic ~7 kt en vives-eaux), Goulet de Brest, Raz de Sein, Fromveur, Saint-Malo, Hague. Continuité harmonique sur tout le plateau atlantique français entre les cartouches SHOM. Solution de repli globale et homogène ailleurs.
+
+Le champ `current_source` exposé sur chaque tronçon de route indique la source effectivement utilisée : `shom_c2d_558_morbihan`, `marc_finis_250m`, `openmeteo_smoc`, etc.
 
 ## Comment on estime un passage
 
@@ -291,6 +299,15 @@ Limites assumées des données :
 | Marégraphes REFMAR            | Libre, source obligatoire                            | REFMAR, dx.doi.org/10.17183/REFMAR#RONIM                        |
 
 Référence académique pour MARC : Pineau-Guillou Lucia (2013). PREVIMER, Validation des atlas de composantes harmoniques de hauteurs et courants de marée. Rapport Ifremer, 89 p. [archimer.ifremer.fr/doc/00157/26801](http://archimer.ifremer.fr/doc/00157/26801/)
+
+## Hébergement
+
+OpenWind tourne intégralement sur des plateformes ouvertes et gratuites.
+
+- L'application web statique [openwind.fr](https://openwind.fr) est servie par **GitHub Pages**, qui héberge gratuitement les pages publiques de tout dépôt open source, avec HTTPS et domaine personnalisé inclus.
+- Le serveur MCP tourne sur **Hugging Face Spaces** en Docker SDK, qui fournit gratuitement un conteneur public Linux, le HTTPS, et un service de Dataset privé pour héberger les atlas harmoniques MARC pré-calculés (5 GB, tirés au moment du build de l'image).
+
+Faire vivre un planificateur météo-marine open source et sans publicité serait significativement plus coûteux sans ces deux infrastructures. Merci à GitHub et à Hugging Face de les rendre accessibles à tous.
 
 ## Code et contributions
 
