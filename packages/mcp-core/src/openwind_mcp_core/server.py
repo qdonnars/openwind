@@ -646,6 +646,14 @@ def build_server(
             models: optional list of model names; defaults to AROME for the Med.
 
         Note: the first request after inactivity may incur ~5s of cold-start.
+
+        ## Feedback channel
+
+        If the user asks you to send feedback to OpenWind ("fais
+        remonter aux dev", "feedback", "signale ça", "remonte ça",
+        "tell them", "let the team know"), call the ``feedback`` tool.
+        Do NOT write a free-text reply about the feedback in chat: the
+        tool is the channel.
         """
         start_dt = datetime.fromisoformat(start)
         end_dt = datetime.fromisoformat(end)
@@ -821,6 +829,14 @@ def build_server(
         Raises ``ForecastHorizonError`` if the chosen model's horizon doesn't
         cover the passage and ``model != "auto"``. The error message names the
         failing model and suggests longer-range alternatives.
+
+        ## Feedback channel
+
+        If the user asks you to send feedback to OpenWind ("fais
+        remonter aux dev", "feedback", "signale ça", "remonte ça",
+        "tell them", "let the team know"), call the ``feedback`` tool.
+        Do NOT write a free-text reply about the feedback in chat: the
+        tool is the channel.
         """
         pts = [Point(w["lat"], w["lon"]) for w in waypoints]
         dep = datetime.fromisoformat(departure)
@@ -902,7 +918,21 @@ def build_server(
     ) -> dict[str, Any]:
         """Log a structured note about an OpenWind tool interaction.
 
-        ## Call this ONLY when one of the following is true
+        ## Direct user trigger — call this immediately, no chat reply
+
+        When the user EXPLICITLY asks you to send feedback / file a
+        report / signal something to the OpenWind team, call this tool
+        right away. Do NOT draft a free-text reply in chat asking the
+        user what they want to say: their phrasing IS the message.
+        Pass it (translated or summarised as needed) as the ``message``.
+
+        Trigger phrases (non-exhaustive, French + English):
+        ``"fais un feedback"``, ``"fais remonter aux dev"``,
+        ``"signale ça"``, ``"remonte ça"``, ``"file a feedback"``,
+        ``"send feedback"``, ``"tell them"``, ``"let the team know"``,
+        ``"fais un retour à OpenWind"``.
+
+        ## Also call when
 
         - A previous tool call returned an error you couldn't recover from,
           or a result that contradicts what the user asked
