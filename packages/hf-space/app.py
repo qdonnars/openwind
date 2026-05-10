@@ -18,11 +18,8 @@ website, not via the HF catalog. Re-evaluate if traffic plateaus.
 from __future__ import annotations
 
 import dataclasses
-import json
-import logging
 import os
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -47,8 +44,6 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
-
-_logger = logging.getLogger(__name__)
 
 PORT = 7860
 
@@ -522,92 +517,10 @@ _MARC_REGISTRY = MarcAtlasRegistry.from_directory(
     os.environ.get("MARC_ATLAS_DIR", "")
 )
 # SHOM Atlas C2D registry — same lifecycle as MARC. Empty when SHOM_C2D_DIR
-# is unset or the dataset doesn't ship the SHOM artefacts yet (e.g. before
-# the first push to ``Qdonnars/openwind-tidal-atlas``). When empty, the
-# overlay endpoint falls through to MARC as before; when populated, SHOM
-# takes priority for the currents on covered points. SHOM ships no tide
+# is unset or the dataset doesn't ship the SHOM artefacts. When populated,
+# SHOM takes priority for currents on covered points; SHOM ships no tide
 # heights so the tide_height_m + z0_hydro_m fields stay on MARC regardless.
 _SHOM_REGISTRY = ShomC2dRegistry.from_directory(os.environ.get("SHOM_C2D_DIR", ""))
-
-
-# ---------------------------------------------------------------------------
-# Feedback sink — pushes the `feedback` MCP tool's entries to a private HF
-# Dataset repo via CommitScheduler (background thread, batched every 10 min).
-# ---------------------------------------------------------------------------
-#
-# Required env on the Space:
-#   OPENWIND_FEEDBACK_DATASET_REPO  e.g. "Qdonnars/openwind-feedback"
-#   HF_TOKEN                        write-scoped, mounted as a Space secret
-#
-# When either is unset, the sink degrades to a stderr log — the tool still
-# returns ack="thanks" so the LLM keeps a uniform contract regardless of
-# deployment.
-_FEEDBACK_FOLDER = Path(os.environ.get("OPENWIND_FEEDBACK_DIR", "/tmp/openwind-feedback"))
-_FEEDBACK_FILE = _FEEDBACK_FOLDER / "feedback.jsonl"
-_FEEDBACK_REPO = os.environ.get("OPENWIND_FEEDBACK_DATASET_REPO")
-_FEEDBACK_EVERY_MIN = int(os.environ.get("OPENWIND_FEEDBACK_EVERY_MIN", "10"))
-_feedback_scheduler: Any | None = None
-
-
-def _build_feedback_scheduler() -> Any | None:
-    """Lazy construct a CommitScheduler if the env is wired, else None.
-
-    Imported inside the function so module import doesn't fail when
-    huggingface_hub is missing in unrelated environments (tests, etc.).
-    """
-    if not _FEEDBACK_REPO:
-        _logger.info(
-            "openwind.feedback: OPENWIND_FEEDBACK_DATASET_REPO unset, "
-            "feedback will only log to stderr"
-        )
-        return None
-    token = os.environ.get("HF_TOKEN")
-    if not token:
-        _logger.warning(
-            "openwind.feedback: HF_TOKEN unset, cannot push to %s — "
-            "feedback will only log to stderr",
-            _FEEDBACK_REPO,
-        )
-        return None
-    try:
-        from huggingface_hub import CommitScheduler
-
-        _FEEDBACK_FOLDER.mkdir(parents=True, exist_ok=True)
-        scheduler = CommitScheduler(
-            repo_id=_FEEDBACK_REPO,
-            repo_type="dataset",
-            folder_path=str(_FEEDBACK_FOLDER),
-            path_in_repo="data",
-            every=_FEEDBACK_EVERY_MIN,
-            private=True,
-            token=token,
-        )
-        _logger.info(
-            "openwind.feedback: CommitScheduler attached to %s (every=%d min)",
-            _FEEDBACK_REPO,
-            _FEEDBACK_EVERY_MIN,
-        )
-        return scheduler
-    except Exception as exc:  # noqa: BLE001
-        _logger.warning("openwind.feedback: scheduler init failed: %s", exc)
-        return None
-
-
-def _hf_feedback_sink(entry: dict[str, Any]) -> None:
-    """Append one JSONL row inside the scheduler's lock.
-
-    The scheduler watches ``_FEEDBACK_FOLDER`` and pushes the file to the
-    dataset repo every ``every`` minutes. ``CommitScheduler.lock`` is a
-    threading lock — combine with the file's ``"a"`` mode for the
-    append-only contract that CommitScheduler requires.
-    """
-    if _feedback_scheduler is None:
-        _logger.info("openwind.feedback (no sink): %s", entry)
-        return
-    with _feedback_scheduler.lock:
-        with _FEEDBACK_FILE.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False))
-            f.write("\n")
 
 
 async def _api_marc_overlay(request: Request) -> JSONResponse:
@@ -689,19 +602,21 @@ async def _api_marc_overlay(request: Request) -> JSONResponse:
     n_steps = int((end - start).total_seconds() // (step_minutes * 60)) + 1
     times = [start + timedelta(minutes=step_minutes * i) for i in range(n_steps)]
 
-    # MARC gives us heights + currents on a regular grid (when covered);
-    # SHOM gives us hand-curated currents only (no heights).
+    # MARC gives heights + currents on a regular grid (when covered); SHOM
+    # gives hand-curated currents only (no heights). Tide always comes from
+    # MARC because SHOM C2D ships no height series.
     h_result = _MARC_REGISTRY.predict_height_series(lat, lon, times) if cell else None
     marc_c_result = _MARC_REGISTRY.predict_current_series(lat, lon, times) if cell else None
     shom_c_result = (
         _SHOM_REGISTRY.predict_current_series(lat, lon, times) if shom_covers else None
     )
 
-    # Cascade for currents: SHOM > MARC. Tide always comes from MARC because
-    # SHOM C2D doesn't ship height series.
+    # Cascade for currents: SHOM > MARC. atlas_resolution_m and z0_hydro_m
+    # stay on MARC because SHOM resolution varies per cartouche and SHOM
+    # has no chart-datum reference.
     if shom_c_result is not None:
         c_speeds_dirs_source: tuple[Any, Any, str] | None = shom_c_result
-        atlas_resolution_m = None  # SHOM resolution varies per cartouche; not surfaced here
+        atlas_resolution_m = None
     elif marc_c_result is not None:
         c_speeds_dirs_source = marc_c_result
         atlas_resolution_m = next(
@@ -724,10 +639,8 @@ async def _api_marc_overlay(request: Request) -> JSONResponse:
         speeds, dirs, source = c_speeds_dirs_source
         payload["current_speed_kn"] = [round(float(v), 4) for v in speeds]
         payload["current_direction_to_deg"] = [round(float(v), 2) for v in dirs]
-        # Source labels: SHOM is already "shom_c2d_<atlas>_<zone>"; MARC needs
-        # to be reformatted into the canonical "marc_<atlas>_<res>m" pattern
-        # used everywhere else (predict_height_series returns just the atlas
-        # name, not the full provenance string).
+        # SHOM source already comes as "shom_c2d_<atlas>_<zone>"; MARC needs
+        # to be reformatted into the canonical "marc_<atlas>_<res>m" pattern.
         if source.lower().startswith("shom_c2d_"):
             payload["current_source"] = source.lower()
         elif cell and atlas_resolution_m:
@@ -737,10 +650,7 @@ async def _api_marc_overlay(request: Request) -> JSONResponse:
         else:
             payload["current_source"] = source.lower()
     elif h_result is not None and cell and atlas_resolution_m:
-        # Tide-only response (rare): keep a MARC label so callers know the
-        # tide series is from MARC even when currents weren't computable.
         payload["current_source"] = f"marc_{cell.atlas_name.lower()}_{atlas_resolution_m}m"
-
     return JSONResponse(
         payload,
         headers={"Cache-Control": "public, max-age=86400"},
@@ -748,9 +658,7 @@ async def _api_marc_overlay(request: Request) -> JSONResponse:
 
 
 def main() -> None:
-    global _feedback_scheduler
-    _feedback_scheduler = _build_feedback_scheduler()
-    server = build_server(feedback_sink=_hf_feedback_sink)
+    server = build_server()
     server.settings.transport_security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=ALLOWED_HOSTS,
