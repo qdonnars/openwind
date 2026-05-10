@@ -13,7 +13,13 @@ if (spaRedirect) {
   window.history.replaceState(null, "", spaRedirect);
 }
 
-const path = window.location.pathname;
+// Normalise trailing slashes: GitHub Pages adds them automatically when a
+// matching directory exists under public/ (e.g. ``public/methodologie/`` for
+// the coverage map asset), which turns ``/methodologie`` into ``/methodologie/``
+// during the 404→SPA redirect dance. Strip the trailing slash so route
+// matches stay simple.
+const rawPath = window.location.pathname;
+const path = rawPath.length > 1 && rawPath.endsWith("/") ? rawPath.slice(0, -1) : rawPath;
 const isPlan = path === "/plan";
 const isMethodologie = path === "/methodologie";
 
