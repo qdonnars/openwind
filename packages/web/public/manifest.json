@@ -1,7 +1,7 @@
 {
   "name": "OpenWind",
   "short_name": "OpenWind",
-  "description": "Mediterranean sailing planner — wind forecasts and passage estimates",
+  "description": "French Atlantic and Mediterranean sailing planner. Wind forecasts, passage estimates and SHOM-grade tidal currents.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#030712",
