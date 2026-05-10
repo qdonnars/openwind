@@ -638,6 +638,55 @@ interface PlanSidebarProps {
   /** Mobile-only: pop the bottom drawer up to a readable height when the
    *  user picks a mode (no-op on desktop). */
   onExpandDrawer?: () => void;
+  /** Discard the current plan: clears waypoints, results, cache, URL. */
+  onReset?: () => void;
+}
+
+// Header row: ModeToggle + an optional trash button to discard the plan.
+// The trash sits flush with the toggle and only renders when a route exists
+// (no waypoints → nothing to reset). Tooltip: "Réinitialiser".
+function PlanHeaderRow({
+  mode,
+  onModeChange,
+  locked,
+  onReset,
+}: {
+  mode: PlanMode;
+  onModeChange: (m: PlanMode) => void;
+  locked?: boolean;
+  onReset?: () => void;
+}) {
+  return (
+    <div className="flex items-stretch gap-2">
+      <div className="flex-1 min-w-0">
+        <ModeToggle value={mode} onChange={onModeChange} locked={locked} />
+      </div>
+      {onReset && (
+        <button
+          type="button"
+          onClick={onReset}
+          title="Nouveau plan"
+          aria-label="Nouveau plan"
+          className="shrink-0 flex items-center justify-center rounded-lg transition-colors hover:opacity-100"
+          style={{
+            width: 38,
+            background: "var(--ow-bg-2)",
+            border: "1px solid var(--ow-line)",
+            color: "var(--ow-fg-2)",
+            opacity: 0.85,
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2.5 4h11" />
+            <path d="M6 4V2.5h4V4" />
+            <path d="M3.5 4l.9 9.2a1 1 0 0 0 1 .8h5.2a1 1 0 0 0 1-.8L12.5 4" />
+            <path d="M6.5 6.5v5" />
+            <path d="M9.5 6.5v5" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function PlanSidebar({
@@ -672,7 +721,11 @@ export function PlanSidebar({
   selectedLegIdx,
   onSelectedLegChange,
   onExpandDrawer,
+  onReset,
 }: PlanSidebarProps) {
+  // Show the trash button only when the user has placed enough to have
+  // something to clear — nothing to reset on a fully-empty form.
+  const resetHandler = onReset && waypointCount >= 2 ? onReset : undefined;
   const { resolvedTheme } = useTheme();
   const sweepValid = mode === "compare"
     ? validateSweep(sweepEarliest, sweepLatest, sweepIntervalHours)
@@ -711,7 +764,7 @@ export function PlanSidebar({
   if (error) {
     return (
       <div className="p-4">
-        <ModeToggle value={mode} onChange={handleModeChange} locked={waypointCount < 2} />
+        <PlanHeaderRow mode={mode} onModeChange={handleModeChange} locked={waypointCount < 2} onReset={resetHandler} />
         <div className="mt-4 rounded-xl p-4 text-sm" style={{ background: "var(--ow-err-soft)", color: "var(--ow-err)", border: "1px solid var(--ow-err-line)" }}>
           <p className="font-semibold mb-1">Erreur</p>
           <p className="leading-relaxed">{error}</p>
@@ -724,7 +777,7 @@ export function PlanSidebar({
   if (waypointCount < 2) {
     return (
       <div className="p-4 animate-fade-in">
-        <ModeToggle value={mode} onChange={handleModeChange} locked />
+        <PlanHeaderRow mode={mode} onModeChange={handleModeChange} locked />
         <EmptyState />
       </div>
     );
@@ -734,7 +787,7 @@ export function PlanSidebar({
   if (showModePicker) {
     return (
       <div className="p-4 space-y-4 animate-fade-in">
-        <ModeToggle value={mode} onChange={handleModeChange} locked />
+        <PlanHeaderRow mode={mode} onModeChange={handleModeChange} locked onReset={resetHandler} />
         <ModePicker
           onPick={(m) => {
             handleModeChange(m);
@@ -760,7 +813,7 @@ export function PlanSidebar({
     return (
       <div className="animate-fade-in">
         <div className="px-4 pt-4 pb-3" style={{ borderBottom: "1px solid var(--ow-line)" }}>
-          <ModeToggle value={mode} onChange={handleModeChange} />
+          <PlanHeaderRow mode={mode} onModeChange={handleModeChange} onReset={resetHandler} />
         </div>
 
         <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--ow-line)" }}>
@@ -826,7 +879,7 @@ export function PlanSidebar({
     const ctaInk = mode === "compare" ? "#3a2a08" : "#fff";
     return (
       <div className="p-4 space-y-4 animate-fade-in">
-        <ModeToggle value={mode} onChange={handleModeChange} />
+        <PlanHeaderRow mode={mode} onModeChange={handleModeChange} onReset={resetHandler} />
 
         {mode === "single" ? (
           <div className="space-y-2">
@@ -886,7 +939,7 @@ export function PlanSidebar({
     <div className="animate-fade-in">
       {/* Mode tabs */}
       <div className="px-4 pt-4 pb-3" style={{ borderBottom: "1px solid var(--ow-line)" }}>
-        <ModeToggle value={mode} onChange={handleModeChange} />
+        <PlanHeaderRow mode={mode} onModeChange={handleModeChange} onReset={resetHandler} />
       </div>
 
       {/* Recalculer bar */}

@@ -14,6 +14,9 @@ const STORAGE_KEY = "ow_last_simulation_v1";
 export interface LastSimulation {
   waypoints: [number, number][];
   archetype: string;
+  // Last active mode at save time. Drives which tab the user lands on when
+  // we rehydrate after a navigation away from /plan (e.g. round-trip via /).
+  mode: "single" | "compare";
   // Single-mode (may be null if the user only ran a sweep)
   single?: {
     departure: string; // naive local "YYYY-MM-DDTHH:MM"
@@ -47,7 +50,15 @@ export function loadLastSimulation(): LastSimulation | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as LastSimulation;
+    const parsed = JSON.parse(raw) as LastSimulation;
+    // Caches written before `mode` existed default to single — that's the
+    // mode the user was last looking at if their cache only has `single`,
+    // and a safe fallback if it has `compare` (the table reappears as soon
+    // as they toggle, no data lost).
+    if (parsed.mode !== "single" && parsed.mode !== "compare") {
+      parsed.mode = parsed.compare && !parsed.single ? "compare" : "single";
+    }
+    return parsed;
   } catch {
     return null;
   }

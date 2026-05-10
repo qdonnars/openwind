@@ -8,6 +8,7 @@ import type { PassageReport, ComplexityScore, Archetype, PassageWindow } from ".
 import {
   loadLastSimulation,
   saveLastSimulation,
+  clearLastSimulation,
   waypointsEqual,
   type LastSimulation,
 } from "../plan/lastSimulation";
@@ -265,16 +266,33 @@ export function PlanPage() {
   const drawerRef = useRef<DrawerHandle>(null);
   const initialParsed = parsePlanUrl(window.location.search);
 
-  const [waypoints, setWaypoints] = useState<[number, number][]>(
-    isParsedOk(initialParsed) ? initialParsed.waypoints : []
-  );
-  const [archetype, setArchetype] = useState(
-    isParsedOk(initialParsed) && initialParsed.archetype ? initialParsed.archetype : "cruiser_30ft"
-  );
+  // If the URL is empty (typical after a /plan FAB click from the home page),
+  // fall back to the cached last simulation so the user lands back on their
+  // route + archetype + departure instead of an empty plan. Captured once at
+  // mount so all useState initializers see the same snapshot.
+  const urlHasWaypoints = isParsedOk(initialParsed) && initialParsed.waypoints.length >= 2;
+  const cachedAtMount = !urlHasWaypoints ? loadLastSimulation() : null;
+  const useCachedRoute = !!(cachedAtMount && cachedAtMount.waypoints.length >= 2);
+
+  const [waypoints, setWaypoints] = useState<[number, number][]>(() => {
+    if (urlHasWaypoints) return (initialParsed as { waypoints: [number, number][] }).waypoints;
+    if (useCachedRoute) return cachedAtMount!.waypoints;
+    return [];
+  });
+  const [archetype, setArchetype] = useState(() => {
+    if (isParsedOk(initialParsed) && initialParsed.archetype) return initialParsed.archetype;
+    if (useCachedRoute) return cachedAtMount!.archetype;
+    return "cruiser_30ft";
+  });
   const [departure, setDeparture] = useState(() => {
     const raw = isParsedOk(initialParsed) ? initialParsed.departure : "";
-    if (!raw || new Date(raw) < new Date()) return tomorrowRoundedLocal();
-    return raw;
+    if (raw && new Date(raw) >= new Date()) return raw;
+    // Try cache: prefer the single-mode departure, then fall back to the
+    // sweep's earliest timestamp so compare-only caches still seed the slider.
+    const cachedDep =
+      cachedAtMount?.single?.departure ?? cachedAtMount?.compare?.sweepEarliest;
+    if (cachedDep && new Date(cachedDep) >= new Date()) return cachedDep;
+    return tomorrowRoundedLocal();
   });
   const [timeAnchor, setTimeAnchor] = useState<TimeAnchor>("departure");
 
@@ -287,15 +305,22 @@ export function PlanPage() {
   const [isStale, setIsStale] = useState(false);
 
   // Compare-windows mode (lifted from PlanSidebar in step 2)
-  const [planMode, setPlanMode] = useState<"single" | "compare">("single");
-  const [sweepEarliest, setSweepEarliest] = useState(() => departure);
+  const [planMode, setPlanMode] = useState<"single" | "compare">(
+    () => cachedAtMount?.mode ?? "single",
+  );
+  const [sweepEarliest, setSweepEarliest] = useState(
+    () => cachedAtMount?.compare?.sweepEarliest ?? departure,
+  );
   const [sweepLatest, setSweepLatest] = useState(() => {
+    if (cachedAtMount?.compare?.sweepLatest) return cachedAtMount.compare.sweepLatest;
     const d = new Date(departure);
     d.setDate(d.getDate() + 2);
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
-  const [sweepInterval, setSweepInterval] = useState<number>(3);
+  const [sweepInterval, setSweepInterval] = useState<number>(
+    () => cachedAtMount?.compare?.sweepIntervalHours ?? 3,
+  );
   // Selected leg for the sidebar's expanded "Comment c'est calculé" — also
   // drives the highlight overlay on the map. Cleared whenever the route or
   // its segments change so we never highlight stale ranges.
@@ -337,6 +362,7 @@ export function PlanPage() {
         saveLastSimulation({
           waypoints: wpts,
           archetype: arch,
+          mode: "single",
           single: {
             departure: resolvedDep,
             passage: res.passage,
@@ -352,38 +378,54 @@ export function PlanPage() {
   }
 
   useEffect(() => {
-    if (!isParsedOk(initialParsed) || initialParsed.waypoints.length < 2) return;
-    // Try the localStorage cache first: if we have a saved simulation for the
-    // same route + archetype, hydrate state directly and skip the network call.
-    // The user sees their last plan instantly on reload.
-    const cached: LastSimulation | null = loadLastSimulation();
-    const cacheMatches =
-      cached &&
-      waypointsEqual(cached.waypoints, initialParsed.waypoints) &&
-      cached.archetype === initialParsed.archetype;
-    if (cacheMatches) {
-      // Restore single-mode result if its departure matches the URL departure.
-      if (cached.single && cached.single.departure === departure) {
-        setPassage(cached.single.passage);
-        setComplexity(cached.single.complexity);
-        setForecastUpdatedAt(cached.single.forecastUpdatedAt);
+    // Path A — URL has waypoints: respect the URL, restore from cache if it
+    // matches the same route + archetype, otherwise fetch fresh.
+    if (urlHasWaypoints) {
+      const cached: LastSimulation | null = loadLastSimulation();
+      const cacheMatches =
+        cached &&
+        waypointsEqual(cached.waypoints, initialParsed.waypoints) &&
+        cached.archetype === initialParsed.archetype;
+      if (cacheMatches) {
+        if (cached.single && cached.single.departure === departure) {
+          setPassage(cached.single.passage);
+          setComplexity(cached.single.complexity);
+          setForecastUpdatedAt(cached.single.forecastUpdatedAt);
+        }
+        // Always restore compare-mode windows + sweep params if present —
+        // sweep range isn't encoded in the URL, so we trust the cache.
+        if (cached.compare) {
+          setWindows(cached.compare.windows);
+          setMetaWarnings(cached.compare.metaWarnings);
+          if (!cached.single || cached.single.departure !== departure) {
+            setForecastUpdatedAt(cached.compare.forecastUpdatedAt);
+          }
+        }
+        if (cached.single || cached.compare) return;
       }
-      // Always restore compare-mode windows + sweep params if present —
-      // sweep range isn't encoded in the URL, so we trust the cache.
-      if (cached.compare) {
-        setWindows(cached.compare.windows);
-        setMetaWarnings(cached.compare.metaWarnings);
-        setSweepEarliest(cached.compare.sweepEarliest);
-        setSweepLatest(cached.compare.sweepLatest);
-        setSweepInterval(cached.compare.sweepIntervalHours);
-        if (!cached.single || cached.single.departure !== departure) {
-          setForecastUpdatedAt(cached.compare.forecastUpdatedAt);
+      doFetch(initialParsed.waypoints, initialParsed.archetype, departure);
+      return;
+    }
+
+    // Path B — URL is empty: state was already seeded from cache by the
+    // useState initializers above. Hydrate the simulation results, sync the
+    // URL so reload/share works, and skip any network call.
+    if (useCachedRoute && cachedAtMount) {
+      if (cachedAtMount.single) {
+        setPassage(cachedAtMount.single.passage);
+        setComplexity(cachedAtMount.single.complexity);
+        setForecastUpdatedAt(cachedAtMount.single.forecastUpdatedAt);
+      }
+      if (cachedAtMount.compare) {
+        setWindows(cachedAtMount.compare.windows);
+        setMetaWarnings(cachedAtMount.compare.metaWarnings);
+        if (!cachedAtMount.single) {
+          setForecastUpdatedAt(cachedAtMount.compare.forecastUpdatedAt);
         }
       }
-      // If we restored anything, skip the auto-fetch.
-      if (cached.single || cached.compare) return;
+      const url = buildPlanUrl(cachedAtMount.waypoints, departure, cachedAtMount.archetype);
+      window.history.replaceState(null, "", url);
     }
-    doFetch(initialParsed.waypoints, initialParsed.archetype, departure);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -455,6 +497,7 @@ export function PlanPage() {
         saveLastSimulation({
           waypoints,
           archetype,
+          mode: "compare",
           single: sameRoute ? prev?.single : undefined,
           compare: {
             sweepEarliest,
@@ -469,6 +512,34 @@ export function PlanPage() {
       })
       .catch((e: Error) => setApiError(friendlyError(e.message)))
       .finally(() => setIsLoading(false));
+  }
+
+  function handleReset() {
+    clearLastSimulation();
+    // Also expire the dormant ow_last_trip cookie so a future read (if we ever
+    // wire it up) doesn't resurrect a stale plan.
+    document.cookie = "ow_last_trip=;max-age=0;path=/;SameSite=Lax";
+    setWaypoints([]);
+    setPassage(null);
+    setComplexity(null);
+    setWindows(null);
+    setMetaWarnings([]);
+    setApiError(null);
+    setIsStale(false);
+    setSelectedLegIdx(null);
+    setForecastUpdatedAt(null);
+    setPlanMode("single");
+    setTimeAnchor("departure");
+    setArchetype("cruiser_30ft");
+    const dep = tomorrowRoundedLocal();
+    setDeparture(dep);
+    setSweepEarliest(dep);
+    const d = new Date(dep);
+    d.setDate(d.getDate() + 2);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    setSweepLatest(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+    setSweepInterval(3);
+    window.history.replaceState(null, "", "/plan");
   }
 
   function handleModeChange(next: "single" | "compare") {
@@ -511,6 +582,24 @@ export function PlanPage() {
       // see the table again without re-fetching the sweep.
       // setWindows(null) intentionally NOT called — user toggling back to
       // compare should see their table immediately.
+      // Persist: same route → keep compare data, overwrite single with the
+      // freshly-picked window, flip mode back to single.
+      const prev = loadLastSimulation();
+      const sameRoute =
+        prev && waypointsEqual(prev.waypoints, waypoints) && prev.archetype === archetype;
+      saveLastSimulation({
+        waypoints,
+        archetype,
+        mode: "single",
+        single: {
+          departure: naiveDep,
+          passage: w.passage,
+          complexity: w.complexity_full,
+          forecastUpdatedAt: forecastUpdatedAt ?? "",
+        },
+        compare: sameRoute ? prev?.compare : undefined,
+        cachedAt: Date.now(),
+      });
     } else {
       // Backwards-compatible fallback: re-fetch.
       setWindows(null);
@@ -632,6 +721,7 @@ export function PlanPage() {
             selectedLegIdx={selectedLegIdx}
             onSelectedLegChange={setSelectedLegIdx}
             onExpandDrawer={() => drawerRef.current?.expand()}
+            onReset={handleReset}
           />
         </ResizableDesktopSidebar>
       </div>
