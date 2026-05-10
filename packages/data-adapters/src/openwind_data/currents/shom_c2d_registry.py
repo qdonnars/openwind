@@ -263,20 +263,32 @@ class ShomC2dRegistry:
         return scan_times[idx]
 
     def _coefficient_for_day(self, port: _RefPortMeta, target_t: datetime) -> float:
-        """Approximate tidal coefficient at the reference port for the day.
+        """National tidal coefficient (Brest-anchored) at ``target_t``.
 
-        Predict the tide over a 25 h window centred on target_t and read
-        ``range = max - min``. Coef = 100 x range / 6.1 m, clamped to
-        [20, 120] (SHOM's documented range). The 6.1 m normalisation is
-        Brest's mean-equinox spring range, which is the standard
-        denominator for the French tidal coefficient regardless of port.
+        The French tidal coefficient is defined **at Brest** by convention:
+        100 = mean-equinox spring range = 6.1 m. The same coefficient
+        applies nationwide regardless of where you are — at Port-Navalo
+        a 95-coef day still has the local Port-Navalo range, smaller than
+        Brest's, but the coefficient itself is 95.
+
+        Predicting the range at the local reference port and dividing by
+        Brest's 6.1 m therefore produces a systematic underestimate (the
+        local range is smaller than Brest's), which led to currents being
+        scaled with an effective coef ~50-60 even on vives-eaux days.
+
+        Fix: always use Brest's harmonic constants for this calculation
+        when they're available in the ref-ports table; fall back to the
+        local port only when Brest is absent (defensive — should never
+        happen in practice since Brest is one of the SHOM ref ports).
         """
         if target_t.tzinfo is None:
             target_t = target_t.replace(tzinfo=UTC)
+        brest = self.ref_ports.get("BREST")
+        anchor = brest if brest is not None else port
         # 25 h window with 30-min step covers two semi-diurnal cycles.
         offsets_min = np.linspace(-12.5 * 60, 12.5 * 60, 51)
         scan_times = [target_t + timedelta(minutes=float(m)) for m in offsets_min]
-        heights = harmonic_predict(scan_times, port.constants)
+        heights = harmonic_predict(scan_times, anchor.constants)
         rng = float(heights.max() - heights.min())
         coef = 100.0 * rng / _BREST_MEAN_RANGE_M
         return max(20.0, min(120.0, coef))
