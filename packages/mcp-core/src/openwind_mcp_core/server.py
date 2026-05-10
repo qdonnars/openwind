@@ -34,7 +34,7 @@ from __future__ import annotations
 import os
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
 from openwind_data.adapters.base import MarineDataAdapter
@@ -56,12 +56,12 @@ from openwind_data.routing import (
 from openwind_data.routing import (
     score_complexity as _score_complexity,
 )
+from pydantic import Field
 
 from .feedback import (
-    FeedbackCategory,
-    FeedbackSeverity,
+    FeedbackHelpful,
+    FeedbackKind,
     FeedbackSink,
-    FeedbackToolName,
     build_feedback_entry,
     stderr_sink,
 )
@@ -873,73 +873,97 @@ def build_server(
 
     @server.tool()
     def feedback(
-        category: FeedbackCategory,
-        tool_name: FeedbackToolName,
-        severity: FeedbackSeverity,
-        message: str,
-        context_json: dict[str, Any] | None = None,
+        kind: FeedbackKind,
+        message: Annotated[str, Field(min_length=1, max_length=10000)],
+        helpful: FeedbackHelpful | None = None,
+        topics: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Log a structured note about an OpenWind tool interaction.
+        """End-of-session retrospective channel for the OpenWind team.
 
-        ## Call this ONLY when one of the following is true
+        Call this AT MOST ONCE per conversation, and only at the very
+        end, when the session contained something worth saying. There
+        are exactly two valid reasons to call it.
 
-        - A previous tool call returned an error you couldn't recover from,
-          or a result that contradicts what the user asked
-          (``category="wrong_result"``).
-        - A parameter description was unclear and you had to guess
-          (``category="unclear_param"``).
-        - You needed data that no current tool exposes
-          (``category="missing_data"`` — for example, official BMS
-          bulletins, port closures, fuel stops).
-        - The user explicitly asked for a feature that doesn't exist yet
-          (``category="feature_request"``).
-        - The user expresses dissatisfaction in chat ("c'est faux",
-          "ce n'est pas ce que je voulais") about an OpenWind result.
+        ## kind="assistant_reflection"
 
-        ## Do NOT call this tool
+        Share your own honest take on the interaction you just had with
+        the user. What worked, what was awkward, what you had to guess,
+        what the tools failed to expose, what would have made the
+        passage planning easier. Honest is more useful than polite. If
+        nothing was awkward, you do not need to file a reflection.
 
-        - On routine successful calls. Silence is the right answer when
-          things work.
-        - As a chat acknowledgement. The user does not see your call.
-        - Multiple times for the same incident. One feedback per turn,
-          per distinct issue.
-        - For errors that are clearly the user's input fault (typo in a
-          city name, impossible date) — only call when the issue is on
-          OpenWind's side or in the tool surface.
+        Examples of useful reflections:
+
+            "Tide data was missing for the Goulet de Brest. Had to warn
+            the user qualitatively. A tide-window estimator would help."
+
+            "list_boat_archetypes does not distinguish racing trimarans
+            from cruising catamarans. Had to pick catamaran_40ft for a
+            Diam 24 which felt off."
+
+            "Compare-windows mode was perfect for this weekend planning
+            question. User picked a window from the table and we drilled
+            into it without re-fetching."
+
+        Pair with ``helpful`` (1 to 5) when you can rate the overall
+        session usefulness.
+
+        ## kind="user_message"
+
+        The user EXPLICITLY asked you to relay a message ("dis-leur
+        que...", "tell them...", "fais remonter que..."). Pass the
+        message as close to verbatim as possible. If you translated,
+        say so in a short P.S. at the end of the message.
+
+        Examples of valid triggers:
+
+            User: "Tu peux leur dire que les courants au Raz Blanchard
+            sont sous-estimes ? J'ai eu 6 kn la-bas hier."
+
+            User: "Please pass this on to the OpenWind team: the
+            complexity score for force 5 in the Med feels pessimistic."
+
+        Do NOT use this kind to summarize what the user said. Either
+        they explicitly asked you to pass something on (use this kind)
+        or they did not (do not file).
+
+        ## When NOT to call this tool
+
+        - The session was a quick lookup with no tool drama. Silence is
+          the default.
+        - You already called it earlier in this conversation. One call
+          per session, total.
+        - The user only had a typo or a user-side mistake. That is
+          noise, not feedback.
+        - You feel polite. Politeness is not signal.
 
         ## Args
 
-            category: nature of the feedback (see triggers above).
-            tool_name: which OpenWind tool the feedback is about. Use
-                ``"general"`` for cross-cutting feedback, ``"feedback"``
-                for meta-feedback about this tool itself.
-            severity: ``"low"`` (nice-to-have, doesn't block the user),
-                ``"medium"`` (degrades the experience), ``"high"`` (broke
-                the user's workflow or returned a misleading result).
-            message: short free-text description, max ~2000 chars. Be
-                concrete: name the symptom, not the fix. Good: "passage
-                from Marseille to Calvi returned distance_nm=0 even
-                though waypoints are >100nm apart". Bad: "should fix
-                the distance bug".
-            context_json: optional dict with reproducer hints — the
-                input args you passed, the offending excerpt of the
-                response, the user's original phrasing. Capped at ~4000
-                chars after JSON serialisation.
+            kind: ``"assistant_reflection"`` for your own take,
+                ``"user_message"`` to relay a user-originated message.
+            message: free text, 1 to 2000 chars. Verbatim (or
+                near-verbatim) for ``user_message``; concrete and
+                concise for ``assistant_reflection``.
+            helpful: optional rating 1 to 5. 1 = the session was broken
+                or useless. 5 = the tools did exactly what the user
+                needed. Most valuable on ``assistant_reflection``.
+            topics: optional list of 0 to 5 short tags for triage, e.g.
+                ``["tides", "complexity_score", "polar_efficiency",
+                "raz_de_sein", "ui"]``. Each tag <= 40 chars. Free-form;
+                we cluster after the fact.
 
         ## Returns
 
         ``{"feedback_id": <uuid hex>, "received_at": <iso8601>,
-        "ack": "thanks"}`` — never raises. If persistence fails on the
-        server side it is logged and ``ack`` reflects ``"buffered"``.
-        Do not surface the ack to the user; just continue the
-        conversation.
+        "ack": "thanks"}``. Never raises. Persistence is best-effort;
+        on the rare sink failure ``ack`` becomes ``"buffered"``. Do not
+        surface the ack to the user. Just continue the conversation.
         """
         entry = build_feedback_entry(
-            category=category,
-            tool_name=tool_name,
-            severity=severity,
+            kind=kind,
             message=message,
-            context_json=context_json,
+            helpful=helpful,
+            topics=topics,
         )
         ack = "thanks"
         try:

@@ -296,7 +296,7 @@ class TestPlanPassageSweep:
 
 
 class TestFeedback:
-    """The feedback tool is the LLM-side issue reporting channel.
+    """The feedback tool is the end-of-session retrospective channel.
 
     Contract: the sink receives a normalised entry with stable keys; the
     tool never raises (a failing sink degrades to ``ack="buffered"``);
@@ -306,10 +306,8 @@ class TestFeedback:
     @staticmethod
     def _args(**overrides: object) -> dict:
         base = {
-            "category": "wrong_result",
-            "tool_name": "plan_passage",
-            "severity": "medium",
-            "message": "distance_nm=0 for Marseille -> Calvi",
+            "kind": "assistant_reflection",
+            "message": ("Tide data missing for the Goulet de Brest — had to warn qualitatively."),
         }
         base.update(overrides)
         return base
@@ -338,25 +336,38 @@ class TestFeedback:
         await _call(
             server,
             "feedback",
-            self._args(context_json={"waypoints": [[43.3, 5.35], [42.5, 8.7]]}),
+            self._args(helpful=4, topics=["tides", "goulet_de_brest"]),
         )
         assert len(captured) == 1
         e = captured[0]
         assert {
             "feedback_id",
             "received_at",
-            "category",
-            "tool_name",
-            "severity",
+            "kind",
             "message",
-            "context_json",
-            "client_hint",
+            "helpful",
+            "topics",
         } <= e.keys()
-        assert e["category"] == "wrong_result"
-        assert e["tool_name"] == "plan_passage"
-        assert e["severity"] == "medium"
-        assert e["context_json"] == {"waypoints": [[43.3, 5.35], [42.5, 8.7]]}
-        assert e["client_hint"] is None
+        assert e["kind"] == "assistant_reflection"
+        assert e["helpful"] == 4
+        assert e["topics"] == ["tides", "goulet_de_brest"]
+
+    async def test_user_message_kind(self) -> None:
+        # The other valid kind — user-originated message relayed verbatim.
+        captured: list[dict] = []
+        server = build_server(adapter=StubAdapter(), feedback_sink=captured.append)
+        await _call(
+            server,
+            "feedback",
+            self._args(
+                kind="user_message",
+                message="Les courants au Raz Blanchard sont sous-estimes.",
+            ),
+        )
+        assert captured[0]["kind"] == "user_message"
+        assert "Raz Blanchard" in captured[0]["message"]
+        assert captured[0]["helpful"] is None
+        assert captured[0]["topics"] is None
 
     async def test_failing_sink_degrades_to_buffered(self) -> None:
         def sink(_entry: dict) -> None:
@@ -375,11 +386,41 @@ class TestFeedback:
         assert "[truncated]" in captured[0]["message"]
         assert len(captured[0]["message"]) < 5000
 
+    async def test_topics_are_capped_at_five_and_per_tag_length(self) -> None:
+        captured: list[dict] = []
+        server = build_server(adapter=StubAdapter(), feedback_sink=captured.append)
+        await _call(
+            server,
+            "feedback",
+            self._args(
+                topics=["a", "b", "c", "d", "e", "f", "g", "x" * 100],
+            ),
+        )
+        topics = captured[0]["topics"]
+        assert len(topics) == 5
+        assert all(len(t) <= 40 for t in topics)
+
+    async def test_empty_message_is_rejected(self) -> None:
+        # Empty messages are noise; we want the LLM to NOT be able to log
+        # blank rows. Pydantic via FastMCP should reject it before the sink.
+        captured: list[dict] = []
+        server = build_server(adapter=StubAdapter(), feedback_sink=captured.append)
+        try:
+            await _call(server, "feedback", self._args(message=""))
+        except Exception:
+            # Acceptable: validation error surfaces as an exception.
+            pass
+        # Whichever way it surfaces, the sink must NOT have received a
+        # blank-message entry.
+        assert all(e.get("message") for e in captured), (
+            "empty message reached the sink — should be rejected"
+        )
+
     async def test_response_does_not_leak_message(self) -> None:
         # The tool response should be a thin ack — not echo back the
         # user's full message (no point round-tripping it to the LLM).
         server = build_server(adapter=StubAdapter())
-        out = await _call(server, "feedback", self._args(message="some private note"))
+        out = await _call(server, "feedback", self._args(message="some private note from the user"))
         assert "some private note" not in str(out)
 
 
