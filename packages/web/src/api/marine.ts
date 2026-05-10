@@ -48,6 +48,10 @@ export interface MarcOverlay {
   tide_height_m?: (number | null)[];
   current_speed_kn?: (number | null)[];
   current_direction_to_deg?: (number | null)[];
+  // National tidal coefficient at the start of the requested window
+  // (Brest-anchored, integer in [20, 120]). Surfaced by the server when
+  // the SHOM registry has Brest constants loaded; null otherwise.
+  tide_coefficient?: number | null;
 }
 
 function pad(arr: (number | null)[] | undefined, n: number): (number | null)[] {
@@ -168,6 +172,7 @@ export function mergeMarcOverlay(
     z0_hydro_m: z0,
     current_source: overlay.current_source,
     marc_resolution_m: overlay.atlas_resolution_m,
+    tide_coefficient: overlay.tide_coefficient ?? null,
   };
 }
 

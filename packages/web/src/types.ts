@@ -41,11 +41,19 @@ export interface MarineHourly {
   z0_hydro_m?: number;
   // Provenance of tide+current data. ``"openmeteo_smoc"`` for the default
   // Open-Meteo path; ``"marc_<atlas>_<resolution>"`` (e.g. ``marc_finis_250m``)
-  // when MARC overrides. Used to drive a small badge on the active pill.
+  // when MARC overrides; ``"shom_c2d_<atlas>_<zone>"`` (e.g.
+  // ``shom_c2d_558_morbihan``) when the SHOM Atlas C2D layer takes priority
+  // inside a hand-curated cartouche. Used to drive the source badge on the
+  // active pill.
   current_source?: string;
-  // Resolution in metres of the MARC atlas used. Surfaces in the badge: 250 m
-  // (FINIS), 700 m (MANGA, MANW, MANE, SUDBZH, AQUI), 2000 m (ATLNE).
+  // Resolution in metres of the MARC atlas used (when MARC is the source).
+  // Not populated when SHOM is the source — SHOM C2D resolution varies per
+  // cartouche and isn't surfaced at this level.
   marc_resolution_m?: number;
+  // National tidal coefficient at the start of the displayed window
+  // (Brest-anchored, integer in [20, 120]). Surfaced whenever the SHOM
+  // registry is loaded on the server side. Null otherwise.
+  tide_coefficient?: number | null;
 }
 
 // Surfacing thresholds, mirror of openwind_data.adapters.base. Below these,

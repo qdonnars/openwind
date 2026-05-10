@@ -7,15 +7,15 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: French Atlantic + Mediterranean sailing planner via MCP.
+short_description: French Atlantic and Mediterranean sailing planner for any MCP client.
 ---
 
 # OpenWind MCP ⛵
 
 > **Talk to your LLM. Cast off with confidence.**
 >
-> Turns any MCP-capable assistant into a Mediterranean passage planner.
-> Free, keyless, open source.
+> Turns any MCP-capable assistant into a sailing planner for the French
+> Atlantic and Mediterranean coasts. Free, keyless, open source.
 
 ![OpenWind passage plan rendered in the web app](https://raw.githubusercontent.com/qdonnars/openwind/main/docs/screenshots/plan.png)
 

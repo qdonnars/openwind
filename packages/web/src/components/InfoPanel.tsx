@@ -49,10 +49,11 @@ export function InfoPanel() {
         </h3>
         <p className="text-sm leading-relaxed mb-3" style={{ color: "var(--ow-fg-1)" }}>
           Modèles vent (AROME, ICON, ECMWF, GFS), vagues et niveau de la mer
-          (Open-Meteo Marine, WaveWatch III), courants (SMOC Copernicus + atlas
-          haute résolution MARC PREVIMER pour l'Atlantique), conventions, équations
-          de planification de passage et notation de complexité : tout est détaillé
-          sur la page méthodologie.
+          (Open-Meteo Marine, WaveWatch III), courants en cascade (SHOM Atlas
+          C2D sur les passes critiques, MARC PREVIMER sur le plateau atlantique,
+          SMOC Copernicus en repli global), conventions, équations de planification
+          de passage et notation de complexité : tout est détaillé sur la page
+          méthodologie.
         </p>
         <a
           href="/methodologie"

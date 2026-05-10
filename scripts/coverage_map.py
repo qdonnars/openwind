@@ -1,26 +1,33 @@
-"""Render a coverage map of MARC PREVIMER + SHOM Atlas C2D zones.
+"""Render coverage maps of MARC PREVIMER + SHOM Atlas C2D zones.
+
+Two output modes:
+
+- ``--mode dev`` (default): two-panel side-by-side diagnostic with per-atlas
+  labels and resolutions, written to ``docs/coverage_map.png``. Used during
+  development to compare the two sources visually.
+- ``--mode web``: single-panel Europe-extent figure with both layers
+  overlaid in distinct colours, no resolution labels, no per-atlas legend.
+  Written to ``packages/web/public/methodologie/coverage_map.png`` so the
+  user-facing methodology page can embed it. Aim: visual storytelling, not
+  diagnostic detail.
 
 Reads ``build/marc/<atlas>/coverage.geojson`` for each MARC atlas (each is
 a single polygon bbox built by ``scripts/build_marc_atlas.py``) and walks
 ``build/c2d/C2D/CD_COURANTS2D/DONNEES/<atlas_id>/<ZONE>_<atlas_id>`` for
-SHOM C2D zones (each is a scattered point cloud whose bbox we derive
-from the parsed points).
-
-Output: a single PNG at ``docs/coverage_map.png`` with two subplots —
-left = SHOM C2D zones, right = MARC atlases — over a France/Atlantic
-extent. Each zone is shown as a translucent rectangle with its label.
+SHOM C2D zones (each is a scattered point cloud whose bbox we derive from
+the parsed points).
 
 Run from repo root::
 
     uv run --project packages/data-adapters --with matplotlib \\
-        python scripts/coverage_map.py
+        python scripts/coverage_map.py --mode web
 
-The output PNG is gitignored (lives under ``docs/screenshots/`` style
-tree); rerun whenever atlases change.
+Both PNG outputs are gitignored; rerun whenever atlases change.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -33,23 +40,23 @@ from openwind_data.currents.shom_c2d import load_c2d_directory
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MARC_ROOT = REPO_ROOT / "build" / "marc"
 C2D_DONNEES = REPO_ROOT / "build" / "c2d" / "C2D" / "CD_COURANTS2D" / "DONNEES"
-OUT_PATH = REPO_ROOT / "docs" / "coverage_map.png"
+DEV_OUT = REPO_ROOT / "docs" / "coverage_map.png"
+WEB_OUT = REPO_ROOT / "packages" / "web" / "public" / "methodologie" / "coverage_map.png"
 
-# Plot extent: France métropole + a generous margin to show offshore atlases.
-EXTENT = (-7.5, 3.5, 42.0, 52.5)  # (lon_min, lon_max, lat_min, lat_max)
+DEV_EXTENT = (-7.5, 3.5, 42.0, 52.5)  # (lon_min, lon_max, lat_min, lat_max)
+# Wider extent for the web map: covers the full MARC ATLNE NE-Atlantic
+# reach plus a generous buffer so the Mediterranean shows as "uncovered".
+WEB_EXTENT = (-15.0, 18.0, 35.0, 60.0)
 
-# Colour-by-atlas. MARC ranks: 0 = wide (2 km), 1 = shelf (700 m), 2 = coastal (250 m).
+# Single colour per source for the web map; per-atlas shades for the dev map.
+WEB_MARC_COLOR = "#2c7fb8"   # cool blue
+WEB_SHOM_COLOR = "#e34a33"   # warm red
+
 MARC_COLORS = {
-    "ATLNE": "#9ecae1",   # light blue, wide NE Atlantique 2 km
-    "MANGA": "#6baed6",   # mid blue, Manche/shelf 700 m
-    "MANE": "#4292c6",    # darker blue, Manche est 700 m
-    "MANW": "#2171b5",    # darker, Manche ouest 700 m
-    "FINIS": "#08519c",   # darkest blue, Finistère 250 m
-    "SUDBZH": "#08306b",  # darkest, Bretagne sud 250 m
-    "AQUI": "#3182bd",    # blue, Aquitaine 700 m
+    "ATLNE": "#9ecae1", "MANGA": "#6baed6", "MANE": "#4292c6",
+    "MANW": "#2171b5", "FINIS": "#08519c", "SUDBZH": "#08306b",
+    "AQUI": "#3182bd",
 }
-
-# SHOM atlas number → display name + colour.
 SHOM_COLORS = {
     557: ("Pas de Calais", "#fee5d9"),
     558: ("Bretagne sud", "#a50f15"),
@@ -68,8 +75,7 @@ def _bbox_from_geojson(path: Path) -> tuple[float, float, float, float] | None:
 
     The MARC coverage.geojson is always a single Polygon feature in
     decimal-degree WGS84; we shrink to the bbox. Returns ``None`` if the
-    file is missing or malformed (silently skipped — printed on stderr by
-    the caller).
+    file is missing or malformed.
     """
     if not path.exists():
         return None
@@ -89,15 +95,17 @@ def _add_box(
     *,
     color: str,
     alpha: float,
-    label: str | None,
+    label: str | None = None,
+    edgecolor: str | None = None,
+    linewidth: float = 0.8,
 ) -> None:
     lat_min, lon_min, lat_max, lon_max = bbox
     rect = mpatches.Rectangle(
         (lon_min, lat_min),
         lon_max - lon_min,
         lat_max - lat_min,
-        linewidth=0.8,
-        edgecolor=color,
+        linewidth=linewidth,
+        edgecolor=edgecolor if edgecolor else color,
         facecolor=color,
         alpha=alpha,
         label=label,
@@ -105,8 +113,13 @@ def _add_box(
     ax.add_patch(rect)
 
 
-def _setup_axes(ax: plt.Axes, title: str) -> None:
-    lon_min, lon_max, lat_min, lat_max = EXTENT
+def _setup_axes(
+    ax: plt.Axes,
+    title: str,
+    extent: tuple[float, float, float, float],
+    cities: dict[str, tuple[float, float]],
+) -> None:
+    lon_min, lon_max, lat_min, lat_max = extent
     ax.set_xlim(lon_min, lon_max)
     ax.set_ylim(lat_min, lat_max)
     ax.set_aspect("equal", adjustable="box")
@@ -114,30 +127,30 @@ def _setup_axes(ax: plt.Axes, title: str) -> None:
     ax.set_xlabel("Longitude (°E)")
     ax.set_ylabel("Latitude (°N)")
     ax.set_title(title, fontsize=12)
-    # Loose France outline reference: just label key reference cities so the
-    # eye anchors. Avoids cartopy as a heavy dep.
-    cities = {
-        "Brest": (-4.49, 48.39),
-        "La Rochelle": (-1.15, 46.16),
-        "Bordeaux": (-0.58, 44.84),
-        "Cherbourg": (-1.62, 49.65),
-        "Marseille": (5.37, 43.30),
-    }
     for name, (lon, lat) in cities.items():
         ax.plot(lon, lat, marker="o", color="black", markersize=2.5)
         ax.annotate(
-            name,
-            (lon, lat),
-            xytext=(3, 3),
-            textcoords="offset points",
-            fontsize=7,
-            color="dimgray",
+            name, (lon, lat), xytext=(3, 3), textcoords="offset points",
+            fontsize=7, color="dimgray",
         )
 
 
-def _render_marc(ax: plt.Axes) -> None:
-    _setup_axes(ax, "MARC PREVIMER (Ifremer)")
-    plot_lon_min, plot_lon_max, plot_lat_min, plot_lat_max = EXTENT
+# ----------------------------------------------------------------------
+# Dev mode: detailed two-panel diagnostic
+# ----------------------------------------------------------------------
+
+_DEV_CITIES = {
+    "Brest": (-4.49, 48.39),
+    "La Rochelle": (-1.15, 46.16),
+    "Bordeaux": (-0.58, 44.84),
+    "Cherbourg": (-1.62, 49.65),
+    "Marseille": (5.37, 43.30),
+}
+
+
+def _render_marc_dev(ax: plt.Axes) -> None:
+    _setup_axes(ax, "MARC PREVIMER (Ifremer)", DEV_EXTENT, _DEV_CITIES)
+    plot_lon_min, plot_lon_max, plot_lat_min, plot_lat_max = DEV_EXTENT
     for atlas_dir in sorted(MARC_ROOT.iterdir()):
         if not atlas_dir.is_dir():
             continue
@@ -145,25 +158,17 @@ def _render_marc(ax: plt.Axes) -> None:
         if bbox is None:
             continue
         color = MARC_COLORS.get(atlas_dir.name, "gray")
-        _add_box(ax, bbox, color=color, alpha=0.30, label=None)
-        # Anchor the label at the centre of the bbox CLIPPED to plot extent
-        # — many MARC atlases (ATLNE, MANGA, AQUI) extend well beyond the
-        # visible map and the raw bbox-centroid would land off-screen.
-        clipped_lon = (
-            max(bbox[1], plot_lon_min) + min(bbox[3], plot_lon_max)
-        ) / 2
-        clipped_lat = (
-            max(bbox[0], plot_lat_min) + min(bbox[2], plot_lat_max)
-        ) / 2
+        _add_box(ax, bbox, color=color, alpha=0.30)
+        clipped_lon = (max(bbox[1], plot_lon_min) + min(bbox[3], plot_lon_max)) / 2
+        clipped_lat = (max(bbox[0], plot_lat_min) + min(bbox[2], plot_lat_max)) / 2
         ax.text(
             clipped_lon, clipped_lat, atlas_dir.name,
-            ha="center", va="center",
-            fontsize=8, color=color, weight="bold", alpha=0.9,
+            ha="center", va="center", fontsize=8, color=color, weight="bold", alpha=0.9,
         )
 
 
-def _render_shom(ax: plt.Axes) -> None:
-    _setup_axes(ax, "SHOM Atlas C2D (édition 2005)")
+def _render_shom_dev(ax: plt.Axes) -> None:
+    _setup_axes(ax, "SHOM Atlas C2D (édition 2005)", DEV_EXTENT, _DEV_CITIES)
     if not C2D_DONNEES.exists():
         ax.text(
             0.5, 0.5, "SHOM C2D not extracted\n(see build/c2d/)",
@@ -174,23 +179,15 @@ def _render_shom(ax: plt.Axes) -> None:
     drawn_atlases: set[int] = set()
     legend_handles: list[mpatches.Patch] = []
     for zone in zones:
-        # Drop the all-Manche general zone 564 — its bbox spans -6.5°W to +3°E
-        # over 290 points and would visually swamp every other zone. The
-        # cartouches BARFLEUR_561, etc. cover the same area at finer detail
-        # and tell the actual coverage story.
         if zone.atlas_id == 564 and zone.name == "MANCHE":
             continue
-        # Same for 565 GASCOGNE (low-resolution Bay of Biscay general).
         if zone.atlas_id == 565 and zone.name == "GASCOGNE":
             continue
-        # And the wide BRETAGNE_SUD_558 / VENDEE_GIRONDE_559 / BRETAGNE_NORD_563
-        # general zones — we want the cartouches.
         if zone.name in {"BRETAGNE_SUD", "VENDEE_GIRONDE", "BRETAGNE_NORD"}:
             continue
-        bbox = zone.bbox
         label_name, color = SHOM_COLORS.get(zone.atlas_id, (str(zone.atlas_id), "gray"))
         new_atlas = zone.atlas_id not in drawn_atlases
-        _add_box(ax, bbox, color=color, alpha=0.45, label=None)
+        _add_box(ax, zone.bbox, color=color, alpha=0.45)
         if new_atlas:
             legend_handles.append(
                 mpatches.Patch(facecolor=color, alpha=0.45, label=f"{zone.atlas_id} {label_name}")
@@ -202,24 +199,131 @@ def _render_shom(ax: plt.Axes) -> None:
     )
 
 
-def render_coverage_map() -> Figure:
+def render_dev_map() -> Figure:
     fig, axes = plt.subplots(1, 2, figsize=(14, 8))
-    _render_shom(axes[0])
-    _render_marc(axes[1])
+    _render_shom_dev(axes[0])
+    _render_marc_dev(axes[1])
     fig.suptitle(
         "Couverture des atlas de courants — SHOM C2D vs MARC PREVIMER",
-        fontsize=14,
-        weight="bold",
+        fontsize=14, weight="bold",
     )
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     return fig
 
 
+# ----------------------------------------------------------------------
+# Web mode: single-panel, Europe extent, simplified for the methodology page
+# ----------------------------------------------------------------------
+
+_WEB_CITIES = {
+    "London": (-0.13, 51.51),
+    "Paris": (2.35, 48.86),
+    "Brest": (-4.49, 48.39),
+    "Bordeaux": (-0.58, 44.84),
+    "Madrid": (-3.70, 40.42),
+    "Lisbon": (-9.14, 38.72),
+    "Dublin": (-6.27, 53.35),
+    "Marseille": (5.37, 43.30),
+    "Amsterdam": (4.90, 52.37),
+}
+
+
+def render_web_map() -> Figure:
+    """Single-panel Europe-extent map for the methodology page.
+
+    Stacks MARC (cool blue) below SHOM (warm red) on the same axes. No
+    per-atlas resolution labels — the goal is to communicate "where does
+    OpenWind have high-precision tidal currents?" at a glance, not to
+    teach the reader about Ifremer/SHOM atlas naming conventions.
+    """
+    fig, ax = plt.subplots(figsize=(11, 8))
+    _setup_axes(
+        ax,
+        "Couverture des atlas de courants haute précision en Europe",
+        WEB_EXTENT,
+        _WEB_CITIES,
+    )
+
+    # MARC layer first so SHOM sits on top.
+    marc_drawn = False
+    for atlas_dir in sorted(MARC_ROOT.iterdir()):
+        if not atlas_dir.is_dir():
+            continue
+        bbox = _bbox_from_geojson(atlas_dir / "coverage.geojson")
+        if bbox is None:
+            continue
+        _add_box(
+            ax, bbox, color=WEB_MARC_COLOR, alpha=0.22,
+            edgecolor=WEB_MARC_COLOR, linewidth=0.4,
+        )
+        marc_drawn = True
+
+    shom_drawn = False
+    if C2D_DONNEES.exists():
+        zones = load_c2d_directory(C2D_DONNEES)
+        for zone in zones:
+            # Drop the deliberately wide general zones so the SHOM layer
+            # tells the "where SHOM zooms" story rather than overprinting
+            # the whole MARC area in red. The cartouches under those
+            # general zones already trace the meaningful detail.
+            if zone.atlas_id == 564 and zone.name == "MANCHE":
+                continue
+            if zone.atlas_id == 565 and zone.name == "GASCOGNE":
+                continue
+            if zone.name in {"BRETAGNE_SUD", "VENDEE_GIRONDE", "BRETAGNE_NORD"}:
+                continue
+            _add_box(
+                ax, zone.bbox, color=WEB_SHOM_COLOR, alpha=0.55,
+                edgecolor=WEB_SHOM_COLOR, linewidth=0.4,
+            )
+            shom_drawn = True
+
+    # Legend built from single proxy handles per source.
+    handles = []
+    if marc_drawn:
+        handles.append(
+            mpatches.Patch(
+                facecolor=WEB_MARC_COLOR, alpha=0.22, edgecolor=WEB_MARC_COLOR,
+                label="MARC PREVIMER (Ifremer)",
+            )
+        )
+    if shom_drawn:
+        handles.append(
+            mpatches.Patch(
+                facecolor=WEB_SHOM_COLOR, alpha=0.55, edgecolor=WEB_SHOM_COLOR,
+                label="SHOM Atlas C2D",
+            )
+        )
+    handles.append(
+        mpatches.Patch(
+            facecolor="none", edgecolor="dimgray",
+            label="Hors couverture : Open-Meteo SMOC 8 km",
+        )
+    )
+    ax.legend(handles=handles, loc="lower right", fontsize=10, framealpha=0.92)
+
+    fig.tight_layout()
+    return fig
+
+
 def main() -> None:
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fig = render_coverage_map()
-    fig.savefig(OUT_PATH, dpi=140, bbox_inches="tight")
-    print(f"wrote {OUT_PATH}")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--mode", choices=("dev", "web"), default="dev",
+        help="dev = two-panel diagnostic (docs/), web = single-panel methodology (public/)",
+    )
+    args = parser.parse_args()
+
+    if args.mode == "dev":
+        fig = render_dev_map()
+        DEV_OUT.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(DEV_OUT, dpi=140, bbox_inches="tight")
+        print(f"wrote {DEV_OUT}")
+    else:
+        fig = render_web_map()
+        WEB_OUT.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(WEB_OUT, dpi=140, bbox_inches="tight")
+        print(f"wrote {WEB_OUT}")
 
 
 if __name__ == "__main__":

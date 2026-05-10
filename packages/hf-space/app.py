@@ -161,8 +161,9 @@ LANDING_HTML = """<!doctype html>
 <body>
   <h1>OpenWind MCP <span class="badge">running</span></h1>
   <p class="lede">Talk to your LLM. Cast off with confidence.<br>
-    A free, keyless, open-source Mediterranean passage planner — exposed as an
-    MCP server, so any compatible assistant can use it.</p>
+    A free, keyless, open-source sailing planner for the French Atlantic and
+    Mediterranean coasts. Exposed as an MCP server so any compatible
+    assistant can use it.</p>
 
   <img class="hero" src="https://raw.githubusercontent.com/qdonnars/openwind/main/docs/screenshots/plan.png"
        alt="OpenWind passage plan: 5 waypoints, 48.6 nm, ETA 21:24, complexity 3 of 5.">
@@ -723,6 +724,13 @@ async def _api_marc_overlay(request: Request) -> JSONResponse:
         "atlas_resolution_m": atlas_resolution_m,
         "z0_hydro_m": cell.z0_hydro_m if cell else None,
         "times": [t.isoformat() for t in times],
+        # National tidal coefficient at the start of the requested window
+        # (Brest-anchored, integer in [20, 120]). Surfaced whenever the
+        # SHOM registry has Brest constants loaded so the web client can
+        # render the "Coef 87 — vives-eaux" pill alongside the tide chart.
+        "tide_coefficient": _SHOM_REGISTRY.tide_coefficient(start)
+        if _SHOM_REGISTRY.ref_ports
+        else None,
     }
     if h_result is not None:
         payload["tide_height_m"] = [round(float(v), 4) for v in h_result[0]]
