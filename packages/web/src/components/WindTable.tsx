@@ -4,27 +4,22 @@ import { TimelineHeader } from "./TimelineHeader";
 import { WindCell } from "./WindCell";
 import { useTimezone } from "../hooks/useTimezone";
 import { nowParisHourPrefix } from "../utils/format";
+import { MODEL_META, type ModelName } from "../config/modelConfig";
 
-const MODEL_STEP: Record<string, number> = {
-  AROME: 1,
-  ICON: 3,
-  GFS: 3,
-  ECMWF: 6,
-};
+function modelStep(name: string): number {
+  const meta = MODEL_META[name as ModelName];
+  return meta ? meta.nativeStepHours : 3;
+}
 
-const MODEL_LABELS: Record<string, string> = {
-  AROME: "AROME",
-  ICON: "ICON",
-  GFS: "GFS",
-  ECMWF: "ECMWF",
-};
+function modelLabel(name: string): string {
+  return MODEL_META[name as ModelName]?.label ?? name;
+}
 
-const MODEL_DESCRIPTIONS: Record<string, string> = {
-  AROME: "AROME — Modèle haute résolution (1h) — Météo-France",
-  ICON: "ICON — Modèle global (3h) — DWD Allemagne",
-  GFS: "GFS — Modèle global (3h) — NOAA États-Unis",
-  ECMWF: "ECMWF — Modèle global (6h) — Centre européen",
-};
+function modelDescription(name: string): string {
+  const meta = MODEL_META[name as ModelName];
+  if (!meta) return name;
+  return `${meta.label} (${meta.nativeStepHours}h) . ${meta.provider}`;
+}
 
 // Approximate cell width (must match WindCell min-w-[36px])
 const CELL_W = 36;
@@ -32,7 +27,7 @@ const CELL_W = 36;
 function autoResolution(forecasts: ModelForecast[]): number {
   let finest = 6;
   for (const f of forecasts) {
-    const step = MODEL_STEP[f.modelName] ?? 3;
+    const step = modelStep(f.modelName);
     if (step < finest) finest = step;
   }
   return finest;
@@ -186,9 +181,9 @@ export function WindTable({
                         <span
                           className="text-[11px] lg:text-[12px] font-bold tracking-wide"
                           style={{ color: 'var(--ow-fg-0)' }}
-                          title={MODEL_DESCRIPTIONS[forecast.modelName] ?? forecast.modelName}
+                          title={modelDescription(forecast.modelName)}
                         >
-                          {MODEL_LABELS[forecast.modelName] ?? forecast.modelName}
+                          {modelLabel(forecast.modelName)}
                         </span>
                         <span className="text-[8px] font-medium" style={{ color: 'var(--ow-fg-2)' }}>kn</span>
                       </div>

@@ -1,15 +1,61 @@
 import type { ModelForecast, HourlyData, GeocodingResult } from "../types";
+import {
+  activeModels,
+  loadModelConfig,
+  type ModelName,
+} from "../config/modelConfig";
 
-const MODELS = [
-  { name: "ECMWF", endpoint: "https://api.open-meteo.com/v1/ecmwf" },
-  { name: "GFS", endpoint: "https://api.open-meteo.com/v1/gfs" },
-  { name: "ICON", endpoint: "https://api.open-meteo.com/v1/dwd-icon" },
-  {
-    name: "AROME",
+const MODEL_ENDPOINTS: Record<ModelName, { endpoint: string; extraParams?: string }> = {
+  AROME: {
     endpoint: "https://api.open-meteo.com/v1/meteofrance",
     extraParams: "&models=arome_france",
   },
-];
+  AROME_HD: {
+    endpoint: "https://api.open-meteo.com/v1/meteofrance",
+    extraParams: "&models=arome_france_hd",
+  },
+  ARPEGE_EU: {
+    endpoint: "https://api.open-meteo.com/v1/meteofrance",
+    extraParams: "&models=arpege_europe",
+  },
+  ARPEGE_W: {
+    endpoint: "https://api.open-meteo.com/v1/meteofrance",
+    extraParams: "&models=arpege_world",
+  },
+  ICON: { endpoint: "https://api.open-meteo.com/v1/dwd-icon" },
+  ICON_GLOBAL: {
+    endpoint: "https://api.open-meteo.com/v1/dwd-icon",
+    extraParams: "&models=icon_global",
+  },
+  ICON_D2: {
+    endpoint: "https://api.open-meteo.com/v1/dwd-icon",
+    extraParams: "&models=icon_d2",
+  },
+  ECMWF: { endpoint: "https://api.open-meteo.com/v1/ecmwf" },
+  ECMWF_AIFS: {
+    endpoint: "https://api.open-meteo.com/v1/ecmwf",
+    extraParams: "&models=ecmwf_aifs025",
+  },
+  GFS: { endpoint: "https://api.open-meteo.com/v1/gfs" },
+  UKMO: {
+    endpoint: "https://api.open-meteo.com/v1/ukmo",
+    extraParams: "&models=ukmo_global_deterministic_10km",
+  },
+  UKMO_UK: {
+    endpoint: "https://api.open-meteo.com/v1/ukmo",
+    extraParams: "&models=ukmo_uk_deterministic_2km",
+  },
+  GEM: { endpoint: "https://api.open-meteo.com/v1/gem" },
+  DMI_HARMONIE: {
+    // DMI has no dedicated /v1/dmi endpoint on Open-Meteo; we route via the
+    // unified /v1/forecast endpoint with an explicit `&models=` filter. A
+    // single-model request still returns unsuffixed `hourly.*` keys, so the
+    // existing payload parser works unchanged.
+    endpoint: "https://api.open-meteo.com/v1/forecast",
+    extraParams: "&models=dmi_harmonie_arome_europe",
+  },
+  METNO_NORDIC: { endpoint: "https://api.open-meteo.com/v1/metno" },
+};
 
 const PARAMS =
   "hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,is_day&wind_speed_unit=kn&timezone=Europe/Paris&forecast_days=7";
@@ -63,25 +109,32 @@ export async function fetchAllModels(
   lat: number,
   lon: number
 ): Promise<ModelForecast[]> {
-  const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
-  const cached = cache.get(key);
+  const config = loadModelConfig();
+  const selected = activeModels(config);
+  // Cache key includes the active model list so that reordering or swapping
+  // models in /config doesn't return a stale subset on the next page load.
+  const cacheKey = `${lat.toFixed(4)},${lon.toFixed(4)}|${selected.join(",")}`;
+  const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
     return cached.models;
   }
 
   const base = `?latitude=${lat}&longitude=${lon}&${PARAMS}`;
 
-  const results = await Promise.allSettled(
-    MODELS.map((model) =>
-      fetch(`${model.endpoint}${base}${model.extraParams || ""}`)
+  const results = await Promise.allSettled<ModelForecast>(
+    selected.map((name) => {
+      const model = MODEL_ENDPOINTS[name];
+      return fetch(`${model.endpoint}${base}${model.extraParams || ""}`)
         .then((r) => r.json())
-        .then((data) => ({
-          modelName: model.name,
+        .then((data): ModelForecast => ({
+          modelName: name,
           hourly: data.hourly ? sanitizeHourly(data.hourly) : data.hourly,
-        }))
-    )
+        }));
+    })
   );
 
+  // Promise.allSettled preserves input order, so the user's configured order
+  // flows through to the WindTable rendering loop.
   const models = results
     .filter(
       (r): r is PromiseFulfilledResult<ModelForecast> =>
@@ -89,7 +142,7 @@ export async function fetchAllModels(
     )
     .map((r) => r.value);
 
-  cache.set(key, { models, fetchedAt: Date.now() });
+  cache.set(cacheKey, { models, fetchedAt: Date.now() });
   return models;
 }
 
