@@ -41,6 +41,7 @@ from openwind_data.adapters.base import MarineDataAdapter
 from openwind_data.adapters.openmeteo import AUTO_MODEL, OpenMeteoAdapter
 from openwind_data.currents.marc_atlas import MarcAtlasRegistry
 from openwind_data.currents.router import CompositeMarineAdapter
+from openwind_data.currents.shom_c2d_registry import ShomC2dRegistry
 from openwind_data.routing import (
     Point,
     _build_conditions_summary,
@@ -406,6 +407,13 @@ uses unless overridden by tool parameters.
   captures globally. Even the MARC atlases do not replace a SHOM tide
   atlas or paper chart for fine navigation in a narrow pass.
 
+- Current confidence (``current_confidence`` per leg): qualitative tag
+  derived from the data source. ``"high"`` on SHOM Atlas C2D and MARC
+  PREVIMER (regional harmonic atlases); ``"medium"`` on Open-Meteo SMOC
+  (8 km global product); ``None`` when no current data is available.
+  A data-driven downgrade in choke points (zones where SHOM C2D peaks
+  exceed ~3 kt) will land with the C2D adapter.
+
 - Minimum boat speed / SOG: 0.5 kn floor to avoid blow-up in extreme
   stalls or strongly opposing currents.
 
@@ -493,10 +501,13 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
 
     Args:
         adapter: optional `MarineDataAdapter` used by data-fetching tools.
-            Defaults to a `CompositeMarineAdapter` that wraps a fresh
-            `OpenMeteoAdapter` and the MARC PREVIMER atlases discovered
-            under ``MARC_ATLAS_DIR`` (or falls back to Open-Meteo only when
-            no MARC dataset is available locally). Override in tests.
+            Defaults to a ``CompositeMarineAdapter`` that wraps a fresh
+            ``OpenMeteoAdapter`` and stacks two coastal-detail sources on
+            top: the SHOM Atlas C2D registry under ``SHOM_C2D_DIR`` (when
+            built and shipped), and the MARC PREVIMER atlases under
+            ``MARC_ATLAS_DIR``. Either or both can be absent; the cascade
+            degrades gracefully (SHOM > MARC > SMOC). Override the whole
+            adapter in tests.
     """
     server: FastMCP = FastMCP("openwind")
     if adapter is not None:
@@ -504,13 +515,23 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
     else:
         upstream = OpenMeteoAdapter()
         marc_dir = os.environ.get("MARC_ATLAS_DIR")
-        if marc_dir:
-            registry = MarcAtlasRegistry.from_directory(marc_dir)
-            if registry.atlases:
-                fetch_adapter = CompositeMarineAdapter(upstream=upstream, marc=registry)
-            else:
-                fetch_adapter = upstream
+        shom_dir = os.environ.get("SHOM_C2D_DIR")
+        marc_registry = MarcAtlasRegistry.from_directory(marc_dir) if marc_dir else None
+        shom_registry = ShomC2dRegistry.from_directory(shom_dir) if shom_dir else None
+        marc_available = marc_registry is not None and bool(marc_registry.atlases)
+        shom_available = shom_registry is not None and shom_registry.lats.size > 0
+        if marc_available:
+            fetch_adapter = CompositeMarineAdapter(
+                upstream=upstream,
+                marc=marc_registry,  # type: ignore[arg-type]
+                shom=shom_registry if shom_available else None,
+            )
         else:
+            # Without MARC the composite adapter has nothing to override
+            # currents with on the shelf; we keep upstream Open-Meteo only.
+            # (SHOM alone in the composite would still work, but mixing
+            # SHOM-only zones with raw SMOC elsewhere is more readable
+            # via the existing two-tier composite once MARC lands.)
             fetch_adapter = upstream
 
     @server.resource(
