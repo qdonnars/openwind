@@ -57,6 +57,14 @@ from openwind_data.routing import (
     score_complexity as _score_complexity,
 )
 
+from .feedback import (
+    FeedbackCategory,
+    FeedbackSeverity,
+    FeedbackSink,
+    FeedbackToolName,
+    build_feedback_entry,
+    stderr_sink,
+)
 from .render import build_openwind_url
 
 # MCP Apps UI resource URI for plan_passage. The host fetches this resource
@@ -496,7 +504,11 @@ def _build_window_dict(
     }
 
 
-def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
+def build_server(
+    *,
+    adapter: MarineDataAdapter | None = None,
+    feedback_sink: FeedbackSink | None = None,
+) -> FastMCP:
     """Build a FastMCP server with all OpenWind tools registered.
 
     Args:
@@ -508,7 +520,13 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
             ``MARC_ATLAS_DIR``. Either or both can be absent; the cascade
             degrades gracefully (SHOM > MARC > SMOC). Override the whole
             adapter in tests.
+        feedback_sink: optional callable invoked by the ``feedback`` tool
+            with the normalized entry dict. ``mcp-core`` stays cloud-agnostic
+            (no ``huggingface_hub`` import); the HF Spaces wrapper plugs in
+            a ``CommitScheduler``-backed sink that pushes to a private
+            dataset. Defaults to ``stderr_sink`` for local dev.
     """
+    sink: FeedbackSink = feedback_sink or stderr_sink
     server: FastMCP = FastMCP("openwind")
     if adapter is not None:
         fetch_adapter: MarineDataAdapter = adapter
@@ -851,6 +869,90 @@ def build_server(*, adapter: MarineDataAdapter | None = None) -> FastMCP:
             "passage": _passage_to_dict(report),
             "complexity": asdict(score),
             "openwind_url": build_openwind_url(waypoints, departure, archetype),
+        }
+
+    @server.tool()
+    def feedback(
+        category: FeedbackCategory,
+        tool_name: FeedbackToolName,
+        severity: FeedbackSeverity,
+        message: str,
+        context_json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Log a structured note about an OpenWind tool interaction.
+
+        ## Call this ONLY when one of the following is true
+
+        - A previous tool call returned an error you couldn't recover from,
+          or a result that contradicts what the user asked
+          (``category="wrong_result"``).
+        - A parameter description was unclear and you had to guess
+          (``category="unclear_param"``).
+        - You needed data that no current tool exposes
+          (``category="missing_data"`` — for example, official BMS
+          bulletins, port closures, fuel stops).
+        - The user explicitly asked for a feature that doesn't exist yet
+          (``category="feature_request"``).
+        - The user expresses dissatisfaction in chat ("c'est faux",
+          "ce n'est pas ce que je voulais") about an OpenWind result.
+
+        ## Do NOT call this tool
+
+        - On routine successful calls. Silence is the right answer when
+          things work.
+        - As a chat acknowledgement. The user does not see your call.
+        - Multiple times for the same incident. One feedback per turn,
+          per distinct issue.
+        - For errors that are clearly the user's input fault (typo in a
+          city name, impossible date) — only call when the issue is on
+          OpenWind's side or in the tool surface.
+
+        ## Args
+
+            category: nature of the feedback (see triggers above).
+            tool_name: which OpenWind tool the feedback is about. Use
+                ``"general"`` for cross-cutting feedback, ``"feedback"``
+                for meta-feedback about this tool itself.
+            severity: ``"low"`` (nice-to-have, doesn't block the user),
+                ``"medium"`` (degrades the experience), ``"high"`` (broke
+                the user's workflow or returned a misleading result).
+            message: short free-text description, max ~2000 chars. Be
+                concrete: name the symptom, not the fix. Good: "passage
+                from Marseille to Calvi returned distance_nm=0 even
+                though waypoints are >100nm apart". Bad: "should fix
+                the distance bug".
+            context_json: optional dict with reproducer hints — the
+                input args you passed, the offending excerpt of the
+                response, the user's original phrasing. Capped at ~4000
+                chars after JSON serialisation.
+
+        ## Returns
+
+        ``{"feedback_id": <uuid hex>, "received_at": <iso8601>,
+        "ack": "thanks"}`` — never raises. If persistence fails on the
+        server side it is logged and ``ack`` reflects ``"buffered"``.
+        Do not surface the ack to the user; just continue the
+        conversation.
+        """
+        entry = build_feedback_entry(
+            category=category,
+            tool_name=tool_name,
+            severity=severity,
+            message=message,
+            context_json=context_json,
+        )
+        ack = "thanks"
+        try:
+            sink(entry)
+        except Exception as exc:
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning("openwind.feedback sink failed: %s", exc)
+            ack = "buffered"
+        return {
+            "feedback_id": entry["feedback_id"],
+            "received_at": entry["received_at"],
+            "ack": ack,
         }
 
     return server
