@@ -7,7 +7,7 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: French Atlantic and Mediterranean sailing planner for any MCP client.
+short_description: French Atlantic + Mediterranean sailing planner via MCP.
 ---
 
 # OpenWind MCP ⛵
