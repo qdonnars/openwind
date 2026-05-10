@@ -527,7 +527,28 @@ def build_server(
             dataset. Defaults to ``stderr_sink`` for local dev.
     """
     sink: FeedbackSink = feedback_sink or stderr_sink
-    server: FastMCP = FastMCP("openwind")
+    # ``stateless_http=True`` disables the in-memory session table that
+    # otherwise tracks an ``mcp-session-id`` per client across requests.
+    # All OpenWind tools are idempotent point-in-time fetches with no
+    # cross-call state, so stateless is strictly correct AND removes a
+    # whole class of intermittent failures: any restart of the HF Space
+    # process (cold-start after sleep, sync redeploy, OOM) wipes the
+    # session table, and clients still holding an old session-id from a
+    # prior process life get a JSON-RPC ``-32600 "Session not found"``.
+    # With the flag on this can't happen.
+    #
+    # ``json_response=True`` switches the streamable-http response type
+    # from SSE chunks to a single JSON envelope. We don't emit progress
+    # notifications, so SSE buys nothing here. JSON also plays nicer
+    # with intermediaries (HF's edge proxy, browser fetch, Postman).
+    #
+    # Per the official MCP Python SDK README, this combo is the
+    # recommended config for production deployments.
+    server: FastMCP = FastMCP(
+        "openwind",
+        stateless_http=True,
+        json_response=True,
+    )
     if adapter is not None:
         fetch_adapter: MarineDataAdapter = adapter
     else:
