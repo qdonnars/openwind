@@ -760,6 +760,7 @@ export function PlanPage() {
           selectedLegIdx={selectedLegIdx}
           onSelectedLegChange={setSelectedLegIdx}
           onExpandDrawer={() => drawerRef.current?.expand()}
+          onReset={handleReset}
         />
       </ResizableMobileDrawer>
     </div>
