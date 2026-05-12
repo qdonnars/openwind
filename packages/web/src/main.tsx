@@ -4,6 +4,7 @@ import "./index.css";
 import App from "./App";
 import { PlanPage } from "./routes/PlanPage";
 import { MethodologiePage } from "./routes/MethodologiePage";
+import { ConfigPage } from "./routes/ConfigPage";
 import { ThemeProvider } from "./design/theme";
 
 // GitHub Pages 404.html redirect: restore original path stored in sessionStorage
@@ -22,11 +23,20 @@ const rawPath = window.location.pathname;
 const path = rawPath.length > 1 && rawPath.endsWith("/") ? rawPath.slice(0, -1) : rawPath;
 const isPlan = path === "/plan";
 const isMethodologie = path === "/methodologie";
+const isConfig = path === "/config";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
-      {isPlan ? <PlanPage /> : isMethodologie ? <MethodologiePage /> : <App />}
+      {isPlan ? (
+        <PlanPage />
+      ) : isMethodologie ? (
+        <MethodologiePage />
+      ) : isConfig ? (
+        <ConfigPage />
+      ) : (
+        <App />
+      )}
     </ThemeProvider>
   </StrictMode>
 );
