@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTheme } from "../design/theme";
 import type { PassageReport, ComplexityScore, Archetype, PassageWindow } from "./types";
-import { aggregateLegs, type AggregatedLeg } from "./aggregateLegs";
+import { aggregateLegs, buildLegSummaryCells, type AggregatedLeg } from "./aggregateLegs";
 import { cxLevel, CX_COLORS } from "./types";
 import { WindowsTable } from "./WindowsTable";
 import { ModeToggle, TimeAnchorToggle, type PlanMode, type TimeAnchor } from "./ModeToggle";
@@ -468,13 +468,65 @@ function ArchetypeSelector({
 }
 
 // ── LegList ──────────────────────────────────────────────────────────────────
-// Click-to-expand list of legs, with the "Comment c'est calculé" build-up
-// rendered inline for the open leg.
+// Click-to-expand list of legs. Collapsed = single natural-language summary
+// line ("Tronçon 1 : 45 mn au près avec mer formée"). Expanded = a 4-block KPI
+// grid (vent / mer / distance / temps) above the existing compass-and-build-up
+// LegDetailCard so the user can scan or drill.
 
-// Shared 4-column template for the leg sub-line — kept as a constant so the
-// sidebar's legend header and every row use the same widths and the values
-// (allure / vent / vagues / distance) line up vertically across rows.
-const SEG_SUBLINE_COLS = "minmax(50px,0.7fr) minmax(40px,0.5fr) minmax(82px,1fr) minmax(44px,0.5fr)";
+function fmtHM(iso: string): string {
+  return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function SummaryCell({ value }: { value: string | null }) {
+  if (!value) return null;
+  return (
+    <span
+      className="text-[10px] whitespace-normal"
+      style={{ color: "var(--ow-fg-1)", lineHeight: 1, display: "inline-block" }}
+    >
+      {value}
+    </span>
+  );
+}
+
+function KpiBlock({
+  value,
+  label,
+  tone,
+}: {
+  value: string;
+  label?: string;
+  tone?: "default" | "warn";
+}) {
+  return (
+    <div
+      className="rounded-md border px-2 py-1"
+      style={{
+        background: tone === "warn"
+          ? "color-mix(in srgb, var(--ow-warn, #fbbf24) 14%, transparent)"
+          : "var(--ow-bg-1)",
+        borderColor: tone === "warn"
+          ? "color-mix(in srgb, var(--ow-warn, #fbbf24) 38%, transparent)"
+          : "var(--ow-line)",
+      }}
+    >
+      <div
+        className="text-[11px] font-semibold tabular-nums leading-tight break-words"
+        style={{ color: "var(--ow-fg-0)", fontFamily: "var(--ow-font-mono)" }}
+      >
+        {value}
+      </div>
+      {label && (
+        <div
+          className="text-[9px] uppercase tracking-wider leading-tight mt-0.5 break-words"
+          style={{ color: "var(--ow-fg-2)" }}
+        >
+          {label}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function LegRow({
   leg,
@@ -488,62 +540,114 @@ function LegRow({
   onToggle: () => void;
 }) {
   const cx = cxLevel((leg.tws_min + leg.tws_max) / 2);
-  const tws = Math.round(leg.tws_avg_kn);
-  const seaPart = leg.hs_avg_m != null
-    ? `${leg.hs_avg_m.toFixed(1)}m ${leg.sea_direction ?? ""}`.trim()
-    : "—";
-  const fmtHM = (iso: string) =>
-    new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const summary = buildLegSummaryCells(leg);
+
+  // KPI values shown on expand. Wind + allure are intentionally absent —
+  // the collapsed row already carries them, no point repeating.
+  // Compact French formatting: "1,8m (6s)" matches sailing-French copy.
+  const fr1 = (n: number) => n.toFixed(1).replace(".", ",");
+
+  const seaValue = leg.hs_avg_m == null
+    ? "—"
+    : leg.tp_avg_s != null
+      ? `${fr1(leg.hs_avg_m)}m (${leg.tp_avg_s.toFixed(0)}s)`
+      : `${fr1(leg.hs_avg_m)}m`;
+  const seaLabel = leg.hs_avg_m == null
+    ? "mer non observée"
+    : leg.sea_direction === "face"
+      ? "de face"
+      : leg.sea_direction === "travers"
+        ? "de travers"
+        : "par l'arrière";
+
+  // Warn tint when sea state notable. Mirrors the same Hs threshold the
+  // summary line uses, so "Mer Formée" badge and warn-coloured KPI agree.
+  const seaWarn = leg.hs_avg_m != null && leg.hs_avg_m > 1.25;
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onToggle();
+    }
+  };
+  const rowBg = expanded ? "var(--ow-bg-2)" : "transparent";
+
+  // Each leg returns three `<tr>`s into the shared `<table>` in LegList:
+  // a title row (badge + name + speed + chevron), a chip row (the four
+  // summary cells), and an optional expand row (KPIs + LegDetailCard).
+  // Because they're all in the same table, the colgroup defined in LegList
+  // forces every leg's chip cells to live in the same column widths —
+  // exactly the cross-row alignment a tableless flex/grid layout couldn't
+  // give us when each LegRow had its own grid container.
   return (
-    <div style={{ borderBottom: "1px solid var(--ow-line)", background: expanded ? "var(--ow-bg-2)" : "transparent" }}>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left"
+    <>
+      {/* Single-row leg: badge + 4 info cells + chevron. The speed
+          indicator was dropped and the redundant "Tronçon X" label was
+          dropped earlier — the numbered badge identifies the leg. */}
+      <tr
+        role="button"
+        tabIndex={0}
         aria-expanded={expanded}
+        onClick={onToggle}
+        onKeyDown={handleKey}
+        className="cursor-pointer"
+        style={{ background: rowBg }}
       >
-        <span
-          className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-bold tabular-nums"
-          style={{ background: CX_COLORS[cx], color: "#0B1D14", fontFamily: "var(--ow-font-mono)" }}
-        >
-          {index + 1}
-        </span>
-        <div className="flex-1 min-w-0">
-          <div className="text-xs font-semibold truncate" style={{ color: "var(--ow-fg-0)" }}>
-            Tronçon {index + 1}
-          </div>
-          <div
-            className="grid gap-2 mt-0.5 text-[10px] tabular-nums"
-            style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)", gridTemplateColumns: SEG_SUBLINE_COLS }}
+        <td className="py-2 pl-3 pr-2 align-middle" style={{ borderTop: "1px solid var(--ow-line)" }}>
+          {/* Leg label is "from→to" using user-waypoint indices (1-based).
+              `index` here is 0-based across legs, so leg N goes from
+              waypoint N to waypoint N+1. */}
+          <span
+            className="inline-flex h-6 px-1.5 rounded-md items-center justify-center text-[10px] font-bold tabular-nums whitespace-nowrap"
+            style={{ background: CX_COLORS[cx], color: "#0B1D14", fontFamily: "var(--ow-font-mono)" }}
           >
-            <span className="truncate">{leg.point_of_sail}</span>
-            <span>{tws} kn</span>
-            <span className="truncate">{seaPart}</span>
-            <span>{leg.distance_nm.toFixed(1)} nm</span>
-          </div>
-          <div className="text-[10px] mt-0.5 tabular-nums" style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}>
-            {fmtHM(leg.start_time)} → {fmtHM(leg.end_time)}
-          </div>
-        </div>
-        <span className="text-[11px] tabular-nums shrink-0 font-semibold" style={{ color: "var(--ow-fg-0)", fontFamily: "var(--ow-font-mono)" }}>
-          {leg.target_speed_kn.toFixed(1)} kn
-        </span>
-        <span
-          aria-hidden="true"
-          className="inline-flex"
-          style={{
-            color: expanded ? "var(--ow-accent)" : "var(--ow-fg-3)",
-            transform: expanded ? "rotate(180deg)" : "none",
-            transition: "transform 150ms ease, color 150ms ease",
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 6l5 5 5-5" />
-          </svg>
-        </span>
-      </button>
-      {expanded && <LegDetailCard leg={leg} />}
-    </div>
+            {index + 1}→{index + 2}
+          </span>
+        </td>
+        <td className="py-2 px-1 align-middle" style={{ borderTop: "1px solid var(--ow-line)" }}>
+          <SummaryCell value={summary.duration} />
+        </td>
+        <td className="py-2 px-1 align-middle" style={{ borderTop: "1px solid var(--ow-line)" }}>
+          <SummaryCell value={summary.allure} />
+        </td>
+        <td className="py-2 px-1 align-middle" style={{ borderTop: "1px solid var(--ow-line)" }}>
+          <SummaryCell value={summary.wind} />
+        </td>
+        <td className="py-2 px-1 align-middle" style={{ borderTop: "1px solid var(--ow-line)" }}>
+          <SummaryCell value={summary.flag} />
+        </td>
+        <td className="py-2 pl-1 pr-3 text-right align-middle" style={{ borderTop: "1px solid var(--ow-line)" }}>
+          <span
+            aria-hidden="true"
+            className="inline-flex"
+            style={{
+              color: expanded ? "var(--ow-accent)" : "var(--ow-fg-3)",
+              transform: expanded ? "rotate(180deg)" : "none",
+              transition: "transform 150ms ease, color 150ms ease",
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6l5 5 5-5" />
+            </svg>
+          </span>
+        </td>
+      </tr>
+      {expanded && (
+        <tr style={{ background: rowBg }}>
+          <td colSpan={6} className="px-4 pb-3">
+            {/* Three KPI cells (time / distance / sea) — wind and allure
+                already appear in the collapsed row above, repeating them
+                in the expand was visual noise. */}
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <KpiBlock value={`${fmtHM(leg.start_time)} → ${fmtHM(leg.end_time)}`} label="dep → arr" />
+              <KpiBlock value={fr1(leg.distance_nm)} label="miles" />
+              <KpiBlock value={seaValue} label={seaLabel} tone={seaWarn ? "warn" : "default"} />
+            </div>
+            <LegDetailCard leg={leg} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -567,34 +671,29 @@ function LegList({
           cliquez pour détailler
         </span>
       </div>
-      <div
-        className="flex items-center gap-2.5 px-4 pb-1.5 text-[9px]"
-        style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}
-      >
-        <span className="shrink-0 w-6" />
-        <div
-          className="flex-1 min-w-0 grid gap-2"
-          style={{ gridTemplateColumns: SEG_SUBLINE_COLS }}
-        >
-          <span>allure</span>
-          <span>vent</span>
-          <span>vagues</span>
-          <span>distance</span>
-        </div>
-        <span className="shrink-0">vitesse cible</span>
-        <span className="shrink-0 w-[14px]" />
-      </div>
-      <div style={{ borderTop: "1px solid var(--ow-line)" }}>
-        {legs.map((leg, i) => (
-          <LegRow
-            key={i}
-            leg={leg}
-            index={i}
-            expanded={openIdx === i}
-            onToggle={() => onOpenChange(openIdx === i ? null : i)}
-          />
-        ))}
-      </div>
+      {/* A single table for all legs so the colgroup forces every leg's
+          chip cells into the exact same column widths — alignment for free,
+          no subgrid acrobatics. `table-fixed` makes columns honour the
+          colgroup widths instead of auto-sizing per row. */}
+      {/* `table-auto` (default) lets columns shrink with the viewport: a
+          narrow sidebar tightens the inter-cell spacing automatically.
+          We keep the same column order (badge / duration / allure / wind /
+          flag / chev) but drop the rigid colgroup widths so the browser
+          can rebalance. `min-width: 0` on the flag cell allows the wrap
+          point to slide leftward instead of pushing the chevron offscreen. */}
+      <table className="w-full" style={{ borderCollapse: "collapse" }}>
+        <tbody>
+          {legs.map((leg, i) => (
+            <LegRow
+              key={i}
+              leg={leg}
+              index={i}
+              expanded={openIdx === i}
+              onToggle={() => onOpenChange(openIdx === i ? null : i)}
+            />
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

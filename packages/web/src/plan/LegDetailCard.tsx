@@ -236,8 +236,11 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
       ? `${tws} (${Math.round(leg.gust_max_kn)}) kn`
       : `${tws} kn`;
   const fmtFR1 = (n: number) => n.toFixed(1).replace(".", ",");
+  // Compact French form mirrors the KpiBlock used in PlanSidebar: "1,8m (6s)"
+  // rather than "1,8 m (6 s)" — keeps the compass labels short enough to fit
+  // beside the wheel without getting clipped at LABEL_R on narrow viewports.
   const waveLine = leg.hs_avg_m != null
-    ? `${fmtFR1(leg.hs_avg_m)} m${leg.tp_avg_s != null ? ` (${Math.round(leg.tp_avg_s)} s)` : ""}`
+    ? `${fmtFR1(leg.hs_avg_m)}m${leg.tp_avg_s != null ? ` (${Math.round(leg.tp_avg_s)}s)` : ""}`
     : "";
   const hasWaves = leg.hs_avg_m != null;
 
@@ -367,9 +370,10 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
             fill={COLORS.wind}
             style={{ fontFamily: "var(--ow-font-mono)" }}
           >
-            <tspan fontSize="9" fontWeight="500">
-              {leg.gust_max_kn != null && leg.gust_max_kn > tws + 1 ? "Vent (rafales)" : "Vent"}
-            </tspan>
+            {/* Just "Vent": when gusts are present the value already shows
+                them in parentheses (e.g. "21 (27) kn"), no need to double the
+                "(rafales)" cue in the label. */}
+            <tspan fontSize="9" fontWeight="500">Vent</tspan>
             <tspan x={windLx + windLabel.dx} dy="13" fontSize="12" fontWeight="700">
               {windLine}
             </tspan>
@@ -388,9 +392,10 @@ export function LegDetailCard({ leg }: { leg: AggregatedLeg }) {
                 fill={COLORS.waves}
                 style={{ fontFamily: "var(--ow-font-mono)" }}
               >
-                <tspan fontSize="9" fontWeight="500">
-                  {leg.tp_avg_s != null ? "Hauteur vagues (période)" : "Hauteur vagues"}
-                </tspan>
+                {/* "Vagues" only: hauteur + période are visible in the value
+                    line below ("1,8m (6s)"). The long "Hauteur vagues
+                    (période)" label was clipping at the SVG edge. */}
+                <tspan fontSize="9" fontWeight="500">Vagues</tspan>
                 <tspan x={waveLx + waveLabel.dx} dy="13" fontSize="12" fontWeight="700">
                   {waveLine}
                 </tspan>

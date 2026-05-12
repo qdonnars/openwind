@@ -58,6 +58,71 @@ function twaToPointOfSail(twa: number): string {
   return "Arrière";
 }
 
+export function legDurationLabel(leg: AggregatedLeg): string {
+  const ms = new Date(leg.end_time).getTime() - new Date(leg.start_time).getTime();
+  const totalMin = Math.max(0, Math.round(ms / 60000));
+  if (totalMin < 60) return `${totalMin} mn`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (m === 0) return `${h} h`;
+  // "1h30" form — compact, no zero-pad on minutes since sailors read "1h05" oddly.
+  return `${h}h${m.toString().padStart(2, "0")}`;
+}
+
+// Build the leg summary as a list of standalone "cells" — duration,
+// allure, plus any qualifiers triggered by the current/wave/wind thresholds.
+// Rendered as a flex-wrap row of chips in LegRow so each cell wraps onto a
+// new line when the sidebar is narrow.
+//
+// Sea/wind thresholds match the server-side complexity scorer (Météo-France
+// classification) so the summary stays coherent with the warnings the LLM
+// surfaces in MCP. Wind-against-current requires both an opposing direction
+// AND a material current speed (>= 1.5 kn), mirroring the server cutoff.
+//
+// Clapot detection (short period × Hs) will land in a follow-up PR and feed
+// into this same `qualifiers` array.
+export interface LegSummaryCells {
+  duration: string;
+  allure: string;
+  wind: string;
+  // Single optional flag cell — covers either sea state (Mer Formée / Grosse
+  // Mer) or wind-against-current. When both fire on a leg, current wins
+  // because it's the rarer and more decision-shaping signal. Null = empty
+  // cell, kept in the grid so columns line up vertically across rows.
+  flag: string | null;
+}
+
+// Build the leg summary as a fixed set of named cells so LegRow can render
+// them in a CSS grid with stable column positions (each leg's duration sits
+// under the previous leg's duration, etc.). Returning a positional string[]
+// here used to drift on narrow viewports — the wrapping reordered cells.
+export function buildLegSummaryCells(leg: AggregatedLeg): LegSummaryCells {
+  const tMin = Math.round(leg.tws_min);
+  const tMax = Math.round(leg.tws_max);
+  // NBSP between the number and "kn" so the wind chip stays on one line when
+  // SummaryCell renders with width:min-content. Multi-word labels (Mer Formée,
+  // Vent Contre Courant) still break at their normal spaces.
+  const wind = tMin === tMax ? `${tMin} kn` : `${tMin}–${tMax} kn`;
+
+  let flag: string | null = null;
+  if (leg.current_relative === "contraire" && (leg.current_speed_kn ?? 0) >= 1.5) {
+    flag = "Vent Contre Courant";
+  } else if (leg.hs_avg_m != null) {
+    if (leg.hs_avg_m > 2.5) flag = "Grosse Mer";
+    else if (leg.hs_avg_m > 1.25) flag = "Mer Formée";
+  }
+
+  return {
+    duration: legDurationLabel(leg),
+    // Bare one-word allure ("Près" / "Travers" / "Largue" / "Arrière") to keep
+    // the cell narrow enough for the grid; matches the WindowsTable ALLURE
+    // column copy.
+    allure: leg.point_of_sail,
+    wind,
+    flag,
+  };
+}
+
 // Inclusive-exclusive segment ranges per user-waypoint leg. Shared between
 // the sidebar (drives the click-to-expand list) and the map (drives the
 // highlight overlay when a leg is selected).
