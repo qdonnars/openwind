@@ -8,6 +8,9 @@ import {
   type ModelConfig,
   type ModelName,
 } from "../config/modelConfig";
+import { PolarEditor } from "../components/PolarEditor";
+
+type Tab = "models" | "polar";
 
 function formatHorizon(hours: number): string {
   if (hours < 72) return `${hours} h`;
@@ -15,6 +18,7 @@ function formatHorizon(hours: number): string {
 }
 
 export function ConfigPage() {
+  const [tab, setTab] = useState<Tab>("models");
   const [config, setConfig] = useState<ModelConfig>(() => loadModelConfig());
   const [savedOnce, setSavedOnce] = useState(false);
   // Track the dragged item by model identity (not by index) so the visual
@@ -92,6 +96,29 @@ export function ConfigPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-6 py-10">
+        <div className="config-tabs flex gap-2 mb-6" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "models"}
+            onClick={() => setTab("models")}
+            className={`config-tab ${tab === "models" ? "is-active" : ""}`}
+          >
+            Modèles météo
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "polar"}
+            onClick={() => setTab("polar")}
+            className={`config-tab ${tab === "polar" ? "is-active" : ""}`}
+          >
+            Polaire perso
+          </button>
+        </div>
+
+        {tab === "models" ? (
+          <>
         <h1 className="text-3xl font-bold mb-2">Modèles météo</h1>
         <p className="text-sm opacity-80 mb-8 leading-relaxed">
           Les {ACTIVE_LIMIT} premiers modèles sont affichés dans la table de
@@ -180,12 +207,64 @@ export function ConfigPage() {
             <span className="text-xs opacity-50">· enregistré</span>
           )}
         </div>
+          </>
+        ) : (
+          <>
+            <h1 className="text-3xl font-bold mb-2">Polaire personnalisée</h1>
+            <p className="text-sm opacity-80 mb-8 leading-relaxed">
+              Choisis un archétype de base, puis ajuste-le. L'échelle multiplie
+              toute la polaire (utile si ton bateau est plus ou moins rapide
+              que la référence). Pour un ajustement fin, sélectionne une
+              courbe TWS et glisse ses points sur le diagramme. Cette polaire
+              n'est pas encore envoyée au planificateur côté serveur.
+            </p>
+            <PolarEditor />
+          </>
+        )}
+
+        <footer className="config-storage-note mt-10">
+          OpenWind ne propose volontairement pas de comptes utilisateurs :
+          aucune donnée n'est envoyée sur un serveur pour identifier qui tu es.
+          Tes préférences (modèles, polaire perso) sont stockées localement
+          dans ton navigateur. Si tu changes d'appareil, de navigateur ou si
+          tu effaces les cookies de ce site, ces ajustements seront perdus.
+        </footer>
       </main>
 
       <style>{`
         .config-root {
           background: var(--ow-bg-0, #0b1220);
           color: var(--ow-fg-0, #e2e8f0);
+        }
+        .config-tab {
+          padding: 8px 16px;
+          border-radius: 10px;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--ow-fg-1, #cbd5e1);
+          background: var(--ow-bg-1, rgba(255,255,255,0.04));
+          border: 1px solid var(--ow-line-2, rgba(255,255,255,0.10));
+          transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+        }
+        .config-tab:hover {
+          background: var(--ow-bg-2, rgba(255,255,255,0.08));
+          color: var(--ow-fg-0, #e2e8f0);
+        }
+        .config-tab.is-active {
+          background: var(--ow-accent, #14b8a6);
+          color: #fff;
+          border-color: var(--ow-accent, #14b8a6);
+        }
+        .config-storage-note {
+          font-size: 12px;
+          line-height: 1.55;
+          color: var(--ow-fg-2, #94a3b8);
+          padding: 14px 16px;
+          border-radius: 10px;
+          background: var(--ow-bg-1, rgba(255,255,255,0.03));
+          border: 1px solid var(--ow-line-2, rgba(255,255,255,0.08));
+          border-left-width: 3px;
+          border-left-color: var(--ow-fg-2, #94a3b8);
         }
         .config-header {
           background: color-mix(in srgb, var(--ow-bg-0, #0b1220) 75%, transparent);
