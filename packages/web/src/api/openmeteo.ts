@@ -7,10 +7,10 @@ import {
 
 const MODEL_ENDPOINTS: Record<ModelName, { endpoint: string; extraParams?: string }> = {
   AROME: {
-    endpoint: "https://api.open-meteo.com/v1/meteofrance",
-    extraParams: "&models=arome_france",
-  },
-  AROME_HD: {
+    // arome_france_hd is the 1.5 km high-resolution Météo-France AROME. The
+    // 2.5 km arome_france variant was dropped: same horizon, same cadence,
+    // lower resolution, and 1.5 km better captures coastal sheltering and
+    // thermal effects on complex terrain (Med, Bretagne sud).
     endpoint: "https://api.open-meteo.com/v1/meteofrance",
     extraParams: "&models=arome_france_hd",
   },

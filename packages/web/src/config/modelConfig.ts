@@ -13,7 +13,6 @@ export const ACTIVE_LIMIT = 4;
 
 export type ModelName =
   | "AROME"
-  | "AROME_HD"
   | "ARPEGE_EU"
   | "ARPEGE_W"
   | "ICON"
@@ -30,7 +29,6 @@ export type ModelName =
 
 export const ALL_MODELS: readonly ModelName[] = [
   "AROME",
-  "AROME_HD",
   "ARPEGE_EU",
   "ARPEGE_W",
   "ICON",
@@ -53,7 +51,6 @@ export const DEFAULT_ORDER: readonly ModelName[] = [
   "ICON",
   "ECMWF",
   "GFS",
-  "AROME_HD",
   "ARPEGE_EU",
   "ARPEGE_W",
   "ICON_GLOBAL",
@@ -88,21 +85,12 @@ export interface ModelMeta {
 
 export const MODEL_META: Record<ModelName, ModelMeta> = {
   AROME: {
-    label: "AROME",
-    provider: "Météo-France",
-    resolutionKm: 1.3,
-    horizonHours: 51,
-    coverage: "France",
-    description: "Haute résolution, capte les effets thermiques et locaux.",
-    nativeStepHours: 1,
-  },
-  AROME_HD: {
     label: "AROME HD",
     provider: "Météo-France",
-    resolutionKm: 1.3,
+    resolutionKm: 1.5,
     horizonHours: 51,
     coverage: "France",
-    description: "Variante AROME avec champs de surface plus complets.",
+    description: "Haute résolution Météo-France, capte les effets thermiques et l'abri côtier.",
     nativeStepHours: 1,
   },
   ARPEGE_EU: {
