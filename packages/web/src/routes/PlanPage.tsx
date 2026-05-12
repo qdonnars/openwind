@@ -629,6 +629,43 @@ export function PlanPage() {
     );
   }
 
+  // Single source of truth for PlanSidebar's props — spread into both the
+  // desktop and mobile renders below so they can't silently drift apart.
+  const sidebarProps = {
+    passage,
+    complexity,
+    isLoading,
+    error: apiError,
+    archetypes,
+    currentArchetypeSlug: archetype,
+    onArchetypeChange: handleArchetypeChange,
+    departure,
+    onDepartureChange: handleDepartureChange,
+    isStale,
+    onRefetch: handleRefetch,
+    forecastUpdatedAt,
+    waypointCount: waypoints.length,
+    waypoints,
+    timeAnchor,
+    onTimeAnchorChange: handleTimeAnchorChange,
+    mode: planMode,
+    onModeChange: handleModeChange,
+    sweepEarliest,
+    sweepLatest,
+    sweepIntervalHours: sweepInterval,
+    onSweepEarliestChange: setSweepEarliest,
+    onSweepLatestChange: setSweepLatest,
+    onSweepIntervalChange: setSweepInterval,
+    windows,
+    metaWarnings,
+    onCompareFetch: doFetchWindows,
+    onWindowSelect: handleWindowSelect,
+    selectedLegIdx,
+    onSelectedLegChange: setSelectedLegIdx,
+    onExpandDrawer: () => drawerRef.current?.expand(),
+    onReset: handleReset,
+  };
+
   return (
     <div
       className="h-screen flex flex-col overflow-hidden"
@@ -689,78 +726,13 @@ export function PlanPage() {
 
         {/* Desktop sidebar — user-resizable via the handle on the left edge. */}
         <ResizableDesktopSidebar defaultPx={384}>
-          <PlanSidebar
-            passage={passage}
-            complexity={complexity}
-            isLoading={isLoading}
-            error={apiError}
-            archetypes={archetypes}
-            currentArchetypeSlug={archetype}
-            onArchetypeChange={handleArchetypeChange}
-            departure={departure}
-            onDepartureChange={handleDepartureChange}
-            isStale={isStale}
-            onRefetch={handleRefetch}
-            forecastUpdatedAt={forecastUpdatedAt}
-            waypointCount={waypoints.length}
-            waypoints={waypoints}
-            timeAnchor={timeAnchor}
-            onTimeAnchorChange={handleTimeAnchorChange}
-            mode={planMode}
-            onModeChange={handleModeChange}
-            sweepEarliest={sweepEarliest}
-            sweepLatest={sweepLatest}
-            sweepIntervalHours={sweepInterval}
-            onSweepEarliestChange={setSweepEarliest}
-            onSweepLatestChange={setSweepLatest}
-            onSweepIntervalChange={setSweepInterval}
-            windows={windows}
-            metaWarnings={metaWarnings}
-            onCompareFetch={doFetchWindows}
-            onWindowSelect={handleWindowSelect}
-            selectedLegIdx={selectedLegIdx}
-            onSelectedLegChange={setSelectedLegIdx}
-            onExpandDrawer={() => drawerRef.current?.expand()}
-            onReset={handleReset}
-          />
+          <PlanSidebar {...sidebarProps} />
         </ResizableDesktopSidebar>
       </div>
 
       {/* Mobile drawer — below map. User-resizable via the handle bar at the top. */}
       <ResizableMobileDrawer ref={drawerRef} defaultVh={passage ? 38 : 60}>
-        <PlanSidebar
-          passage={passage}
-          complexity={complexity}
-          isLoading={isLoading}
-          error={apiError}
-          archetypes={archetypes}
-          currentArchetypeSlug={archetype}
-          onArchetypeChange={handleArchetypeChange}
-          departure={departure}
-          onDepartureChange={handleDepartureChange}
-          isStale={isStale}
-          onRefetch={handleRefetch}
-          forecastUpdatedAt={forecastUpdatedAt}
-          waypointCount={waypoints.length}
-          waypoints={waypoints}
-          timeAnchor={timeAnchor}
-          onTimeAnchorChange={handleTimeAnchorChange}
-          mode={planMode}
-          onModeChange={handleModeChange}
-          sweepEarliest={sweepEarliest}
-          sweepLatest={sweepLatest}
-          sweepIntervalHours={sweepInterval}
-          onSweepEarliestChange={setSweepEarliest}
-          onSweepLatestChange={setSweepLatest}
-          onSweepIntervalChange={setSweepInterval}
-          windows={windows}
-          metaWarnings={metaWarnings}
-          onCompareFetch={doFetchWindows}
-          onWindowSelect={handleWindowSelect}
-          selectedLegIdx={selectedLegIdx}
-          onSelectedLegChange={setSelectedLegIdx}
-          onExpandDrawer={() => drawerRef.current?.expand()}
-        />
+        <PlanSidebar {...sidebarProps} />
       </ResizableMobileDrawer>
     </div>
   );
