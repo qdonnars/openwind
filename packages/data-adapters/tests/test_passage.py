@@ -1055,3 +1055,158 @@ class TestEstimatePassageForArrival:
             segment_length_nm=10.0,
         )
         assert plan.target_arrival == target_local.astimezone(UTC)
+
+
+class TestPolarOverride:
+    """Custom polar payload overrides the bundled archetype polar."""
+
+    @staticmethod
+    def _doubled_polar(base_name: str) -> "BoatPolar":
+        from openwind_data.routing.archetypes import BoatPolar
+
+        base = get_polar(base_name)
+        doubled = tuple(tuple(v * 2.0 for v in row) for row in base.boat_speed_kn)
+        return BoatPolar(
+            name="custom",
+            length_ft=base.length_ft,
+            type=base.type,
+            category=base.category,
+            examples=base.examples,
+            performance_class=base.performance_class,
+            tws_kn=base.tws_kn,
+            twa_deg=base.twa_deg,
+            boat_speed_kn=doubled,
+        )
+
+    async def test_override_changes_duration(self) -> None:
+        # Doubling polar speeds → ~half the duration (modulo VMG kicker around
+        # close-hauled, identical here because we set up a beam reach).
+        adapter_base = StubAdapter(tws_kn=12.0, twd_deg=0.0)
+        baseline = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter_base,
+            segment_length_nm=10.0,
+        )
+
+        adapter_custom = StubAdapter(tws_kn=12.0, twd_deg=0.0)
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter_custom,
+            segment_length_nm=10.0,
+            polar_override=self._doubled_polar("cruiser_40ft"),
+        )
+        # Halved speed → halved duration; allow 5 % slack for VMG corrections.
+        assert report.duration_h == pytest.approx(baseline.duration_h / 2.0, rel=0.05)
+        # Archetype label preserved (the override is a perf layer, not a relabel).
+        assert report.archetype == "cruiser_40ft"
+
+    async def test_override_used_in_compare_windows(self) -> None:
+        # Sweep mode must thread polar_override through every window.
+        adapter = StubAdapter(tws_kn=12.0, twd_deg=0.0)
+        custom = self._doubled_polar("cruiser_40ft")
+        reports = await estimate_passage_windows(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            DEPARTURE + timedelta(hours=3),
+            "cruiser_40ft",
+            sweep_interval_hours=1,
+            adapter=adapter,
+            segment_length_nm=10.0,
+            polar_override=custom,
+        )
+        # 4 windows (hours 0..3), all using the custom polar.
+        assert len(reports) == 4
+        baseline_dur = reports[0].duration_h
+        # Identical wind series + identical polar → identical durations across windows.
+        for r in reports:
+            assert r.duration_h == pytest.approx(baseline_dur, rel=0.01)
+
+    async def test_override_used_in_eta_solver(self) -> None:
+        adapter = StubAdapter(tws_kn=12.0, twd_deg=0.0)
+        target = datetime(2026, 5, 1, 14, 0, tzinfo=UTC)
+        baseline = await estimate_passage_for_arrival(
+            [MARSEILLE, PORQUEROLLES],
+            target,
+            "cruiser_40ft",
+            adapter=StubAdapter(tws_kn=12.0, twd_deg=0.0),
+            segment_length_nm=10.0,
+        )
+        custom = self._doubled_polar("cruiser_40ft")
+        plan = await estimate_passage_for_arrival(
+            [MARSEILLE, PORQUEROLLES],
+            target,
+            "cruiser_40ft",
+            adapter=adapter,
+            segment_length_nm=10.0,
+            polar_override=custom,
+        )
+        assert plan.report.duration_h == pytest.approx(baseline.report.duration_h / 2.0, rel=0.05)
+        assert plan.report.arrival_time == target
+
+
+class TestModelChainOverride:
+    """Caller-supplied model chain overrides the default AROME→ICON→ECMWF→GFS."""
+
+    async def test_chain_walked_in_order(self) -> None:
+        # AROME has no horizon → chain should fall through to ICON-EU.
+        adapter = HorizonLimitedStubAdapter(short_horizon_models=("meteofrance_arome_france",))
+        report = await estimate_passage(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            "cruiser_40ft",
+            adapter=adapter,
+            model="auto",
+            model_chain=("meteofrance_arome_france", "icon_eu"),
+            segment_length_nm=10.0,
+        )
+        assert report.model == "icon_eu"
+
+    async def test_chain_can_skip_default_models(self) -> None:
+        # Only one model in the chain; if it has no horizon, all fail.
+        adapter = HorizonLimitedStubAdapter(short_horizon_models=("icon_eu",))
+        with pytest.raises(ForecastHorizonError) as excinfo:
+            await estimate_passage(
+                [MARSEILLE, PORQUEROLLES],
+                DEPARTURE,
+                "cruiser_40ft",
+                adapter=adapter,
+                model="auto",
+                model_chain=("icon_eu",),
+                segment_length_nm=10.0,
+            )
+        assert excinfo.value.model == "icon_eu"
+
+    async def test_chain_threaded_through_windows(self) -> None:
+        # First-window resolution must respect model_chain, not fall back to
+        # the hard-coded AUTO chain.
+        adapter = HorizonLimitedStubAdapter(short_horizon_models=("meteofrance_arome_france",))
+        reports = await estimate_passage_windows(
+            [MARSEILLE, PORQUEROLLES],
+            DEPARTURE,
+            DEPARTURE + timedelta(hours=2),
+            "cruiser_40ft",
+            sweep_interval_hours=1,
+            adapter=adapter,
+            model="auto",
+            model_chain=("meteofrance_arome_france", "icon_eu"),
+            segment_length_nm=10.0,
+        )
+        assert all(r.model == "icon_eu" for r in reports)
+
+    async def test_chain_threaded_through_eta_solver(self) -> None:
+        adapter = HorizonLimitedStubAdapter(short_horizon_models=("meteofrance_arome_france",))
+        target = datetime(2026, 5, 1, 14, 0, tzinfo=UTC)
+        plan = await estimate_passage_for_arrival(
+            [MARSEILLE, PORQUEROLLES],
+            target,
+            "cruiser_40ft",
+            adapter=adapter,
+            model="auto",
+            model_chain=("meteofrance_arome_france", "icon_eu"),
+            segment_length_nm=10.0,
+        )
+        assert plan.report.model == "icon_eu"

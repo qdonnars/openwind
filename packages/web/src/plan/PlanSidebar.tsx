@@ -8,6 +8,14 @@ import { ModeToggle, TimeAnchorToggle, type PlanMode, type TimeAnchor } from "./
 import { LegDetailCard } from "./LegDetailCard";
 import { EmptyState, ModePicker, Warn, RecapButton } from "./PlanStates";
 import { useHasChosenMode } from "./useChosenMode";
+import {
+  ARCHETYPE_LABELS,
+  defaultPolarConfig,
+  isPolarCustomized,
+  loadPolarConfig,
+  savePolarConfig,
+} from "../config/polarConfig";
+import { rememberReturnPath } from "../config/returnPath";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -412,24 +420,50 @@ function ArchetypeSelector({
   currentSlug,
   archetypes,
   onChange,
+  onCustomCleared,
 }: {
   currentSlug: string;
   archetypes: Archetype[];
   onChange: (slug: string) => void;
+  // Notify the parent that the custom polar was reset so it can re-fetch
+  // (the new fingerprint won't match the cached one, and resolveOverrides
+  // will stop sending the custom matrix).
+  onCustomCleared?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Re-read the polar config every render. Cheap (localStorage parse + a few
+  // boolean checks) and ensures the "Custom" pill appears immediately after
+  // the user edits /config in another tab and comes back here.
+  const polarCfg = loadPolarConfig();
+  const isCustom = isPolarCustomized(polarCfg, currentSlug);
+  const baseLabel = ARCHETYPE_LABELS[polarCfg.base] ?? polarCfg.base;
   const current = archetypes.find((a) => a.slug === currentSlug);
-  const label = current?.name ?? currentSlug;
+  const archetypeLabel = current?.name ?? currentSlug;
+  const label = isCustom ? "Custom" : archetypeLabel;
+
+  function resetCustom() {
+    savePolarConfig(defaultPolarConfig());
+    setOpen(false);
+    onCustomCleared?.();
+  }
 
   return (
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 text-sm transition-colors"
-        style={{ color: "var(--ow-fg-1)" }}
-        title="Changer le type de bateau"
+        style={{ color: isCustom ? "var(--ow-accent)" : "var(--ow-fg-1)" }}
+        title={isCustom ? `Polaire personnalisée active (base : ${baseLabel})` : "Changer le type de bateau"}
       >
         {label}
+        {isCustom && (
+          <span
+            className="text-[9px] font-semibold uppercase tracking-wider px-1 py-0.5 rounded"
+            style={{ background: "var(--ow-accent-soft)", color: "var(--ow-accent)" }}
+          >
+            perso
+          </span>
+        )}
         <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style={{ opacity: 0.5 }}>
           <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
         </svg>
@@ -440,17 +474,49 @@ function ArchetypeSelector({
           {/* backdrop */}
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div
-            className="absolute left-0 top-7 z-20 min-w-[220px] rounded-xl shadow-xl border overflow-hidden"
+            className="absolute left-0 top-7 z-20 min-w-[240px] rounded-xl shadow-xl border overflow-hidden"
             style={{ background: "var(--ow-bg-1)", borderColor: "var(--ow-line-2)", boxShadow: "var(--ow-shadow-pop)" }}
           >
+            {isCustom && (
+              <div
+                className="px-4 py-3 text-xs"
+                style={{
+                  background: "var(--ow-accent-soft)",
+                  color: "var(--ow-accent)",
+                  borderBottom: "1px solid var(--ow-line)",
+                }}
+              >
+                <div className="font-semibold mb-1">Polaire personnalisée active</div>
+                <div className="opacity-80 mb-2">Base : {baseLabel}</div>
+                <div className="flex gap-2">
+                  <a
+                    href="/config"
+                    onClick={rememberReturnPath}
+                    className="underline"
+                    style={{ color: "var(--ow-accent)" }}
+                  >
+                    éditer
+                  </a>
+                  <span style={{ opacity: 0.4 }}>·</span>
+                  <button
+                    type="button"
+                    onClick={resetCustom}
+                    className="underline"
+                    style={{ color: "var(--ow-accent)" }}
+                  >
+                    réinitialiser
+                  </button>
+                </div>
+              </div>
+            )}
             {archetypes.map((a) => (
               <button
                 key={a.slug}
                 onClick={() => { onChange(a.slug); setOpen(false); }}
                 className="w-full text-left px-4 py-3 text-sm transition-colors"
                 style={{
-                  background: a.slug === currentSlug ? "var(--ow-accent-soft)" : "transparent",
-                  color: a.slug === currentSlug ? "var(--ow-accent)" : "var(--ow-fg-0)",
+                  background: !isCustom && a.slug === currentSlug ? "var(--ow-accent-soft)" : "transparent",
+                  color: !isCustom && a.slug === currentSlug ? "var(--ow-accent)" : "var(--ow-fg-0)",
                   borderBottom: "1px solid var(--ow-line)",
                 }}
               >
@@ -481,8 +547,8 @@ function SummaryCell({ value }: { value: string | null }) {
   if (!value) return null;
   return (
     <span
-      className="text-[10px] whitespace-normal"
-      style={{ color: "var(--ow-fg-1)", lineHeight: 1, display: "inline-block" }}
+      className="text-xs whitespace-normal"
+      style={{ color: "var(--ow-fg-1)", lineHeight: 1.15, display: "inline-block" }}
     >
       {value}
     </span>
@@ -662,26 +728,20 @@ function LegList({
 }) {
   return (
     <div>
-      <div
-        className="flex items-center justify-between px-4 pt-3 pb-1 text-[10px] uppercase tracking-widest font-bold"
-        style={{ color: "var(--ow-fg-2)" }}
-      >
-        Segments
-        <span className="text-[9px] font-medium normal-case tracking-normal" style={{ color: "var(--ow-fg-3)", fontFamily: "var(--ow-font-mono)" }}>
-          cliquez pour détailler
-        </span>
-      </div>
-      {/* A single table for all legs so the colgroup forces every leg's
-          chip cells into the exact same column widths — alignment for free,
-          no subgrid acrobatics. `table-fixed` makes columns honour the
-          colgroup widths instead of auto-sizing per row. */}
-      {/* `table-auto` (default) lets columns shrink with the viewport: a
-          narrow sidebar tightens the inter-cell spacing automatically.
-          We keep the same column order (badge / duration / allure / wind /
-          flag / chev) but drop the rigid colgroup widths so the browser
-          can rebalance. `min-width: 0` on the flag cell allows the wrap
-          point to slide leftward instead of pushing the chevron offscreen. */}
       <table className="w-full" style={{ borderCollapse: "collapse" }}>
+        <thead>
+          <tr
+            className="text-[9px] uppercase tracking-widest"
+            style={{ color: "var(--ow-fg-3)" }}
+          >
+            <th className="py-1 pl-3 pr-2 pt-3 text-left font-semibold">Tronçon</th>
+            <th className="py-1 px-1 pt-3 text-left font-semibold">Durée</th>
+            <th className="py-1 px-1 pt-3 text-left font-semibold">Allure</th>
+            <th className="py-1 px-1 pt-3 text-left font-semibold">Vent (kn)</th>
+            <th className="py-1 px-1 pt-3 text-left font-semibold">Mer</th>
+            <th className="py-1 pl-1 pr-3 pt-3" />
+          </tr>
+        </thead>
         <tbody>
           {legs.map((leg, i) => (
             <LegRow
@@ -953,6 +1013,7 @@ export function PlanSidebar({
               currentSlug={currentArchetypeSlug}
               archetypes={archetypes}
               onChange={onArchetypeChange}
+              onCustomCleared={onRefetch}
             />
           </div>
         )}
@@ -1005,6 +1066,7 @@ export function PlanSidebar({
           currentSlug={currentArchetypeSlug}
           archetypes={archetypes}
           onChange={onArchetypeChange}
+          onCustomCleared={onRefetch}
         />
 
         <button
@@ -1079,6 +1141,7 @@ export function PlanSidebar({
             currentSlug={currentArchetypeSlug}
             archetypes={archetypes}
             onChange={onArchetypeChange}
+            onCustomCleared={onRefetch}
           />
         </div>
       )}

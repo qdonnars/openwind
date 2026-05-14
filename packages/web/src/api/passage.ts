@@ -1,4 +1,15 @@
 import type { PassageResponse, PassageByEtaResponse, MultiWindowResponse, Archetype } from "../plan/types";
+import type { ModelName } from "../config/modelConfig";
+import type { PolarData } from "../config/polarConfig";
+
+// Plan-time overrides driven by the user's /config preferences. Both are
+// optional — when omitted, the server falls back to its bundled archetype
+// polar and the hard-coded AUTO model chain. The shape mirrors what the
+// HF Space's `_parse_polar` and `_translate_models` helpers expect.
+export interface PlanOverrides {
+  models?: ModelName[];
+  polar?: PolarData;
+}
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "https://qdonnars-openwind-mcp.hf.space";
 
@@ -42,16 +53,20 @@ export async function fetchPassage(params: {
   departure: string;
   archetype: string;
   efficiency?: number;
+  overrides?: PlanOverrides;
 }): Promise<PassageResponse> {
+  const body: Record<string, unknown> = {
+    waypoints: params.waypoints,
+    departure: params.departure,
+    archetype: params.archetype,
+    efficiency: params.efficiency ?? 0.75,
+  };
+  if (params.overrides?.models?.length) body["models"] = params.overrides.models;
+  if (params.overrides?.polar) body["polar"] = params.overrides.polar;
   const res = await fetch(`${API_BASE}/api/v1/passage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      waypoints: params.waypoints,
-      departure: params.departure,
-      archetype: params.archetype,
-      efficiency: params.efficiency ?? 0.75,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as Record<string, string>;
@@ -68,6 +83,7 @@ export async function fetchPassageWindows(params: {
   intervalHours: number;
   targetEta?: string;
   efficiency?: number;
+  overrides?: PlanOverrides;
 }): Promise<MultiWindowResponse> {
   const body: Record<string, unknown> = {
     waypoints: params.waypoints,
@@ -78,6 +94,8 @@ export async function fetchPassageWindows(params: {
     sweep_interval_hours: params.intervalHours,
   };
   if (params.targetEta) body["target_eta"] = params.targetEta;
+  if (params.overrides?.models?.length) body["models"] = params.overrides.models;
+  if (params.overrides?.polar) body["polar"] = params.overrides.polar;
 
   const res = await fetch(`${API_BASE}/api/v1/passage`, {
     method: "POST",
@@ -96,6 +114,7 @@ export async function fetchPassageByEta(params: {
   targetArrival: string;
   archetype: string;
   efficiency?: number;
+  overrides?: PlanOverrides;
 }): Promise<PassageByEtaResponse> {
   const body: Record<string, unknown> = {
     waypoints: params.waypoints,
@@ -103,6 +122,8 @@ export async function fetchPassageByEta(params: {
     archetype: params.archetype,
     efficiency: params.efficiency ?? 0.75,
   };
+  if (params.overrides?.models?.length) body["models"] = params.overrides.models;
+  if (params.overrides?.polar) body["polar"] = params.overrides.polar;
 
   const res = await fetch(`${API_BASE}/api/v1/passage-by-eta`, {
     method: "POST",

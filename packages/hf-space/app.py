@@ -31,7 +31,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from openwind_data.adapters.base import ForecastHorizonError
 from openwind_data.currents.marc_atlas import MarcAtlasRegistry
 from openwind_data.currents.shom_c2d_registry import ShomC2dRegistry
-from openwind_data.routing.archetypes import list_archetypes_metadata
+from openwind_data.routing.archetypes import BoatPolar, list_archetypes_metadata
 from openwind_data.routing.complexity import score_complexity
 from openwind_data.routing.geometry import Point
 from openwind_data.routing.passage import (
@@ -292,6 +292,94 @@ def _to_json(obj: Any) -> Any:
     return obj
 
 
+# Maps the web client's user-facing model names (see packages/web/src/config/
+# modelConfig.ts) to the Open-Meteo unified-API slugs that the data-adapter
+# already exercises in AUTO_FALLBACK_CHAIN. V1 scope: only the four chain
+# members translate. Other web models (ARPEGE_*, ICON_GLOBAL/_D2, UKMO_*, GEM,
+# DMI, METNO, ECMWF_AIFS) stay in the web table for forecast display but are
+# silently dropped here because their slugs haven't been validated end-to-end
+# against passage timing. Always append gfs_seamless as ultimate fallback so
+# an exotic top-of-chain pick never leaves the chain empty at far horizons.
+_MODEL_NAME_MAP: dict[str, str] = {
+    "AROME": "meteofrance_arome_france",
+    "ICON": "icon_eu",
+    "ECMWF": "ecmwf_ifs025",
+    "GFS": "gfs_seamless",
+}
+
+
+def _translate_models(raw: Any) -> tuple[str, ...] | None:
+    """Translate web model names to Open-Meteo slugs. Returns None when the
+    caller didn't send a `models` field or the list is empty after filtering.
+    Always appends gfs_seamless as last-resort fallback unless already present.
+    """
+    if not isinstance(raw, list):
+        return None
+    translated: list[str] = []
+    for name in raw:
+        if not isinstance(name, str):
+            continue
+        slug = _MODEL_NAME_MAP.get(name)
+        if slug and slug not in translated:
+            translated.append(slug)
+    if not translated:
+        return None
+    if "gfs_seamless" not in translated:
+        translated.append("gfs_seamless")
+    return tuple(translated)
+
+
+def _parse_polar(raw: Any) -> BoatPolar | None:
+    """Build a BoatPolar from the web client's `polar` payload. Returns None
+    when no payload is provided. Raises ValueError on shape mismatch / invalid
+    values so the caller can surface a 422 with the original message.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("polar must be an object")
+    try:
+        tws = [float(v) for v in raw["tws_kn"]]
+        twa = [float(v) for v in raw["twa_deg"]]
+        matrix = [[float(v) for v in row] for row in raw["boat_speed_kn"]]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"polar fields missing or non-numeric: {exc}") from exc
+    if len(tws) < 2 or len(twa) < 2:
+        raise ValueError("polar must have >= 2 TWS and >= 2 TWA entries")
+    from itertools import pairwise
+    if any(a >= b for a, b in pairwise(tws)):
+        raise ValueError("polar tws_kn must be strictly ascending")
+    if any(a >= b for a, b in pairwise(twa)):
+        raise ValueError("polar twa_deg must be strictly ascending")
+    if twa[0] < 0 or twa[-1] > 180:
+        raise ValueError("polar twa_deg must lie in [0, 180]")
+    if len(matrix) != len(tws):
+        raise ValueError(
+            f"polar boat_speed_kn has {len(matrix)} rows, expected {len(tws)} (one per TWS)"
+        )
+    for i, row in enumerate(matrix):
+        if len(row) != len(twa):
+            raise ValueError(
+                f"polar boat_speed_kn row {i} has {len(row)} cols, expected {len(twa)}"
+            )
+        for j, v in enumerate(row):
+            if v < 0 or v > 30:
+                raise ValueError(
+                    f"polar boat_speed_kn[{i}][{j}]={v} out of range [0, 30]"
+                )
+    return BoatPolar(
+        name=str(raw.get("name", "custom")),
+        length_ft=int(raw.get("length_ft", 0) or 0),
+        type=str(raw.get("type", "monohull")),
+        category=str(raw.get("category", "custom")),
+        examples=tuple(str(e) for e in raw.get("examples", ())),
+        performance_class=str(raw.get("performance_class", "custom")),
+        tws_kn=tuple(tws),
+        twa_deg=tuple(twa),
+        boat_speed_kn=tuple(tuple(row) for row in matrix),
+    )
+
+
 async def _index(_request) -> HTMLResponse:
     return HTMLResponse(LANDING_HTML)
 
@@ -350,6 +438,12 @@ async def _api_passage(request: Request) -> JSONResponse:
     except (TypeError, ValueError) as exc:
         return JSONResponse({"error": f"invalid efficiency: {exc}"}, status_code=422)
 
+    try:
+        polar_override = _parse_polar(body.get("polar"))
+    except ValueError as exc:
+        return JSONResponse({"error": f"invalid polar: {exc}"}, status_code=422)
+    model_chain = _translate_models(body.get("models"))
+
     # Sweep mode — triggered when ``latest_departure`` is provided.
     latest_raw = body.get("latest_departure")
     if latest_raw is not None:
@@ -374,6 +468,7 @@ async def _api_passage(request: Request) -> JSONResponse:
             reports = await estimate_passage_windows(
                 waypoints, departure, latest_departure, body["archetype"],
                 sweep_interval_hours=sweep_interval, efficiency=efficiency, model="auto",
+                polar_override=polar_override, model_chain=model_chain,
             )
         except KeyError as exc:
             return JSONResponse({"error": f"unknown archetype: {exc}"}, status_code=422)
@@ -454,10 +549,11 @@ async def _api_passage(request: Request) -> JSONResponse:
             "forecast_updated_at": datetime.now(UTC).isoformat(),
         })
 
-    # Single mode — unchanged.
+    # Single mode.
     try:
         passage = await estimate_passage(
-            waypoints, departure, body["archetype"], efficiency=efficiency, model="auto"
+            waypoints, departure, body["archetype"], efficiency=efficiency, model="auto",
+            polar_override=polar_override, model_chain=model_chain,
         )
     except KeyError as exc:
         return JSONResponse({"error": f"unknown archetype: {exc}"}, status_code=422)
@@ -518,12 +614,20 @@ async def _api_passage_by_eta(request: Request) -> JSONResponse:
         return JSONResponse({"error": f"invalid efficiency: {exc}"}, status_code=422)
 
     try:
+        polar_override = _parse_polar(body.get("polar"))
+    except ValueError as exc:
+        return JSONResponse({"error": f"invalid polar: {exc}"}, status_code=422)
+    model_chain = _translate_models(body.get("models"))
+
+    try:
         plan = await estimate_passage_for_arrival(
             waypoints,
             target_arrival,
             body["archetype"],
             efficiency=efficiency,
             model="auto",
+            polar_override=polar_override,
+            model_chain=model_chain,
         )
     except KeyError as exc:
         return JSONResponse({"error": f"unknown archetype: {exc}"}, status_code=422)

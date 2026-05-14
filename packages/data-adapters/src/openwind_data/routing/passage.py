@@ -280,6 +280,8 @@ async def estimate_passage(
     model: str = DEFAULT_MODEL,
     heuristic_speed_kn: float = HEURISTIC_SPEED_KN,
     use_wave_correction: bool = False,
+    polar_override: BoatPolar | None = None,
+    model_chain: tuple[str, ...] | None = None,
 ) -> PassageReport:
     """Estimate a passage's per-segment timing, speed, and warnings.
 
@@ -314,8 +316,9 @@ async def estimate_passage(
         raise ValueError("efficiency must be in (0, 1]")
 
     if model == AUTO_MODEL:
+        chain = model_chain if model_chain else AUTO_FALLBACK_CHAIN
         last_err: ForecastHorizonError | None = None
-        for candidate in AUTO_FALLBACK_CHAIN:
+        for candidate in chain:
             try:
                 return await _estimate_with_model(
                     waypoints,
@@ -327,6 +330,7 @@ async def estimate_passage(
                     model=candidate,
                     heuristic_speed_kn=heuristic_speed_kn,
                     use_wave_correction=use_wave_correction,
+                    polar_override=polar_override,
                 )
             except ForecastHorizonError as exc:
                 last_err = exc
@@ -343,6 +347,7 @@ async def estimate_passage(
         model=model,
         heuristic_speed_kn=heuristic_speed_kn,
         use_wave_correction=use_wave_correction,
+        polar_override=polar_override,
     )
 
 
@@ -357,8 +362,9 @@ async def _estimate_with_model(
     model: str,
     heuristic_speed_kn: float,
     use_wave_correction: bool,
+    polar_override: BoatPolar | None = None,
 ) -> PassageReport:
-    polar = get_polar(boat_archetype)
+    polar = polar_override if polar_override is not None else get_polar(boat_archetype)
     effective_length_nm, capped_route_nm = _resolve_segment_length(waypoints, segment_length_nm)
     segments = segment_route(waypoints, effective_length_nm)
     departure_utc = departure_time.astimezone(UTC)
@@ -494,6 +500,7 @@ async def _estimate_backward_with_model(
     model: str,
     heuristic_speed_kn: float,
     use_wave_correction: bool,
+    polar_override: BoatPolar | None = None,
 ) -> PassageReport:
     """Mirror of `_estimate_with_model` anchored at arrival, solving backward.
 
@@ -505,7 +512,7 @@ async def _estimate_backward_with_model(
     is needed. Mid-time guesses use `heuristic_speed_kn` like the forward path,
     same temporal-correlation argument applies.
     """
-    polar = get_polar(boat_archetype)
+    polar = polar_override if polar_override is not None else get_polar(boat_archetype)
     effective_length_nm, capped_route_nm = _resolve_segment_length(waypoints, segment_length_nm)
     segments = segment_route(waypoints, effective_length_nm)
     target_utc = target_arrival.astimezone(UTC)
@@ -644,6 +651,8 @@ async def estimate_passage_windows(
     adapter: MarineDataAdapter | None = None,
     model: str = AUTO_MODEL,
     use_wave_correction: bool = False,
+    polar_override: BoatPolar | None = None,
+    model_chain: tuple[str, ...] | None = None,
 ) -> list[PassageReport]:
     """Simulate multiple departure windows for a fixed route.
 
@@ -708,6 +717,8 @@ async def estimate_passage_windows(
             adapter=fetch_adapter,
             model=model,
             use_wave_correction=use_wave_correction,
+            polar_override=polar_override,
+            model_chain=model_chain,
         )
         resolved_model = first.model
         reports: list[PassageReport] = [first]
@@ -733,6 +744,7 @@ async def estimate_passage_windows(
         # the user pinned a specific model (model != "auto"), we respect that
         # and skip out-of-horizon windows — explicit choice wins.
         # ValueError / KeyError still bubble (caller-side bugs).
+        effective_chain = model_chain if model_chain else AUTO_FALLBACK_CHAIN
         current = earliest_utc + timedelta(hours=sweep_interval_hours)
         while current <= latest_utc:
             try:
@@ -745,10 +757,11 @@ async def estimate_passage_windows(
                     adapter=fetch_adapter,
                     model=resolved_model,
                     use_wave_correction=use_wave_correction,
+                    polar_override=polar_override,
                 )
                 reports.append(report)
             except ForecastHorizonError:
-                if model == AUTO_MODEL and resolved_model != AUTO_FALLBACK_CHAIN[-1]:
+                if model == AUTO_MODEL and resolved_model != effective_chain[-1]:
                     try:
                         report = await estimate_passage(
                             waypoints,
@@ -759,6 +772,8 @@ async def estimate_passage_windows(
                             adapter=fetch_adapter,
                             model=AUTO_MODEL,
                             use_wave_correction=use_wave_correction,
+                            polar_override=polar_override,
+                            model_chain=model_chain,
                         )
                         reports.append(report)
                     except ForecastHorizonError:
@@ -782,6 +797,8 @@ async def estimate_passage_for_arrival(
     model: str = AUTO_MODEL,
     heuristic_speed_kn: float = HEURISTIC_SPEED_KN,
     use_wave_correction: bool = False,
+    polar_override: BoatPolar | None = None,
+    model_chain: tuple[str, ...] | None = None,
 ) -> EtaPassagePlan:
     """Inverse of `estimate_passage`: solve for a departure given a target arrival.
 
@@ -816,8 +833,9 @@ async def estimate_passage_for_arrival(
     target_utc = target_arrival.astimezone(UTC)
 
     if model == AUTO_MODEL:
+        chain = model_chain if model_chain else AUTO_FALLBACK_CHAIN
         last_err: ForecastHorizonError | None = None
-        for candidate in AUTO_FALLBACK_CHAIN:
+        for candidate in chain:
             try:
                 report = await _estimate_backward_with_model(
                     waypoints,
@@ -829,6 +847,7 @@ async def estimate_passage_for_arrival(
                     model=candidate,
                     heuristic_speed_kn=heuristic_speed_kn,
                     use_wave_correction=use_wave_correction,
+                    polar_override=polar_override,
                 )
                 return EtaPassagePlan(report=report, target_arrival=target_utc)
             except ForecastHorizonError as exc:
@@ -847,5 +866,6 @@ async def estimate_passage_for_arrival(
         model=model,
         heuristic_speed_kn=heuristic_speed_kn,
         use_wave_correction=use_wave_correction,
+        polar_override=polar_override,
     )
     return EtaPassagePlan(report=report, target_arrival=target_utc)

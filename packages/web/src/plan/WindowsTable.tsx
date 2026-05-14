@@ -126,8 +126,8 @@ export function WindowsTable({ windows, onSelect }: WindowsTableProps) {
         <SortHeader k="complexity" label="⚡" align="center" />
       </div>
 
-      <div className="divide-y" style={{ borderColor: "var(--ow-line)" }}>
-        {sorted.map((w) => {
+      <div>
+        {sorted.map((w, idx) => {
           // Defensive reads — backend version skew (e.g. older HF Space) may
           // omit nested fields that newer types declare. Default to empty
           // shapes so display falls back to "—" instead of crashing.
@@ -145,6 +145,7 @@ export function WindowsTable({ windows, onSelect }: WindowsTableProps) {
                 gridTemplateColumns: "1.4fr 0.7fr 0.7fr 0.9fr 0.9fr 0.9fr 0.55fr",
                 fontFamily: "var(--ow-font-mono)",
                 color: "var(--ow-fg-1)",
+                borderTop: idx === 0 ? "none" : "1px solid var(--ow-line)",
               }}
               title="Voir le détail de cette fenêtre"
             >

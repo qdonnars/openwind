@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "re
 import { parsePlanUrl, isParsedOk, buildPlanUrl } from "../plan/parseUrl";
 import { PlanMap, type PlanMapHandle } from "../plan/PlanMap";
 import { PlanSidebar } from "../plan/PlanSidebar";
-import { fetchPassage, fetchPassageByEta, fetchPassageWindows, fetchArchetypes, friendlyError } from "../api/passage";
+import { fetchPassage, fetchPassageByEta, fetchPassageWindows, fetchArchetypes, friendlyError, type PlanOverrides } from "../api/passage";
 import { Header } from "../components/Header";
 import type { PassageReport, ComplexityScore, Archetype, PassageWindow } from "../plan/types";
 import {
@@ -14,6 +14,32 @@ import {
 } from "../plan/lastSimulation";
 import { type TimeAnchor } from "../plan/ModeToggle";
 import { computeLegSegmentRanges } from "../plan/aggregateLegs";
+import { activeModels, loadModelConfig } from "../config/modelConfig";
+import { effectivePolar, isPolarCustomized, loadPolarConfig, polarFingerprint } from "../config/polarConfig";
+
+// Build the plan-time overrides payload from current /config preferences.
+// Read at request time (not at mount) so a /config tweak takes effect on the
+// next refetch without a page reload. Polar matrix is only attached when the
+// editor deviates from the default for the active archetype — otherwise the
+// server's bundled polar wins, saving ~kB per request.
+function resolveOverrides(archetype: string): PlanOverrides {
+  const overrides: PlanOverrides = {};
+  const modelCfg = loadModelConfig();
+  const models = activeModels(modelCfg);
+  if (models.length > 0) overrides.models = models;
+  const polarCfg = loadPolarConfig();
+  if (isPolarCustomized(polarCfg, archetype)) {
+    overrides.polar = effectivePolar(polarCfg);
+  }
+  return overrides;
+}
+
+// Joint fingerprint of model + polar config. Same shape across single &
+// compare so the cache check is one-liner. Read at the same moment as the
+// fetch so the persisted simulation is paired with the config that produced it.
+function currentConfigFingerprint(): string {
+  return `${activeModels(loadModelConfig()).join(",")}|${polarFingerprint(loadPolarConfig())}`;
+}
 
 // ── local helpers (mobile components) ────────────────────────────────────────
 
@@ -336,9 +362,10 @@ export function PlanPage() {
   function doFetch(wpts: [number, number][], arch: string, dep: string, anchor: TimeAnchor = "departure") {
     setIsLoading(true);
     setApiError(null);
+    const overrides = resolveOverrides(arch);
     const promise = anchor === "arrival"
-      ? fetchPassageByEta({ waypoints: wpts, targetArrival: toTzAware(dep), archetype: arch })
-      : fetchPassage({ waypoints: wpts, departure: toTzAware(dep), archetype: arch });
+      ? fetchPassageByEta({ waypoints: wpts, targetArrival: toTzAware(dep), archetype: arch, overrides })
+      : fetchPassage({ waypoints: wpts, departure: toTzAware(dep), archetype: arch, overrides });
     promise
       .then((res) => {
         setPassage(res.passage);
@@ -362,6 +389,7 @@ export function PlanPage() {
         saveLastSimulation({
           waypoints: wpts,
           archetype: arch,
+          configFingerprint: currentConfigFingerprint(),
           mode: "single",
           single: {
             departure: resolvedDep,
@@ -385,7 +413,11 @@ export function PlanPage() {
       const cacheMatches =
         cached &&
         waypointsEqual(cached.waypoints, initialParsed.waypoints) &&
-        cached.archetype === initialParsed.archetype;
+        cached.archetype === initialParsed.archetype &&
+        // Reject the cache if the user tweaked /config since the simulation
+        // ran — the persisted result is stale relative to the active
+        // preferences. Treat missing fingerprint as "pre-config-era" cache.
+        cached.configFingerprint === currentConfigFingerprint();
       if (cacheMatches) {
         if (cached.single && cached.single.departure === departure) {
           setPassage(cached.single.passage);
@@ -411,6 +443,15 @@ export function PlanPage() {
     // useState initializers above. Hydrate the simulation results, sync the
     // URL so reload/share works, and skip any network call.
     if (useCachedRoute && cachedAtMount) {
+      const url = buildPlanUrl(cachedAtMount.waypoints, departure, cachedAtMount.archetype);
+      window.history.replaceState(null, "", url);
+      // /config changed since the cache was written — discard the persisted
+      // results and refetch so the plan reflects the user's current
+      // preferences. Route + archetype + departure remain seeded.
+      if (cachedAtMount.configFingerprint !== currentConfigFingerprint()) {
+        doFetch(cachedAtMount.waypoints, cachedAtMount.archetype, departure);
+        return;
+      }
       if (cachedAtMount.single) {
         setPassage(cachedAtMount.single.passage);
         setComplexity(cachedAtMount.single.complexity);
@@ -423,8 +464,6 @@ export function PlanPage() {
           setForecastUpdatedAt(cachedAtMount.compare.forecastUpdatedAt);
         }
       }
-      const url = buildPlanUrl(cachedAtMount.waypoints, departure, cachedAtMount.archetype);
-      window.history.replaceState(null, "", url);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -482,6 +521,7 @@ export function PlanPage() {
       latest: toTzAware(sweepLatest),
       archetype,
       intervalHours: sweepInterval,
+      overrides: resolveOverrides(archetype),
     })
       .then((res) => {
         setWindows(res.windows);
@@ -497,6 +537,7 @@ export function PlanPage() {
         saveLastSimulation({
           waypoints,
           archetype,
+          configFingerprint: currentConfigFingerprint(),
           mode: "compare",
           single: sameRoute ? prev?.single : undefined,
           compare: {
@@ -590,6 +631,9 @@ export function PlanPage() {
       saveLastSimulation({
         waypoints,
         archetype,
+        // Inherit the fingerprint from the compare-mode cache that produced
+        // this window — drill-down is metadata reshuffling, not a new run.
+        configFingerprint: prev?.configFingerprint ?? currentConfigFingerprint(),
         mode: "single",
         single: {
           departure: naiveDep,
