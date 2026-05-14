@@ -228,3 +228,27 @@ export function effectivePolar(cfg: PolarConfig): PolarData {
 export function hasOverrides(cfg: PolarConfig): boolean {
   return Object.keys(cfg.overrides).length > 0;
 }
+
+// True when the polar deviates from the default for `archetype` — i.e. the
+// editor's base differs, the scale is non-neutral, a spi mode is selected, or
+// any cell has been hand-tuned. Used to decide whether to push the custom
+// matrix to the planner; when false, the server's bundled polar suffices.
+export function isPolarCustomized(cfg: PolarConfig, archetype: string): boolean {
+  return (
+    cfg.base !== archetype ||
+    cfg.scale !== SCALE_DEFAULT ||
+    cfg.spi !== "off" ||
+    hasOverrides(cfg)
+  );
+}
+
+// Compact key capturing every input that affects effectivePolar(). Used to
+// invalidate the lastSimulation cache so a /config tweak doesn't leave stale
+// results on /plan.
+export function polarFingerprint(cfg: PolarConfig): string {
+  const overrideKey = Object.keys(cfg.overrides)
+    .sort()
+    .map((k) => `${k}=${cfg.overrides[k]}`)
+    .join(",");
+  return `${cfg.base}|${cfg.scale}|${cfg.spi}|${overrideKey}`;
+}

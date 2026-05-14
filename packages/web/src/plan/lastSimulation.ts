@@ -14,6 +14,11 @@ const STORAGE_KEY = "ow_last_simulation_v1";
 export interface LastSimulation {
   waypoints: [number, number][];
   archetype: string;
+  // Fingerprint of the /config preferences in effect when the simulation ran
+  // (model order + polar customization). Compared on rehydration so a user
+  // tweaking /config and returning to /plan never sees stale results
+  // computed against the previous preferences.
+  configFingerprint?: string;
   // Last active mode at save time. Drives which tab the user lands on when
   // we rehydrate after a navigation away from /plan (e.g. round-trip via /).
   mode: "single" | "compare";

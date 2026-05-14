@@ -8,6 +8,7 @@ import {
   type ModelConfig,
   type ModelName,
 } from "../config/modelConfig";
+import { consumeReturnPath } from "../config/returnPath";
 import { PolarEditor } from "../components/PolarEditor";
 
 type Tab = "models" | "polar";
@@ -21,6 +22,10 @@ export function ConfigPage() {
   const [tab, setTab] = useState<Tab>("models");
   const [config, setConfig] = useState<ModelConfig>(() => loadModelConfig());
   const [savedOnce, setSavedOnce] = useState(false);
+  // Resolved at mount so the back link is stable across re-renders. Consuming
+  // here also clears the stash, so a hard reload of /config (no remembered
+  // path) falls back to "/" on the next click, which is the right default.
+  const [returnPath] = useState<string>(() => consumeReturnPath());
   // Track the dragged item by model identity (not by index) so the visual
   // index of the dragged row can shift as the preview reorders without us
   // losing track of which row is being moved.
@@ -88,7 +93,7 @@ export function ConfigPage() {
     <div className="config-root min-h-screen">
       <header className="config-header sticky top-0 z-10 border-b backdrop-blur">
         <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
-          <a href="/" className="text-sm font-medium opacity-80 hover:opacity-100 transition">
+          <a href={returnPath} className="text-sm font-medium opacity-80 hover:opacity-100 transition">
             ← OpenWind
           </a>
           <span className="text-xs opacity-60">Configuration</span>

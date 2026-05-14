@@ -2,6 +2,7 @@ import type { Spot } from "../types";
 import { SpotSearch } from "./SpotSearch";
 import { ThemeToggle } from "../design/theme";
 import { InfoButton } from "./InfoButton";
+import { rememberReturnPath } from "../config/returnPath";
 
 
 interface HeaderProps {
@@ -33,6 +34,7 @@ function SettingsButton() {
   return (
     <a
       href="/config"
+      onClick={rememberReturnPath}
       aria-label="Paramètres"
       title="Paramètres"
       className="shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors"
