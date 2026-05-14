@@ -276,6 +276,12 @@ export function ConfigPage() {
           gap: 18px;
           align-items: stretch;
         }
+        @media (max-width: 640px) {
+          .config-list-with-zones {
+            grid-template-columns: 1fr 28px;
+            gap: 10px;
+          }
+        }
         .config-list {
           display: flex;
           flex-direction: column;
@@ -372,6 +378,41 @@ export function ConfigPage() {
         }
         .config-zone.is-ignored .config-zone-label {
           color: var(--ow-fg-2, #94a3b8);
+        }
+        @media (max-width: 640px) {
+          .config-row {
+            padding: 8px 10px;
+            gap: 8px;
+            border-radius: 10px;
+          }
+          .config-row .text-base {
+            font-size: 14px;
+          }
+          .config-row p {
+            font-size: 12px;
+            margin-top: 2px;
+            line-height: 1.35;
+          }
+          .config-row .text-xs {
+            font-size: 11px;
+          }
+          .config-handle {
+            display: none;
+          }
+          .config-zone {
+            padding-left: 10px;
+            justify-content: center;
+          }
+          .config-zone::before {
+            top: 4px;
+            bottom: 4px;
+          }
+          .config-zone-label {
+            writing-mode: vertical-rl;
+            transform: rotate(180deg);
+            font-size: 10px;
+            letter-spacing: 0.08em;
+          }
         }
       `}</style>
     </div>
