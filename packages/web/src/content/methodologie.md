@@ -262,7 +262,14 @@ Le niveau du passage est `max(niveau_vent, niveau_mer)`. Pas de moyenne magique,
 | 4      | exigeant   |
 | 5      | dangereux  |
 
-Les avertissements (vent fort, mer forte, vent contre courant) sont rattachés à la portion de route concernée et restitués tels quels.
+Deux signaux distincts viennent ensuite **incrémenter le niveau de +1** (plafonné à 5) quand la mer est cassée :
+
+- **Vent contre courant** : courant ≥ 1.5 kt opposé au vent par ≥ 120° (typique des passes tidales atlantiques — Goulet de Brest, Raz de Sein, Raz Blanchard).
+- **Clapot court** : cambrure $H_s / T_p^2 > 0{,}05$ avec $H_s \geq 0{,}8$ m. Détecte une mer du vent levée à courte période — Hs 1,2 m à Tp 4,5 s par exemple. Une longue houle au même Hs (Hs 1,8 m à Tp 11 s, cambrure ≈ 0,015) **ne déclenche pas** ce bump et garde son label "mer formée" : grosse, mais confortable. Quand **tous** les segments concernés sont au vent arrière ($|TWA| \geq 120°$), on parle de "clapot suiveur" : le warning reste émis (risque de départ au lof, d'empannage involontaire) mais on **n'applique pas** le +1 — le bateau marche avec la lame plutôt que dedans.
+
+Les deux signaux peuvent coexister sur un même passage, mais **partagent un seul bump** (+1 total) — ils décrivent le même phénomène physique de mer cassée et ne se cumulent pas.
+
+Les avertissements (vent fort, mer forte, vent contre courant, clapot court) sont rattachés à la portion de route concernée et restitués tels quels.
 
 ## Les conventions du domaine
 

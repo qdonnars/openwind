@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 from openwind_data.adapters.base import (
+    CHOP_FOLLOWING_TWA_DEG,
+    CHOP_HS_FLOOR_M,
+    CHOP_INDEX_THRESHOLD,
     WIND_AGAINST_CURRENT_OPPOSITION_DEG,
     WIND_AGAINST_CURRENT_WARNING_THRESHOLD_KN,
 )
@@ -82,7 +85,7 @@ def _compact_range(values: list[float], decimals: int) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ComplexityWarning:
-    kind: Literal["wind", "sea", "current"]
+    kind: Literal["wind", "sea", "current", "chop"]
     level: int  # 1..5 — same scale as the axis that triggered it
     message: str
     affected_segments: tuple[int, ...]  # indices into PassageReport.segments
@@ -101,6 +104,7 @@ class ComplexityScore:
     rationale: str
     warnings: tuple[ComplexityWarning, ...] = ()
     wind_against_current: bool = False  # True when at least one segment triggered the bump
+    chop_present: bool = False  # True when short-period steep wind sea is flagged
 
 
 def score_complexity(
@@ -183,7 +187,8 @@ def score_complexity(
     # legs almost never qualify; Atlantic tidal passes (Goulet de Brest, Raz de
     # Sein) routinely do. Triggers a +1 bump on the overall level (cap 5) plus
     # an explicit warning so the LLM/UI can flag the chop, mirroring nautical
-    # practice.
+    # practice. The bump is shared with the chop detector below — both flag
+    # broken/uncomfortable sea and only contribute +1 in total.
     wac_indices: list[int] = []
     wac_currents: list[float] = []
     for i, s in enumerate(passage.segments):
@@ -198,8 +203,46 @@ def score_complexity(
             wac_currents.append(s.current_speed_kn)
 
     wind_against_current = bool(wac_indices)
+
+    # Chop detection: short-period steep wind sea ("clapot"). Index = Hs/Tp²
+    # is a steepness proxy. We exclude segments already flagged by WAC since
+    # the WAC warning ("mer hachée probable") already covers chop on those
+    # legs — no need to fire two warnings for the same phenomenon.
+    chop_indices: list[int] = []
+    chop_hs: list[float] = []
+    chop_tp: list[float] = []
+    wac_index_set = set(wac_indices)
+    for i, s in enumerate(passage.segments):
+        if i in wac_index_set:
+            continue
+        if s.hs_m is None or s.wave_period_s is None:
+            continue
+        if s.hs_m < CHOP_HS_FLOOR_M or s.wave_period_s <= 0:
+            continue
+        if s.hs_m / (s.wave_period_s**2) > CHOP_INDEX_THRESHOLD:
+            chop_indices.append(i)
+            chop_hs.append(s.hs_m)
+            chop_tp.append(s.wave_period_s)
+
+    chop_present = bool(chop_indices)
+    # Following chop (sea from behind) is much less penalising — emit the
+    # warning so the sailor sees it but skip the bump when *every* chop
+    # segment is on a running angle. A single bow-on or beam segment in the
+    # set still bumps, because that's where slamming happens.
+    chop_following_only = chop_present and all(
+        abs(passage.segments[i].twa_deg) >= CHOP_FOLLOWING_TWA_DEG for i in chop_indices
+    )
+    chop_contributes_bump = chop_present and not chop_following_only
+
+    # Single +1 bump shared by WAC and chop — both describe broken/uncomfortable
+    # sea and don't compound. Without this, a passage with WAC on the first half
+    # and chop on the second half would jump +2 levels for what is essentially
+    # the same physical signal restated.
+    bumped_level = (
+        min(5, level + 1) if (wind_against_current or chop_contributes_bump) else level
+    )
+
     if wind_against_current:
-        bumped_level = min(5, level + 1)
         affected_wac = tuple(wac_indices)
         affected_wac_nm = sum(passage.segments[i].distance_nm for i in affected_wac)
         cur_range = _compact_range(wac_currents, 1)
@@ -215,7 +258,34 @@ def score_complexity(
             )
         )
         rationale = f"{rationale}, vent contre courant"
-        level = bumped_level
+
+    if chop_present:
+        affected_chop = tuple(chop_indices)
+        affected_chop_nm = sum(passage.segments[i].distance_nm for i in affected_chop)
+        hs_range = _compact_range(chop_hs, 1)
+        tp_range = _compact_range(chop_tp, 0)
+        if chop_following_only:
+            chop_label = "Clapot suiveur"
+            chop_suffix = "barre attentive, risque de départ au lof"
+            chop_warning_level = level  # no bump credited to this warning
+        else:
+            chop_label = "Clapot court"
+            chop_suffix = "mer désagréable"
+            chop_warning_level = bumped_level
+        warnings.append(
+            ComplexityWarning(
+                kind="chop",
+                level=chop_warning_level,
+                message=(
+                    f"{chop_label} : Hs {hs_range} m à Tp {tp_range} s sur "
+                    f"{affected_chop_nm:.0f} nm, {chop_suffix}"
+                ),
+                affected_segments=affected_chop,
+            )
+        )
+        rationale = f"{rationale}, {chop_label.lower()}"
+
+    level = bumped_level
 
     return ComplexityScore(
         level=level,
@@ -229,4 +299,5 @@ def score_complexity(
         rationale=rationale,
         warnings=tuple(warnings),
         wind_against_current=wind_against_current,
+        chop_present=chop_present,
     )

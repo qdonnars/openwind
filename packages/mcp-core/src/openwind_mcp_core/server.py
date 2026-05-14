@@ -462,6 +462,22 @@ hachee probable") and the overall complexity level is bumped by +1
 (capped at 5). Mirrors nautical practice: chop builds when wind blows
 into a contrary tide.
 
+## Short-period chop ("clapot")
+
+Independently of currents, a steep wind sea is flagged when the
+steepness proxy Hs / Tp^2 exceeds 0.05 on a segment with Hs >= 0.8 m
+(e.g. Hs 1.0 m at Tp 4.5 s). This catches short fetch-built chop in
+fresh breeze even without contrary current — typical of a Mistral or
+Tramontane lee shore. Bump and warning mirror the wind-against-current
+case; the +1 bump is shared, so a passage with both signals does not
+jump +2.
+
+When *every* triggering segment is on a running angle (|TWA| >= 120°,
+sea coming from behind), the warning becomes "Clapot suiveur" and the
++1 bump is skipped. The boat surfs with the wave rather than slamming
+into it; broaching and accidental gybe risks remain, hence the warning,
+but the underlying complexity is unchanged.
+
 ## What is NOT modelled (V1)
 
 - No automatic routing optimisation (LLM + human choose).

@@ -79,16 +79,20 @@ export function legDurationLabel(leg: AggregatedLeg): string {
 // surfaces in MCP. Wind-against-current requires both an opposing direction
 // AND a material current speed (>= 1.5 kn), mirroring the server cutoff.
 //
-// Clapot detection (short period × Hs) will land in a follow-up PR and feed
-// into this same `qualifiers` array.
+// Clapot ("steepness" Hs/Tp² > 0.05 with Hs >= 0.8 m) takes precedence over
+// the generic "Mer Formée" label because it carries a sharper meaning for the
+// sailor — short steep wind sea, not just heavy seas. Long-period swell at
+// the same Hs (e.g. Hs 1.8 m at Tp 11 s) keeps the "Mer Formée" label since
+// it isn't clapot. Thresholds match the server-side ComplexityWarning kind=
+// "chop".
 export interface LegSummaryCells {
   duration: string;
   allure: string;
   wind: string;
   // Single optional flag cell — covers either sea state (Mer Formée / Grosse
-  // Mer) or wind-against-current. When both fire on a leg, current wins
-  // because it's the rarer and more decision-shaping signal. Null = empty
-  // cell, kept in the grid so columns line up vertically across rows.
+  // Mer / Clapot) or wind-against-current. When both fire on a leg, current
+  // wins because it's the rarer and more decision-shaping signal. Null =
+  // empty cell, kept in the grid so columns line up vertically across rows.
   flag: string | null;
 }
 
@@ -104,11 +108,22 @@ export function buildLegSummaryCells(leg: AggregatedLeg): LegSummaryCells {
   // Vent Contre Courant) still break at their normal spaces.
   const wind = tMin === tMax ? `${tMin} kn` : `${tMin}–${tMax} kn`;
 
+  const chopIndex =
+    leg.hs_avg_m != null && leg.tp_avg_s != null && leg.tp_avg_s > 0
+      ? leg.hs_avg_m / (leg.tp_avg_s * leg.tp_avg_s)
+      : null;
+
   let flag: string | null = null;
   if (leg.current_relative === "contraire" && (leg.current_speed_kn ?? 0) >= 1.5) {
     flag = "Vent Contre Courant";
   } else if (leg.hs_avg_m != null) {
     if (leg.hs_avg_m > 2.5) flag = "Grosse Mer";
+    else if (chopIndex != null && chopIndex > 0.05 && leg.hs_avg_m >= 0.8) {
+      // Following sea (TWA >= 120°): the chop is uncomfortable but doesn't
+      // bump complexity server-side either. We rename the chip rather than
+      // hide it because broaching / accidental gybe risks remain.
+      flag = leg.sea_direction === "arrière" ? "Clapot Suiveur" : "Clapot";
+    }
     else if (leg.hs_avg_m > 1.25) flag = "Mer Formée";
   }
 

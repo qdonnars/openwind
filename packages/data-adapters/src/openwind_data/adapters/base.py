@@ -32,6 +32,19 @@ TIDE_RANGE_RELEVANCE_THRESHOLD_M = 0.5
 WIND_AGAINST_CURRENT_WARNING_THRESHOLD_KN = 1.5
 WIND_AGAINST_CURRENT_OPPOSITION_DEG = 120.0
 
+# Chop detection: short-period steep wind sea ("clapot"). Index = Hs / Tp^2
+# (proxy for wave steepness). > 0.05 flags genuinely uncomfortable chop —
+# Hs 1.2 m at Tp 5 s, Hs 0.8 m at Tp 4 s. CHOP_HS_FLOOR_M guards against
+# absurd flags on ripples (Hs 0.3 m at Tp 2 s mathematically scores 0.075).
+CHOP_INDEX_THRESHOLD = 0.05
+CHOP_HS_FLOOR_M = 0.8
+# |TWA| >= 120° = sea coming from behind the boat (running / broad reach).
+# Chop on this angle is uncomfortable but not equivalent to taking it on the
+# bow: the boat moves with the wave, slamming is rare, and surfing is often
+# a gain. We still emit a warning (broaching / accidental gybe risks remain)
+# but skip the complexity bump when *all* chop segments are on this angle.
+CHOP_FOLLOWING_TWA_DEG = 120.0
+
 
 class ForecastHorizonError(RuntimeError):
     """Raised when a forecast model's horizon does not cover the requested time.
