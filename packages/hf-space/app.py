@@ -45,7 +45,7 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.routing import Mount, Route
 
 _logger = logging.getLogger(__name__)
@@ -74,6 +74,16 @@ LANDING_HTML = """<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>OpenWind MCP — talk to your LLM, cast off with confidence</title>
+  <link rel="icon" type="image/svg+xml" href="https://openwind.fr/favicon.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="https://openwind.fr/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="https://openwind.fr/icon-512.png">
+  <link rel="apple-touch-icon" href="https://openwind.fr/icon-192.png">
+  <meta name="description" content="OpenWind MCP — free, keyless sailing planner for the French Atlantic and Mediterranean coasts.">
+  <meta property="og:title" content="OpenWind MCP">
+  <meta property="og:description" content="Talk to your LLM. Cast off with confidence. Free, keyless sailing planner via MCP.">
+  <meta property="og:image" content="https://openwind.fr/icon-512.png">
+  <meta property="og:url" content="https://openwind.fr">
+  <meta name="twitter:card" content="summary">
   <style>
     :root {
       color-scheme: light dark;
@@ -284,6 +294,27 @@ def _to_json(obj: Any) -> Any:
 
 async def _index(_request) -> HTMLResponse:
     return HTMLResponse(LANDING_HTML)
+
+
+# Connector pickers in chat hosts (Claude, etc.) often scrape the server
+# URL's favicon / og:image to badge the connector. Our app responded 404
+# on /favicon.ico and the host fell back to HuggingFace branding. Redirect
+# every common icon probe to the OpenWind PNG/SVG hosted on openwind.fr.
+_ICON_REDIRECTS = {
+    "/favicon.ico": "https://openwind.fr/favicon.svg",
+    "/favicon.svg": "https://openwind.fr/favicon.svg",
+    "/icon-192.png": "https://openwind.fr/icon-192.png",
+    "/icon-512.png": "https://openwind.fr/icon-512.png",
+    "/apple-touch-icon.png": "https://openwind.fr/icon-192.png",
+    "/apple-touch-icon-precomposed.png": "https://openwind.fr/icon-192.png",
+}
+
+
+async def _icon_redirect(request: Request) -> RedirectResponse:
+    target = _ICON_REDIRECTS[request.url.path]
+    return RedirectResponse(
+        target, status_code=302, headers={"Cache-Control": "public, max-age=86400"}
+    )
 
 
 async def _api_archetypes(_request: Request) -> JSONResponse:
@@ -778,6 +809,7 @@ def main() -> None:
     app = Starlette(
         routes=[
             Route("/", _index),
+            *[Route(path, _icon_redirect, methods=["GET"]) for path in _ICON_REDIRECTS],
             Route("/api/v1/archetypes", _api_archetypes, methods=["GET"]),
             Route("/api/v1/passage", _api_passage, methods=["POST"]),
             Route("/api/v1/passage-by-eta", _api_passage_by_eta, methods=["POST"]),
