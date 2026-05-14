@@ -37,6 +37,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import Icon
 from openwind_data.adapters.base import MarineDataAdapter
 from openwind_data.adapters.openmeteo import AUTO_MODEL, OpenMeteoAdapter
 from openwind_data.currents.marc_atlas import MarcAtlasRegistry
@@ -78,6 +79,16 @@ PLAN_UI_MIME = "text/html;profile=mcp-app"
 # the ui/notifications/tool-result listener. Same CDN as the official
 # qr-server / say-server / threejs-server examples.
 PLAN_UI_RESOURCE_DOMAINS = ["https://unpkg.com"]
+
+# Server icons advertised in the MCP `initialize` response (Implementation.icons).
+# Hosts (Claude, Claude Desktop, ChatGPT, …) use these to badge tool calls and
+# the connector picker. The files are served from openwind.fr with CORS open
+# (`access-control-allow-origin: *`), so cross-origin fetch from the host works.
+_OPENWIND_ICONS = [
+    Icon(src="https://openwind.fr/icon-512.png", mimeType="image/png", sizes=["512x512"]),
+    Icon(src="https://openwind.fr/icon-192.png", mimeType="image/png", sizes=["192x192"]),
+    Icon(src="https://openwind.fr/favicon.svg", mimeType="image/svg+xml", sizes=["any"]),
+]
 
 # Body of the MCP Apps UI resource. Uses the official @modelcontextprotocol/
 # ext-apps SDK from unpkg for the handshake (same pattern as qr-server /
@@ -548,6 +559,8 @@ def build_server(
         "openwind",
         stateless_http=True,
         json_response=True,
+        website_url="https://openwind.fr",
+        icons=_OPENWIND_ICONS,
     )
     if adapter is not None:
         fetch_adapter: MarineDataAdapter = adapter
