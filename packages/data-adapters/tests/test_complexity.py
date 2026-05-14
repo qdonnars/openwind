@@ -17,8 +17,10 @@ def _make_segment(
     hs_m: float | None = None,
     *,
     twd_deg: float = 0.0,
+    twa_deg: float = 90.0,
     current_speed_kn: float | None = None,
     current_direction_to_deg: float | None = None,
+    wave_period_s: float | None = None,
 ) -> SegmentReport:
     return SegmentReport(
         start=Point(43.0, 5.0),
@@ -29,13 +31,14 @@ def _make_segment(
         end_time=DEPARTURE + timedelta(hours=1),
         tws_kn=tws_kn,
         twd_deg=twd_deg,
-        twa_deg=90.0,
+        twa_deg=twa_deg,
         polar_speed_kn=6.0,
         boat_speed_kn=5.0,
         duration_h=1.0,
         hs_m=hs_m,
         current_speed_kn=current_speed_kn,
         current_direction_to_deg=current_direction_to_deg,
+        wave_period_s=wave_period_s,
     )
 
 
@@ -290,6 +293,147 @@ class TestWindAgainstCurrent:
         s = score_complexity(p)
         assert s.wind_against_current is True
         assert s.level == 5  # no overflow
+
+
+class TestChop:
+    """Chop ("clapot") detection: short-period steep wind sea flagged via the
+    Hs/Tp² steepness proxy. Bump is shared with wind-against-current — they
+    describe the same broken-sea phenomenon and don't compound.
+    """
+
+    def test_short_period_steep_chop_triggers_warning_and_bump(self) -> None:
+        # Hs 1.2 m at Tp 4.5 s → index = 1.2 / 20.25 ≈ 0.059, over 0.05.
+        seg = _make_segment(tws_kn=12.0, hs_m=1.2, wave_period_s=4.5)
+        p = _make_passage([12.0])
+        p = dataclasses.replace(p, segments=(seg,))
+        s = score_complexity(p)
+
+        assert s.chop_present is True
+        assert s.wind_level == 2  # 12 kn → "modéré"
+        assert s.sea_level == 3  # Hs 1.2 m → "agitée"
+        assert s.level == 4  # sea_level 3 + chop bump
+        chop_warnings = [w for w in s.warnings if w.kind == "chop"]
+        assert len(chop_warnings) == 1
+        w = chop_warnings[0]
+        assert w.level == 4
+        assert "clapot" in w.message.lower()
+        assert "1.2" in w.message
+        assert "clapot court" in s.rationale.lower()
+
+    def test_long_period_swell_no_trigger_even_when_hs_high(self) -> None:
+        # Hs 1.8 m at Tp 11 s → index = 1.8 / 121 ≈ 0.0149, below 0.05.
+        # Comfortable long swell — no chop warning, no bump on top of sea_level.
+        seg = _make_segment(tws_kn=12.0, hs_m=1.8, wave_period_s=11.0)
+        p = _make_passage([12.0])
+        p = dataclasses.replace(p, segments=(seg,))
+        s = score_complexity(p)
+
+        assert s.chop_present is False
+        assert s.sea_level == 3  # Hs 1.8 m sits in "agitée"
+        assert s.level == 3  # no bump
+        assert not any(w.kind == "chop" for w in s.warnings)
+
+    def test_tiny_hs_no_trigger_even_when_period_very_short(self) -> None:
+        # Hs 0.4 m at Tp 2 s → index = 0.4 / 4 = 0.1, well over 0.05, but Hs
+        # is below the 0.8 m floor so we don't flag (harmless ripples).
+        seg = _make_segment(tws_kn=10.0, hs_m=0.4, wave_period_s=2.0)
+        p = _make_passage([10.0])
+        p = dataclasses.replace(p, segments=(seg,))
+        s = score_complexity(p)
+
+        assert s.chop_present is False
+        assert s.level == s.wind_level
+
+    def test_missing_tp_no_trigger(self) -> None:
+        # Hs present but Tp missing (e.g., older adapter response) → no chop
+        # flag possible. Fail closed, not open.
+        seg = _make_segment(tws_kn=15.0, hs_m=1.5, wave_period_s=None)
+        p = _make_passage([15.0])
+        p = dataclasses.replace(p, segments=(seg,))
+        s = score_complexity(p)
+
+        assert s.chop_present is False
+        assert not any(w.kind == "chop" for w in s.warnings)
+
+    def test_chop_and_wind_against_current_share_a_single_bump(self) -> None:
+        # Two segments: one WAC, one chop. Both fire warnings but the +1 bump
+        # only applies once (shared) — broken sea is broken sea, the two
+        # mechanisms describe the same phenomenon.
+        wac_seg = _make_segment(
+            tws_kn=15.0,
+            hs_m=0.6,
+            twd_deg=270.0,
+            current_speed_kn=2.5,
+            current_direction_to_deg=270.0,
+        )
+        chop_seg = _make_segment(tws_kn=15.0, hs_m=1.2, wave_period_s=4.5)
+        p = _make_passage([15.0, 15.0])
+        p = dataclasses.replace(p, segments=(wac_seg, chop_seg))
+        s = score_complexity(p)
+
+        assert s.wind_against_current is True
+        assert s.chop_present is True
+        # wind level 2, sea level 3 → max = 3 → +1 (shared) → 4
+        assert s.level == 4
+        kinds = {w.kind for w in s.warnings}
+        assert "current" in kinds
+        assert "chop" in kinds
+
+    def test_following_chop_emits_warning_but_skips_bump(self) -> None:
+        # Same chop conditions as the bump test, but at TWA 150° (running) —
+        # sea comes from behind. We emit the warning (broaching risk) but
+        # complexity stays at sea_level, no +1.
+        seg = _make_segment(tws_kn=12.0, hs_m=1.2, wave_period_s=4.5, twa_deg=150.0)
+        p = _make_passage([12.0])
+        p = dataclasses.replace(p, segments=(seg,))
+        s = score_complexity(p)
+
+        assert s.chop_present is True
+        assert s.sea_level == 3
+        assert s.level == 3  # no bump (was 4 with twa=90 in the earlier test)
+        chop_warnings = [w for w in s.warnings if w.kind == "chop"]
+        assert len(chop_warnings) == 1
+        w = chop_warnings[0]
+        assert w.level == 3
+        assert "clapot suiveur" in w.message.lower()
+        assert "clapot suiveur" in s.rationale.lower()
+
+    def test_mixed_following_and_beam_chop_still_bumps(self) -> None:
+        # Two chop segments: one beam (twa 90°), one running (twa 150°). The
+        # presence of even one non-running chop segment is enough to bump —
+        # the boat will slam on that beam segment.
+        beam = _make_segment(tws_kn=12.0, hs_m=1.2, wave_period_s=4.5, twa_deg=90.0)
+        run = _make_segment(tws_kn=12.0, hs_m=1.2, wave_period_s=4.5, twa_deg=150.0)
+        p = _make_passage([12.0, 12.0])
+        p = dataclasses.replace(p, segments=(beam, run))
+        s = score_complexity(p)
+
+        assert s.chop_present is True
+        assert s.level == 4  # bumped
+        chop_warnings = [w for w in s.warnings if w.kind == "chop"]
+        assert len(chop_warnings) == 1
+        assert "clapot court" in chop_warnings[0].message.lower()
+
+    def test_wac_segment_excluded_from_chop_detection(self) -> None:
+        # A WAC segment that would also qualify for chop on its own should
+        # not trigger the chop warning separately — WAC already says "mer
+        # hachée probable" and we don't restate it.
+        seg = _make_segment(
+            tws_kn=15.0,
+            hs_m=1.2,
+            twd_deg=270.0,
+            current_speed_kn=2.5,
+            current_direction_to_deg=270.0,
+            wave_period_s=4.5,
+        )
+        p = _make_passage([15.0])
+        p = dataclasses.replace(p, segments=(seg,))
+        s = score_complexity(p)
+
+        assert s.wind_against_current is True
+        assert s.chop_present is False
+        assert any(w.kind == "current" for w in s.warnings)
+        assert not any(w.kind == "chop" for w in s.warnings)
 
 
 def test_empty_passage_rejected() -> None:
