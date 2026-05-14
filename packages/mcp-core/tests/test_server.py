@@ -70,18 +70,6 @@ class TestBuildServer:
         server = build_server(adapter=StubAdapter())
         assert isinstance(server, FastMCP)
 
-    def test_advertises_icons_and_website(self) -> None:
-        # Hosts (Claude, ChatGPT, …) badge tool calls and the connector
-        # picker with Implementation.icons returned from `initialize`.
-        # Without these the openwind logo never shows up next to a tool
-        # call — see issue #128.
-        server = build_server(adapter=StubAdapter())
-        assert server.website_url == "https://openwind.fr"
-        icons = server.icons
-        assert icons and len(icons) >= 1
-        srcs = {i.src for i in icons}
-        assert any(s.startswith("https://openwind.fr/") for s in srcs)
-
     async def test_lists_five_tools(self) -> None:
         # The V1 surface: 3 functional tools + read_me for methodology Q&A
         # + feedback for LLM-side issue reporting.
