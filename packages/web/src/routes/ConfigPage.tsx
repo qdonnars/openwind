@@ -85,7 +85,7 @@ export function ConfigPage() {
   const ignoredRows = totalRows - ACTIVE_LIMIT;
 
   return (
-    <div className="config-root min-h-screen overflow-y-auto">
+    <div className="config-root min-h-screen">
       <header className="config-header sticky top-0 z-10 border-b backdrop-blur">
         <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
           <a href="/" className="text-sm font-medium opacity-80 hover:opacity-100 transition">

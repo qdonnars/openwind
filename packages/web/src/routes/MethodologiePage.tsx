@@ -16,7 +16,7 @@ export function MethodologiePage() {
   const md = methodologieMd.replace("./segmentation.svg", segmentationSvgUrl);
 
   return (
-    <div className="methodo-root min-h-screen overflow-y-auto">
+    <div className="methodo-root min-h-screen">
       <header className="methodo-header sticky top-0 z-10 border-b backdrop-blur">
         <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
           <a href="/" className="text-sm font-medium opacity-80 hover:opacity-100 transition">
