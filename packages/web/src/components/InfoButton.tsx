@@ -72,12 +72,8 @@ export function InfoButton() {
         onClick={() => setOpen(true)}
         aria-label="À propos d'OpenWind"
         title="À propos"
-        className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-105 active:scale-95"
-        style={{
-          background: "var(--ow-accent-soft)",
-          color: "var(--ow-accent)",
-          border: "1px solid var(--ow-accent-line)",
-        }}
+        className="shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors"
+        style={{ color: "var(--ow-fg-1)", background: "transparent" }}
       >
         <InfoIcon />
       </button>
