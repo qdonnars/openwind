@@ -662,13 +662,22 @@ function LegRow({
         <td className="py-2 pl-3 pr-2 align-middle" style={{ borderTop: "1px solid var(--ow-line)" }}>
           {/* Leg label is "from→to" using user-waypoint indices (1-based).
               `index` here is 0-based across legs, so leg N goes from
-              waypoint N to waypoint N+1. */}
-          <span
-            className="inline-flex h-6 px-1.5 rounded-md items-center justify-center text-[10px] font-bold tabular-nums whitespace-nowrap"
-            style={{ background: CX_COLORS[cx], color: "#0B1D14", fontFamily: "var(--ow-font-mono)" }}
-          >
-            {index + 1}→{index + 2}
-          </span>
+              waypoint N to waypoint N+1. Distance sits under the badge so
+              the user can scan leg length without expanding. */}
+          <div className="flex flex-col items-start gap-0.5">
+            <span
+              className="inline-flex h-6 px-1.5 rounded-md items-center justify-center text-[10px] font-bold tabular-nums whitespace-nowrap"
+              style={{ background: CX_COLORS[cx], color: "#0B1D14", fontFamily: "var(--ow-font-mono)" }}
+            >
+              {index + 1}→{index + 2}
+            </span>
+            <span
+              className="text-[10px] tabular-nums whitespace-nowrap"
+              style={{ color: "var(--ow-fg-2)", fontFamily: "var(--ow-font-mono)" }}
+            >
+              {fr1(leg.distance_nm)} nm
+            </span>
+          </div>
         </td>
         <td className="py-2 px-1 align-middle" style={{ borderTop: "1px solid var(--ow-line)" }}>
           <SummaryCell value={summary.duration} />
@@ -701,12 +710,11 @@ function LegRow({
       {expanded && (
         <tr style={{ background: rowBg }}>
           <td colSpan={6} className="px-4 pb-3">
-            {/* Three KPI cells (time / distance / sea) — wind and allure
-                already appear in the collapsed row above, repeating them
-                in the expand was visual noise. */}
-            <div className="grid grid-cols-3 gap-2 mb-3">
+            {/* Two KPI cells (time / sea). Wind, allure and distance all
+                appear in the collapsed row above; repeating them in the
+                expand was visual noise. */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
               <KpiBlock value={`${fmtHM(leg.start_time)} → ${fmtHM(leg.end_time)}`} label="dep → arr" />
-              <KpiBlock value={fr1(leg.distance_nm)} label="miles" />
               <KpiBlock value={seaValue} label={seaLabel} tone={seaWarn ? "warn" : "default"} />
             </div>
             <LegDetailCard leg={leg} />

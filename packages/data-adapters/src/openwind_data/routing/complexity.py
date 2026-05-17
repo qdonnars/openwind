@@ -238,9 +238,7 @@ def score_complexity(
     # sea and don't compound. Without this, a passage with WAC on the first half
     # and chop on the second half would jump +2 levels for what is essentially
     # the same physical signal restated.
-    bumped_level = (
-        min(5, level + 1) if (wind_against_current or chop_contributes_bump) else level
-    )
+    bumped_level = min(5, level + 1) if (wind_against_current or chop_contributes_bump) else level
 
     if wind_against_current:
         affected_wac = tuple(wac_indices)
@@ -266,19 +264,20 @@ def score_complexity(
         tp_range = _compact_range(chop_tp, 0)
         if chop_following_only:
             chop_label = "Clapot suiveur"
-            chop_suffix = "barre attentive, risque de départ au lof"
+            chop_suffix: str | None = None
             chop_warning_level = level  # no bump credited to this warning
         else:
             chop_label = "Clapot court"
             chop_suffix = "mer désagréable"
             chop_warning_level = bumped_level
+        suffix_part = f", {chop_suffix}" if chop_suffix else ""
         warnings.append(
             ComplexityWarning(
                 kind="chop",
                 level=chop_warning_level,
                 message=(
                     f"{chop_label} : Hs {hs_range} m à Tp {tp_range} s sur "
-                    f"{affected_chop_nm:.0f} nm, {chop_suffix}"
+                    f"{affected_chop_nm:.0f} nm{suffix_part}"
                 ),
                 affected_segments=affected_chop,
             )

@@ -168,8 +168,11 @@ export const PlanMap = forwardRef<PlanMapHandle, PlanMapProps>(function PlanMap(
       const xBtn = el?.querySelector<HTMLButtonElement>(".ow-wpt-x");
       if (xBtn) {
         L.DomEvent.disableClickPropagation(xBtn);
+        // Only stop propagation — calling preventDefault on touchstart would
+        // suppress the synthesized click event on touch devices, leaving the
+        // button visibly pressed but unresponsive on release.
         L.DomEvent.on(xBtn, "mousedown touchstart pointerdown", (ev) => {
-          L.DomEvent.stop(ev as Event);
+          L.DomEvent.stopPropagation(ev as Event);
         });
         L.DomEvent.on(xBtn, "click", (ev) => {
           L.DomEvent.stop(ev as Event);
