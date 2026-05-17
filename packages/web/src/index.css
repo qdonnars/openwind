@@ -211,7 +211,21 @@ body {
   background: #e84118;
 }
 @media (hover: none) {
-  .ow-wpt-x { opacity: 1; }
+  .ow-wpt-x {
+    opacity: 1;
+    width: 22px;
+    height: 22px;
+    top: -10px;
+    right: -10px;
+    font-size: 15px;
+  }
+  /* Extends the tap zone beyond the visible button without making the icon
+     bigger. Effective hit area ≈ 38×38px, comfortable for thumbs. */
+  .ow-wpt-x::before {
+    content: "";
+    position: absolute;
+    inset: -8px;
+  }
 }
 
 /* Departure slider */
